@@ -1,0 +1,28 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "deck-master-1a35a",
+          "appId": "1:983642109584:android:5c3e83524aecfa3678ca15",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "deck-master-1a35a",
+          "configurations": {
+            "android": "1:983642109584:android:5c3e83524aecfa3678ca15",
+            "ios": "1:983642109584:ios:34b197dc29b651d478ca15",
+            "macos": "1:983642109584:ios:34b197dc29b651d478ca15",
+            "web": "1:983642109584:web:0a040ea630dab5c478ca15",
+            "windows": "1:983642109584:web:bea1d774c2b34c1778ca15"
+          }
+        }
+      }
+    }
+  }
+}

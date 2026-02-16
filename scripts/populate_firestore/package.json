@@ -1,0 +1,12 @@
+{
+  "name": "populate-firestore-catalog",
+  "version": "1.0.0",
+  "description": "Popola il catalogo Yu-Gi-Oh su Firestore da YGOProDeck API",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}
