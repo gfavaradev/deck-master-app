@@ -24,9 +24,7 @@ class CollectionSummary extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Uniche: $uniqueCards', style: const TextStyle(fontWeight: FontWeight.bold)),
               Text('Doppioni: $duplicates', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-              Text('Totale: $totalCards', style: const TextStyle(fontWeight: FontWeight.bold)),
               Text(
                 'Valore: €${totalValue.toStringAsFixed(2)}',
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),

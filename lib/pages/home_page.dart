@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/collection_model.dart';
 import '../services/data_repository.dart';
@@ -20,7 +21,6 @@ class _HomePageState extends State<HomePage> {
   List<CollectionModel> _unlockedCollections = [];
   List<CollectionModel> _availableCollections = [];
   bool _isLoading = true;
-  int _currentIndex = 0;
   CollectionModel? _selectedCollection;
 
   @override
@@ -43,9 +43,13 @@ class _HomePageState extends State<HomePage> {
   Future<void> _unlock(CollectionModel collection) async {
     await _repo.unlockCollection(collection.key);
 
-    // If unlocking Yu-Gi-Oh, download cards from API
-    if (collection.key == 'yugioh') {
-      await _downloadYugiohCards();
+    // If unlocking Yu-Gi-Oh, download catalog only if not already present/up to date
+    if (!kIsWeb && collection.key == 'yugioh') {
+      final check = await _repo.checkCatalogUpdates();
+      final needsDownload = check['needsUpdate'] == true || check['isFirstDownload'] == true;
+      if (needsDownload) {
+        await _downloadYugiohCards();
+      }
     }
 
     _loadCollections();
@@ -182,18 +186,40 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    Widget homeContent;
-    String appBarTitle = 'Deck Master';
-    Widget? leading;
-    List<Widget>? actions;
+    final bool inCollection = _selectedCollection != null;
 
-    if (_selectedCollection != null) {
-      homeContent = CardListPage(
+    final Widget body;
+    final String appBarTitle;
+    final List<Widget> appBarActions;
+
+    if (inCollection) {
+      body = CardListPage(
         collectionName: _selectedCollection!.name,
         collectionKey: _selectedCollection!.key,
       );
       appBarTitle = _selectedCollection!.name;
-      actions = [
+      appBarActions = [
+        IconButton(
+          icon: const Icon(Icons.bar_chart),
+          tooltip: 'Statistiche',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const StatsPage()),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.search),
+          tooltip: 'Catalogo',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => CatalogPage(
+                collectionName: _selectedCollection!.name,
+                collectionKey: _selectedCollection!.key,
+              ),
+            ),
+          ),
+        ),
         IconButton(
           icon: const Icon(Icons.deck),
           tooltip: 'Gestisci Deck',
@@ -220,98 +246,52 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ),
+        IconButton(
+          icon: const Icon(Icons.settings),
+          tooltip: 'Impostazioni',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const SettingsPage()),
+          ),
+        ),
       ];
     } else {
-      homeContent = _buildHomeContent();
-    }
-
-    final List<Widget> pages = [
-      homeContent,
-      const StatsPage(),
-      const SettingsPage(),
-    ];
-
-    // Build bottom navigation items based on whether a collection is selected
-    final bool inCollection = _selectedCollection != null;
-    final List<BottomNavigationBarItem> navItems = inCollection
-        ? const [
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.folder), label: 'Collezione'),
-            BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Catalogo'),
-            BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Stats'),
-            BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
-          ]
-        : const [
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Stats'),
-            BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
-          ];
-
-    // Map _currentIndex to bottom nav index
-    // In collection mode: pages[0]→nav[1], pages[1]→nav[3], pages[2]→nav[4]
-    int bottomNavIndex = _currentIndex;
-    if (inCollection) {
-      if (_currentIndex == 0) {
-        bottomNavIndex = 1; // Collezione
-      } else if (_currentIndex == 1) {
-        bottomNavIndex = 3; // Stats
-      } else if (_currentIndex == 2) {
-        bottomNavIndex = 4; // Settings
-      }
+      body = _buildHomeContent();
+      appBarTitle = 'Deck Master';
+      appBarActions = [
+        IconButton(
+          icon: const Icon(Icons.bar_chart),
+          tooltip: 'Statistiche',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const StatsPage()),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings),
+          tooltip: 'Impostazioni',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const SettingsPage()),
+          ),
+        ),
+      ];
     }
 
     return Scaffold(
-      appBar: _currentIndex == 0 ? AppBar(
-        leading: leading,
+      appBar: AppBar(
+        leading: inCollection
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Torna alla Home',
+                onPressed: () => setState(() => _selectedCollection = null),
+              )
+            : null,
         title: Text(appBarTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: actions,
-      ) : null,
-      body: pages[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: bottomNavIndex,
-        type: BottomNavigationBarType.fixed,
-        onTap: (index) {
-          if (inCollection) {
-            // Collection mode: 5 items [Home, Collezione, Catalogo, Stats, Settings]
-            if (index == 0) {
-              // Home - exit collection
-              setState(() {
-                _selectedCollection = null;
-                _currentIndex = 0;
-              });
-            } else if (index == 2) {
-              // Catalogo - open as overlay page
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CatalogPage(
-                    collectionName: _selectedCollection!.name,
-                    collectionKey: _selectedCollection!.key,
-                  ),
-                ),
-              );
-            } else {
-              setState(() {
-                // Map nav indices to page indices: 1→0, 3→1, 4→2
-                if (index == 1) {
-                  _currentIndex = 0; // Collezione
-                } else if (index == 3) {
-                  _currentIndex = 1; // Stats
-                } else if (index == 4) {
-                  _currentIndex = 2; // Settings
-                }
-              });
-            }
-          } else {
-            // Normal mode: 3 items - direct mapping
-            setState(() {
-              _currentIndex = index;
-            });
-          }
-        },
-        items: navItems,
+        actions: appBarActions,
       ),
+      body: body,
     );
   }
 

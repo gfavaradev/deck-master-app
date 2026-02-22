@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'auth_service.dart';
@@ -16,6 +18,147 @@ class SyncService {
   final AuthService _authService = AuthService();
 
   bool _isSyncing = false;
+
+  // ============================================================
+  // Real-Time Listeners
+  // ============================================================
+
+  final _remoteChangeController = StreamController<String>.broadcast();
+  Stream<String> get onRemoteChange => _remoteChangeController.stream;
+
+  final List<StreamSubscription<QuerySnapshot>> _listeners = [];
+  bool _firstAlbumSnapshot = true;
+  bool _firstCardSnapshot  = true;
+  bool _firstDeckSnapshot  = true;
+
+  void startListening() {
+    if (kIsWeb) return;
+    final userId = _userId;
+    if (userId == null) return;
+
+    stopListening();
+    _firstAlbumSnapshot = true;
+    _firstCardSnapshot  = true;
+    _firstDeckSnapshot  = true;
+
+    _listeners.add(FirebaseFirestore.instance
+        .collection('users/$userId/albums').snapshots()
+        .listen(_handleAlbumChanges));
+    _listeners.add(FirebaseFirestore.instance
+        .collection('users/$userId/cards').snapshots()
+        .listen(_handleCardChanges));
+    _listeners.add(FirebaseFirestore.instance
+        .collection('users/$userId/decks').snapshots()
+        .listen(_handleDeckChanges));
+
+    debugPrint('Real-time listeners started for user $userId');
+  }
+
+  void stopListening() {
+    for (final sub in _listeners) { sub.cancel(); }
+    _listeners.clear();
+    debugPrint('Real-time listeners stopped');
+  }
+
+  Future<void> _handleAlbumChanges(QuerySnapshot snapshot) async {
+    if (_firstAlbumSnapshot) { _firstAlbumSnapshot = false; return; }
+    bool changed = false;
+    for (final change in snapshot.docChanges) {
+      if (change.doc.metadata.hasPendingWrites) continue;
+      if (change.type == DocumentChangeType.removed) {
+        await _dbHelper.deleteAlbumByFirestoreId(change.doc.id);
+      } else {
+        final data = change.doc.data() as Map<String, dynamic>;
+        final incoming = AlbumModel(
+          name: data['name'] ?? '',
+          collection: data['collection'] ?? '',
+          maxCapacity: data['maxCapacity'] ?? 100,
+        );
+        final existing = await _dbHelper.getAlbumByFirestoreId(change.doc.id);
+        if (existing != null) {
+          await _dbHelper.updateAlbum(
+              incoming.copyWith(id: existing.id, firestoreId: change.doc.id));
+        } else {
+          final localId = await _dbHelper.insertAlbum(incoming);
+          await _dbHelper.updateFirestoreId('albums', localId, change.doc.id);
+        }
+      }
+      changed = true;
+    }
+    if (changed) _remoteChangeController.add('albums');
+  }
+
+  Future<void> _handleCardChanges(QuerySnapshot snapshot) async {
+    if (_firstCardSnapshot) { _firstCardSnapshot = false; return; }
+    bool changed = false;
+    for (final change in snapshot.docChanges) {
+      if (change.doc.metadata.hasPendingWrites) continue;
+      if (change.type == DocumentChangeType.removed) {
+        await _dbHelper.deleteCardByFirestoreId(change.doc.id);
+      } else {
+        final data = change.doc.data() as Map<String, dynamic>;
+        // Risolvi albumFirestoreId → local albumId
+        int albumId = -1;
+        final albumFsId = data['albumFirestoreId'] as String?;
+        if (albumFsId != null) {
+          final album = await _dbHelper.getAlbumByFirestoreId(albumFsId);
+          albumId = album?.id ?? -1;
+        }
+        final card = CardModel(
+          catalogId:    data['catalogId'],
+          name:         data['name'] ?? '',
+          serialNumber: data['serialNumber'] ?? '',
+          collection:   data['collection'] ?? '',
+          albumId:      albumId,
+          type:         data['type'] ?? '',
+          rarity:       data['rarity'] ?? '',
+          description:  data['description'] ?? '',
+          quantity:     data['quantity'] ?? 1,
+          value:        (data['value'] as num?)?.toDouble() ?? 0.0,
+          imageUrl:     data['imageUrl'],
+          firestoreId:  change.doc.id,
+        );
+        final existing = await _dbHelper.getCardByFirestoreId(change.doc.id);
+        if (existing != null) {
+          await _dbHelper.updateCard(card.copyWith(id: existing.id));
+        } else {
+          final localId = await _dbHelper.insertCard(card);
+          await _dbHelper.updateFirestoreId('cards', localId, change.doc.id);
+        }
+      }
+      changed = true;
+    }
+    if (changed) _remoteChangeController.add('cards');
+  }
+
+  Future<void> _handleDeckChanges(QuerySnapshot snapshot) async {
+    if (_firstDeckSnapshot) { _firstDeckSnapshot = false; return; }
+    bool changed = false;
+    for (final change in snapshot.docChanges) {
+      if (change.doc.metadata.hasPendingWrites) continue;
+      final db = await _dbHelper.database;
+      if (change.type == DocumentChangeType.removed) {
+        await db.delete('decks', where: 'firestoreId = ?', whereArgs: [change.doc.id]);
+      } else {
+        final data = change.doc.data() as Map<String, dynamic>;
+        final existing = await db.query('decks',
+            where: 'firestoreId = ?', whereArgs: [change.doc.id]);
+        if (existing.isNotEmpty) {
+          await db.update(
+            'decks',
+            {'name': data['name'], 'collection': data['collection']},
+            where: 'firestoreId = ?', whereArgs: [change.doc.id],
+          );
+        } else {
+          final localId = await _dbHelper.insertDeck(
+              data['name'] ?? '', data['collection'] ?? '');
+          await _dbHelper.updateFirestoreId('decks', localId, change.doc.id);
+        }
+      }
+      changed = true;
+    }
+    if (changed) _remoteChangeController.add('decks');
+  }
 
   /// Check if sync is possible (user authenticated and not in offline mode)
   Future<bool> canSync() async {
@@ -107,16 +250,16 @@ class SyncService {
     if (userId == null) return;
 
     try {
-      // Pull collections
+      // Clear existing user data before pulling (also resets collections lock state)
+      await _dbHelper.clearUserData();
+
+      // Pull collections (after clear, so we unlock only this user's collections)
       final remoteCollections = await _firestoreService.getCollections(userId);
       for (var col in remoteCollections) {
         if (col.isUnlocked) {
           await _dbHelper.unlockCollection(col.key);
         }
       }
-
-      // Clear existing user data before pulling
-      await _dbHelper.clearUserData();
 
       // Pull albums
       final remoteAlbums = await _firestoreService.getAlbums(userId);
@@ -199,12 +342,16 @@ class SyncService {
   // ============================================================
 
   Future<void> syncOnLogin() async {
+    if (kIsWeb) return; // Web has no SQLite: DataRepository handles Firestore reads directly
     if (_isSyncing) return;
     _isSyncing = true;
 
     try {
       final userId = _userId;
       if (userId == null) return;
+
+      // ALWAYS sync collections first (lightweight and critical for UI state)
+      await _syncCollections(userId);
 
       final hasRemoteData = await _firestoreService.hasUserData(userId);
       final localAlbums = await _dbHelper.getAllAlbums();
@@ -227,6 +374,25 @@ class SyncService {
       debugPrint('Error during sync on login: $e');
     } finally {
       _isSyncing = false;
+      startListening();
+    }
+  }
+
+  /// Sync collections (unlocked status) from Firestore
+  Future<void> _syncCollections(String userId) async {
+    if (kIsWeb) return; // Web uses Firestore directly via DataRepository.getCollections()
+    try {
+      // Reset all collections to locked before applying this user's state
+      await _dbHelper.resetCollectionsLockState();
+      final remoteCollections = await _firestoreService.getCollections(userId);
+      for (var col in remoteCollections) {
+        if (col.isUnlocked) {
+          await _dbHelper.unlockCollection(col.key);
+        }
+      }
+      debugPrint('Collections synced: ${remoteCollections.length} collections');
+    } catch (e) {
+      debugPrint('Error syncing collections: $e');
     }
   }
 
@@ -237,7 +403,14 @@ class SyncService {
   Future<void> pushAlbumChange(AlbumModel album, String changeType) async {
     if (!await canSync()) {
       if (album.id != null) {
-        await _dbHelper.addPendingSync('albums', album.id!, changeType);
+        // For deletes, store firestoreId in 'data' so flushPendingQueue can
+        // push the Firestore delete even after the local row is gone.
+        await _dbHelper.addPendingSync(
+          'albums',
+          album.id!,
+          changeType,
+          data: changeType == 'delete' ? album.firestoreId : null,
+        );
       }
       return;
     }
@@ -275,7 +448,14 @@ class SyncService {
   Future<void> pushCardChange(CardModel card, String changeType) async {
     if (!await canSync()) {
       if (card.id != null) {
-        await _dbHelper.addPendingSync('cards', card.id!, changeType);
+        // For deletes, store firestoreId in 'data' so flushPendingQueue can
+        // push the Firestore delete even after the local row is gone.
+        await _dbHelper.addPendingSync(
+          'cards',
+          card.id!,
+          changeType,
+          data: changeType == 'delete' ? card.firestoreId : null,
+        );
       }
       return;
     }
@@ -371,6 +551,9 @@ class SyncService {
   Future<void> flushPendingQueue() async {
     if (!await canSync()) return;
 
+    final userId = _userId;
+    if (userId == null) return;
+
     final pending = await _dbHelper.getPendingSync();
     if (pending.isEmpty) return;
 
@@ -381,6 +564,8 @@ class SyncService {
         final tableName = item['table_name'] as String;
         final localId = item['local_id'] as int;
         final changeType = item['change_type'] as String;
+        // firestoreId stored at queue-time for offline deletes (item may be gone from SQLite)
+        final storedFirestoreId = item['data'] as String?;
 
         switch (tableName) {
           case 'albums':
@@ -388,13 +573,20 @@ class SyncService {
             final album = albums.where((a) => a.id == localId).firstOrNull;
             if (album != null) {
               await pushAlbumChange(album, changeType);
+            } else if (changeType == 'delete' && storedFirestoreId != null) {
+              // Album already deleted locally; push the delete to Firestore directly.
+              await _firestoreService.deleteAlbum(userId, storedFirestoreId);
             }
+            // If album is null and no storedFirestoreId, it was never synced → nothing to do.
             break;
           case 'cards':
             final cards = await _dbHelper.getAllCards();
             final card = cards.where((c) => c.id == localId).firstOrNull;
             if (card != null) {
               await pushCardChange(card, changeType);
+            } else if (changeType == 'delete' && storedFirestoreId != null) {
+              // Card already deleted locally; push the delete to Firestore directly.
+              await _firestoreService.deleteCard(userId, storedFirestoreId);
             }
             break;
           case 'decks':

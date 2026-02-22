@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
+import '../constants/app_constants.dart';
+import '../utils/firestore_paths.dart';
+import '../utils/app_logger.dart';
 
 class FirestoreService {
   static final FirestoreService _instance = FirestoreService._internal();
@@ -12,46 +14,56 @@ class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // ============================================================
-  // Yu-Gi-Oh Catalog Methods
+  // Catalog Methods (Generic for all catalogs)
   // ============================================================
 
   /// Get catalog metadata (version, total chunks, etc.)
-  Future<Map<String, dynamic>?> getCatalogMetadata() async {
+  /// Works for any catalog (yugioh, pokemon, magic, etc.)
+  Future<Map<String, dynamic>?> getCatalogMetadata(String catalogName) async {
     try {
-      final doc = await _firestore.collection('yugioh_catalog').doc('metadata').get();
+      final doc = await _firestore
+          .collection(FirestorePaths.catalog(catalogName))
+          .doc(FirestoreConstants.catalogMetadata)
+          .get();
       return doc.exists ? doc.data() : null;
     } catch (e) {
-      debugPrint('Error getting catalog metadata: $e');
+      AppLogger.error(
+        'Error getting catalog metadata',
+        tag: 'FirestoreService',
+        error: e,
+      );
       return null;
     }
   }
 
-  /// Fetch Yu-Gi-Oh catalog from Firestore chunks.
-  /// Returns cards in the same format as the old ApiService for compatibility
-  /// with DatabaseHelper.insertYugiohCards().
-  Future<List<Map<String, dynamic>>> fetchYugiohCatalog({
+  /// Fetch catalog from Firestore chunks
+  /// Generic method that works for any catalog
+  Future<List<Map<String, dynamic>>> fetchCatalog(
+    String catalogName, {
     void Function(int current, int total)? onProgress,
   }) async {
     try {
+      AppLogger.info('Fetching catalog: $catalogName', tag: 'FirestoreService');
+
       // Get metadata to know total chunks
-      final metadata = await getCatalogMetadata();
+      final metadata = await getCatalogMetadata(catalogName);
       if (metadata == null) {
-        throw Exception('Catalog metadata not found in Firestore');
+        throw Exception('Catalog metadata not found for $catalogName');
       }
 
       final int totalChunks = metadata['totalChunks'] ?? 0;
       if (totalChunks == 0) {
-        throw Exception('No catalog chunks available');
+        throw Exception('No chunks available for $catalogName');
       }
 
       final List<Map<String, dynamic>> allCards = [];
 
       for (int i = 1; i <= totalChunks; i++) {
-        final chunkId = 'chunk_${i.toString().padLeft(3, '0')}';
+        final chunkId = FirestoreConstants.getChunkId(i);
         final doc = await _firestore
-            .collection('yugioh_catalog')
-            .doc('chunks')
-            .collection('items')
+            .collection(FirestorePaths.catalog(catalogName))
+            .doc(FirestoreConstants.catalogChunks)
+            .collection(FirestoreConstants.catalogItems)
             .doc(chunkId)
             .get();
 
@@ -65,10 +77,27 @@ class FirestoreService {
         onProgress?.call(i, totalChunks);
       }
 
+      AppLogger.success(
+        'Fetched ${allCards.length} cards from $catalogName',
+        tag: 'FirestoreService',
+      );
       return allCards;
     } catch (e) {
-      throw Exception('Error fetching Yu-Gi-Oh catalog from Firestore: $e');
+      AppLogger.error(
+        'Error fetching catalog $catalogName',
+        tag: 'FirestoreService',
+        error: e,
+      );
+      rethrow;
     }
+  }
+
+  /// Backward compatibility: Fetch Yu-Gi-Oh catalog
+  @Deprecated('Use fetchCatalog(CatalogConstants.yugioh) instead')
+  Future<List<Map<String, dynamic>>> fetchYugiohCatalog({
+    void Function(int current, int total)? onProgress,
+  }) async {
+    return fetchCatalog(CatalogConstants.yugioh, onProgress: onProgress);
   }
 
   // ============================================================
@@ -76,45 +105,51 @@ class FirestoreService {
   // ============================================================
 
   Future<void> setCollections(String userId, List<CollectionModel> collections) async {
-    final batch = _firestore.batch();
-    for (var col in collections) {
-      final ref = _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('collections')
-          .doc(col.key);
-      batch.set(ref, {
-        'name': col.name,
-        'isUnlocked': col.isUnlocked,
-      });
+    try {
+      final batch = _firestore.batch();
+      for (var col in collections) {
+        final ref = _firestore.doc(FirestorePaths.userCollection(userId, col.key));
+        batch.set(ref, {
+          'name': col.name,
+          'isUnlocked': col.isUnlocked,
+        });
+      }
+      await batch.commit();
+      AppLogger.sync('Set ${collections.length} collections for user $userId');
+    } catch (e) {
+      AppLogger.error('Error setting collections', tag: 'FirestoreService', error: e);
+      rethrow;
     }
-    await batch.commit();
   }
 
   Future<void> setCollectionUnlocked(String userId, String collectionKey, bool unlocked) async {
-    await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('collections')
-        .doc(collectionKey)
-        .set({'isUnlocked': unlocked}, SetOptions(merge: true));
+    try {
+      await _firestore.doc(FirestorePaths.userCollection(userId, collectionKey)).set(
+        {'isUnlocked': unlocked},
+        SetOptions(merge: true),
+      );
+      AppLogger.sync('Collection $collectionKey unlocked: $unlocked');
+    } catch (e) {
+      AppLogger.error('Error unlocking collection', tag: 'FirestoreService', error: e);
+      rethrow;
+    }
   }
 
   Future<List<CollectionModel>> getCollections(String userId) async {
-    final snapshot = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('collections')
-        .get();
-
-    return snapshot.docs.map((doc) {
-      final data = doc.data();
-      return CollectionModel(
-        key: doc.id,
-        name: data['name'] ?? doc.id,
-        isUnlocked: data['isUnlocked'] ?? false,
-      );
-    }).toList();
+    try {
+      final snapshot = await _firestore.collection(FirestorePaths.userCollections(userId)).get();
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return CollectionModel(
+          key: doc.id,
+          name: data['name'] ?? doc.id,
+          isUnlocked: data['isUnlocked'] ?? false,
+        );
+      }).toList();
+    } catch (e) {
+      AppLogger.error('Error getting collections', tag: 'FirestoreService', error: e);
+      return [];
+    }
   }
 
   // ============================================================
@@ -356,7 +391,37 @@ class FirestoreService {
   }
 
   Future<bool> hasUserData(String userId) async {
+    // Check if user document exists OR if user has any subcollections (collections, albums, cards, decks)
     final doc = await _firestore.collection('users').doc(userId).get();
-    return doc.exists;
+    if (doc.exists) return true;
+
+    // Check collections subcollection
+    final collections = await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('collections')
+        .limit(1)
+        .get();
+    if (collections.docs.isNotEmpty) return true;
+
+    // Check albums subcollection
+    final albums = await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('albums')
+        .limit(1)
+        .get();
+    if (albums.docs.isNotEmpty) return true;
+
+    // Check cards subcollection
+    final cards = await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('cards')
+        .limit(1)
+        .get();
+    if (cards.docs.isNotEmpty) return true;
+
+    return false;
   }
 }

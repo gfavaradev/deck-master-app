@@ -58,16 +58,12 @@ class _DeckListPageState extends State<DeckListPage> {
           ),
         ],
       ),
-    );
+    ).then((_) => nameController.dispose());
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Deck ${widget.collectionName}'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
       body: _decks.isEmpty
           ? const Center(child: Text('Nessun deck creato.'))
           : ListView.builder(

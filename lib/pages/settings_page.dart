@@ -4,6 +4,8 @@ import '../services/auth_service.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import 'login_page.dart';
+import 'admin_users_page.dart';
+import 'admin_home_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -18,13 +20,17 @@ class _SettingsPageState extends State<SettingsPage> {
   final User? _user = FirebaseAuth.instance.currentUser;
   bool _isOffline = false;
   bool _isDownloading = false;
+  bool _isAdmin = false;
   String _selectedLanguage = 'EN';
+  String _downloadStatus = '';
+  double? _downloadProgress;
 
   @override
   void initState() {
     super.initState();
     _checkOfflineMode();
     _loadLanguagePreference();
+    _checkAdminStatus();
   }
 
   Future<void> _checkOfflineMode() async {
@@ -32,6 +38,15 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _isOffline = offline;
     });
+  }
+
+  Future<void> _checkAdminStatus() async {
+    final isAdmin = await _authService.isCurrentUserAdmin();
+    if (mounted) {
+      setState(() {
+        _isAdmin = isAdmin;
+      });
+    }
   }
 
   Future<void> _loadLanguagePreference() async {
@@ -52,6 +67,10 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           _buildUserSection(),
           const Divider(),
+          if (_isAdmin) ...[
+            _buildAdminSection(),
+            const Divider(),
+          ],
           _buildCatalogSection(),
           const Divider(),
           ListTile(
@@ -61,17 +80,15 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: () async {
               try {
                 await _repo.fullSync();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Sincronizzazione completata!')),
-                  );
-                }
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Sincronizzazione completata!')),
+                );
               } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Errore sync: $e')),
-                  );
-                }
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Errore sync: $e')),
+                );
               }
             },
           ),
@@ -91,13 +108,11 @@ class _SettingsPageState extends State<SettingsPage> {
             title: const Text('Logout', style: TextStyle(color: Colors.red)),
             onTap: () async {
               await _authService.signOut();
-              if (mounted) {
-                if (!context.mounted) return;
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (context) => const LoginPage()),
-                  (route) => false,
-                );
-              }
+              if (!context.mounted) return;
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const LoginPage()),
+                (route) => false,
+              );
             },
           ),
         ],
@@ -117,8 +132,24 @@ class _SettingsPageState extends State<SettingsPage> {
           leading: _isDownloading
               ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.download),
-          title: const Text('Aggiorna Catalogo'),
-          subtitle: const Text('Scarica/Aggiorna tutte le carte in tutte le lingue'),
+          title: Text(_isDownloading ? _downloadStatus : 'Aggiorna Catalogo'),
+          subtitle: _isDownloading
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(value: _downloadProgress),
+                    const SizedBox(height: 4),
+                    Text(
+                      _downloadProgress != null
+                        ? '${(_downloadProgress! * 100).toInt()}%'
+                        : 'In corso...',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                )
+              : const Text('Scarica/Aggiorna tutte le carte in tutte le lingue'),
           enabled: !_isDownloading,
           onTap: _downloadCatalog,
         ),
@@ -136,95 +167,136 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _downloadCatalog() async {
     if (!mounted) return;
 
-    final statusNotifier = ValueNotifier<String>('Cancellazione catalogo vecchio...');
-    final progressNotifier = ValueNotifier<double?>(null);
-    final detailNotifier = ValueNotifier<String>('');
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          title: const Text('Download Catalogo'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ValueListenableBuilder<double?>(
-                valueListenable: progressNotifier,
-                builder: (context, progress, _) {
-                  return CircularProgressIndicator(value: progress);
-                },
-              ),
-              const SizedBox(height: 20),
-              ValueListenableBuilder<String>(
-                valueListenable: statusNotifier,
-                builder: (context, status, _) {
-                  return Text(status, textAlign: TextAlign.center);
-                },
-              ),
-              const SizedBox(height: 10),
-              ValueListenableBuilder<String>(
-                valueListenable: detailNotifier,
-                builder: (context, detail, _) {
-                  return Text(
-                    detail,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    void disposeNotifiers() {
-      statusNotifier.dispose();
-      progressNotifier.dispose();
-      detailNotifier.dispose();
-    }
-
     setState(() {
       _isDownloading = true;
+      _downloadStatus = 'Controllo aggiornamenti...';
+      _downloadProgress = null;
     });
 
     try {
-      statusNotifier.value = 'Scaricando da Firestore...';
+      // 1. Check if update is needed
+      final updateInfo = await _repo.checkCatalogUpdates();
 
-      await _repo.redownloadYugiohCatalog(
-        onProgress: (current, total) {
-          progressNotifier.value = current / total;
-          detailNotifier.value = 'Chunk $current di $total';
-        },
-        onSaveProgress: (progress) {
-          statusNotifier.value = 'Salvando nel database...';
-          progressNotifier.value = progress;
-          detailNotifier.value = '${(progress * 100).toInt()}%';
-        },
-      );
+      if (updateInfo['error'] != null) {
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+            _downloadStatus = '';
+            _downloadProgress = null;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Errore controllo aggiornamenti: ${updateInfo['error']}')),
+          );
+        }
+        return;
+      }
 
-      if (mounted) Navigator.pop(context);
+      final needsUpdate = updateInfo['needsUpdate'] as bool;
+
+      // 2. If no update needed, show message and return
+      if (!needsUpdate) {
+        final totalCards = updateInfo['totalCards'] as int?;
+
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+            _downloadStatus = '';
+            _downloadProgress = null;
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Catalogo già aggiornato! ${totalCards != null ? "($totalCards carte)" : ""}'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      // 3. Update needed - perform download
+      final isFirstDownload = updateInfo['isFirstDownload'] as bool? ?? false;
+      final remoteVersion = updateInfo['remoteVersion'] as int?;
+      final totalCards = updateInfo['totalCards'] as int?;
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Catalogo aggiornato con successo!')),
+        await _performDownload(
+          isFirstDownload: isFirstDownload,
+          remoteVersion: remoteVersion,
+          totalCards: totalCards,
         );
       }
-      disposeNotifiers();
     } catch (e) {
-      if (mounted) Navigator.pop(context);
-      disposeNotifiers();
       if (mounted) {
+        setState(() {
+          _isDownloading = false;
+          _downloadStatus = '';
+          _downloadProgress = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore: $e')),
         );
       }
-    } finally {
+    }
+  }
+
+  Future<void> _performDownload({
+    required bool isFirstDownload,
+    int? remoteVersion,
+    int? totalCards,
+  }) async {
+    try {
+      setState(() {
+        _downloadStatus = 'Scaricando da Firestore...';
+        _downloadProgress = null;
+      });
+
+      await _repo.redownloadYugiohCatalog(
+        onProgress: (current, total) {
+          if (mounted) {
+            setState(() {
+              _downloadProgress = current / total;
+              _downloadStatus = 'Scaricando chunk $current di $total';
+            });
+          }
+        },
+        onSaveProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _downloadProgress = progress;
+              _downloadStatus = 'Salvando nel database...';
+            });
+          }
+        },
+      );
+
       if (mounted) {
         setState(() {
           _isDownloading = false;
+          _downloadStatus = '';
+          _downloadProgress = null;
         });
+
+        final message = isFirstDownload
+          ? 'Catalogo scaricato con successo! ${totalCards != null ? "($totalCards carte)" : ""}'
+          : 'Catalogo aggiornato alla versione $remoteVersion!';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
       }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+          _downloadStatus = '';
+          _downloadProgress = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e')),
+        );
+      }
+      rethrow;
     }
   }
 
@@ -243,14 +315,58 @@ class _SettingsPageState extends State<SettingsPage> {
               onChanged: (val) async {
                 if (val != null) {
                   await LanguageService.setPreferredLanguage(val);
+                  if (!context.mounted) return;
                   setState(() => _selectedLanguage = val);
-                  if (mounted) Navigator.pop(context);
+                  Navigator.pop(context);
                 }
               },
             );
           }).toList(),
         ),
       ),
+    );
+  }
+
+  Widget _buildAdminSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Row(
+            children: [
+              Icon(Icons.admin_panel_settings, color: Colors.orange, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Amministrazione',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+              ),
+            ],
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.people, color: Colors.orange),
+          title: const Text('Gestisci Utenti'),
+          subtitle: const Text('Visualizza e modifica ruoli utenti'),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminUsersPage()),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.storage, color: Colors.orange),
+          title: const Text('Gestisci Catalogo'),
+          subtitle: const Text('Aggiungi/Modifica carte nel catalogo'),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminHomePage()),
+            );
+          },
+        ),
+      ],
     );
   }
 

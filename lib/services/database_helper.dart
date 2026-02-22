@@ -23,7 +23,16 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+    // Web doesn't support SQLite - throw clear error
+    if (kIsWeb) {
+      throw UnsupportedError(
+        'SQLite database is not supported on Web. '
+        'Use Firestore directly for web applications.',
+      );
+    }
+
+    // Initialize FFI for desktop platforms
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
     }
@@ -32,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 5,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -82,6 +91,12 @@ class DatabaseHelper {
     if (oldVersion < 5) {
       await _addFirestoreSyncSupport(db);
     }
+    if (oldVersion < 6) {
+      await _addCatalogMetadata(db);
+    }
+    if (oldVersion < 7) {
+      await db.execute('ALTER TABLE yugioh_cards ADD COLUMN image_url TEXT');
+    }
   }
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
@@ -104,6 +119,20 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_pending_sync_table ON pending_sync(table_name)');
   }
 
+  Future<void> _addCatalogMetadata(DatabaseExecutor db) async {
+    // Create catalog_metadata table for tracking catalog versions
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS catalog_metadata(
+        catalog_name TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        total_cards INTEGER NOT NULL,
+        total_chunks INTEGER NOT NULL,
+        last_updated TEXT NOT NULL,
+        downloaded_at TEXT NOT NULL
+      )
+    ''');
+  }
+
   Future<void> _createYugiohTables(DatabaseExecutor db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS yugioh_cards(
@@ -123,6 +152,7 @@ class DatabaseHelper {
         linkmarkers TEXT,
         name TEXT NOT NULL,
         description TEXT,
+        image_url TEXT,
         name_it TEXT,
         description_it TEXT,
         name_fr TEXT,
@@ -187,6 +217,17 @@ class DatabaseHelper {
         updated_at TEXT,
         FOREIGN KEY (print_id) REFERENCES yugioh_prints(id) ON DELETE CASCADE,
         UNIQUE(print_id, language)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS catalog_metadata(
+        catalog_name TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        total_cards INTEGER NOT NULL,
+        total_chunks INTEGER NOT NULL,
+        last_updated TEXT NOT NULL,
+        downloaded_at TEXT NOT NULL
       )
     ''');
   }
@@ -447,7 +488,7 @@ class DatabaseHelper {
         yc.type,
         yc.description,
         'yugioh' as collection,
-        yc.ygoprodeck_url as imageUrl,
+        yc.image_url as imageUrl,
         EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(yc.id AS TEXT)) as isOwned,
         (SELECT COALESCE(SUM(c.quantity), 0) FROM cards c WHERE c.catalogId = CAST(yc.id AS TEXT)) as quantity,
         0.0 as value,
@@ -461,9 +502,9 @@ class DatabaseHelper {
       SELECT
         u.id,
         u.catalogId,
-        COALESCE(yc.name, u.name) as name,
-        COALESCE(yc.type, u.type) as type,
-        COALESCE(yc.description, u.description) as description,
+        COALESCE(u.name, yc.name) as name,
+        COALESCE(u.type, yc.type) as type,
+        COALESCE(u.description, yc.description) as description,
         u.collection,
         u.imageUrl,
         u.serialNumber,
@@ -576,9 +617,9 @@ class DatabaseHelper {
     if (collection == 'yugioh') {
       final List<Map<String, dynamic>> maps = await db.rawQuery('''
         SELECT u.*,
-               COALESCE(yc.name, u.name) as name,
-               COALESCE(yc.type, u.type) as type,
-               COALESCE(yc.description, u.description) as description,
+               COALESCE(u.name, yc.name) as name,
+               COALESCE(u.type, yc.type) as type,
+               COALESCE(u.description, yc.description) as description,
                u.collection,
                u.imageUrl
         FROM cards u
@@ -607,9 +648,9 @@ class DatabaseHelper {
     if (collection == 'yugioh') {
       final List<Map<String, dynamic>> maps = await db.rawQuery('''
         SELECT u.*,
-               COALESCE(yc.name, u.name) as name,
-               COALESCE(yc.type, u.type) as type,
-               COALESCE(yc.description, u.description) as description,
+               COALESCE(u.name, yc.name) as name,
+               COALESCE(u.type, yc.type) as type,
+               COALESCE(u.description, yc.description) as description,
                u.collection,
                u.imageUrl
         FROM cards u
@@ -642,7 +683,7 @@ class DatabaseHelper {
         final card = cards.first;
         final String? catalogId = card['catalogId'] as String?;
         final String collection = card['collection'] as String? ?? '';
-        final String serialNumber = card['serialNumber'] as String;
+        final String serialNumber = card['serialNumber'] as String? ?? '';
         final int quantity = card['quantity'] as int;
 
         if (catalogId != null && collection != 'yugioh') {
@@ -708,6 +749,19 @@ class DatabaseHelper {
     Database db = await database;
     final result = await db.rawQuery('SELECT SUM(quantity) as total FROM cards WHERE albumId = ?', [albumId]);
     return result.first['total'] as int? ?? 0;
+  }
+
+  /// Returns an existing card in [albumId] with the same [catalogId] and [serialNumber], or null.
+  Future<CardModel?> findCardInAlbum(int albumId, String? catalogId, String serialNumber) async {
+    Database db = await database;
+    final results = await db.query(
+      'cards',
+      where: 'albumId = ? AND catalogId = ? AND serialNumber = ?',
+      whereArgs: [albumId, catalogId, serialNumber],
+      limit: 1,
+    );
+    if (results.isEmpty) return null;
+    return CardModel.fromMap(results.first);
   }
 
   // ============================================================
@@ -822,7 +876,7 @@ class DatabaseHelper {
     Database db = await database;
 
     final totalCards = await db.rawQuery('SELECT SUM(quantity) as total FROM cards');
-    final uniqueCards = await db.rawQuery('SELECT COUNT(DISTINCT catalogId) as total FROM cards');
+    final uniqueCards = await db.rawQuery('SELECT COUNT(DISTINCT catalogId) as total FROM cards WHERE catalogId IS NOT NULL');
     final totalValue = await db.rawQuery('SELECT SUM(value * quantity) as total FROM cards');
     final collections = await db.rawQuery('SELECT COUNT(*) as total FROM collections WHERE isUnlocked = 1');
 
@@ -851,7 +905,40 @@ class DatabaseHelper {
       await txn.delete('yugioh_prices');
       await txn.delete('yugioh_prints');
       await txn.delete('yugioh_cards');
+      await txn.delete('catalog_metadata', where: 'catalog_name = ?', whereArgs: ['yugioh']);
     });
+  }
+
+  Future<void> saveCatalogMetadata({
+    required String catalogName,
+    required int version,
+    required int totalCards,
+    required int totalChunks,
+    required String lastUpdated,
+  }) async {
+    Database db = await database;
+    await db.insert(
+      'catalog_metadata',
+      {
+        'catalog_name': catalogName,
+        'version': version,
+        'total_cards': totalCards,
+        'total_chunks': totalChunks,
+        'last_updated': lastUpdated,
+        'downloaded_at': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getCatalogMetadata(String catalogName) async {
+    Database db = await database;
+    final results = await db.query(
+      'catalog_metadata',
+      where: 'catalog_name = ?',
+      whereArgs: [catalogName],
+    );
+    return results.isEmpty ? null : results.first;
   }
 
   Future<void> insertYugiohCards(List<Map<String, dynamic>> cards, {Function(double)? onProgress}) async {
@@ -888,6 +975,7 @@ class DatabaseHelper {
             'linkmarkers': cardData['linkmarkers'],
             'name': cardData['name'],
             'description': cardData['description'],
+            'image_url': cardData['image_url'],
             'name_it': cardData['name_it'],
             'description_it': cardData['description_it'],
             'name_fr': cardData['name_fr'],
@@ -994,19 +1082,15 @@ class DatabaseHelper {
     List<dynamic> whereArgs = [];
 
     if (!hasQuery) {
-      // No search: filter to only show prints available in the selected language
-      if (hasLang) {
-        whereClause = 'WHERE yp.set_name$suffix IS NOT NULL';
-      } else {
-        whereClause = '';
-      }
+      // No search: show all cards (no language filter)
+      whereClause = '';
     } else {
       final q = '%$query%';
+      // Search by name (localized or EN) + all set codes (all languages)
       if (hasLang) {
-        // Name search: only results with localized data for the selected language
-        // Set code search: all languages, no language filter (so user can find cards from other languages)
         whereClause = '''WHERE (
-          (($nameCol LIKE ? OR yc.name LIKE ?) AND yp.set_name$suffix IS NOT NULL)
+          $nameCol LIKE ?
+          OR yc.name LIKE ?
           OR yp.set_code LIKE ?
           OR yp.set_code_it LIKE ?
           OR yp.set_code_fr LIKE ?
@@ -1042,6 +1126,7 @@ class DatabaseHelper {
         yc.race, yc.archetype, yc.attribute,
         yc.atk, yc.def, yc.level, yc.scale, yc.linkval, yc.linkmarkers,
         yc.ygoprodeck_url,
+        yc.image_url AS imageUrl,
         yp.id AS printId,
         yp.set_code AS setCode,
         $setCodeCol AS localizedSetCode,
@@ -1140,11 +1225,12 @@ class DatabaseHelper {
 
   Future<void> addCardToDeck(int deckId, int cardId, int quantity) async {
     Database db = await database;
-    await db.insert('deck_cards', {
-      'deckId': deckId,
-      'cardId': cardId,
-      'quantity': quantity,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    // INSERT or INCREMENT: if the card is already in the deck, increase its quantity
+    await db.rawInsert('''
+      INSERT INTO deck_cards (deckId, cardId, quantity)
+      VALUES (?, ?, ?)
+      ON CONFLICT(deckId, cardId) DO UPDATE SET quantity = quantity + excluded.quantity
+    ''', [deckId, cardId, quantity]);
   }
 
   Future<List<Map<String, dynamic>>> getDeckCards(int deckId) async {
@@ -1183,6 +1269,29 @@ class DatabaseHelper {
       return result.first['firestoreId'] as String?;
     }
     return null;
+  }
+
+  Future<AlbumModel?> getAlbumByFirestoreId(String firestoreId) async {
+    Database db = await database;
+    final r = await db.query('albums', where: 'firestoreId = ?', whereArgs: [firestoreId]);
+    return r.isNotEmpty ? AlbumModel.fromMap(r.first) : null;
+  }
+
+  Future<CardModel?> getCardByFirestoreId(String firestoreId) async {
+    Database db = await database;
+    final r = await db.query('cards', where: 'firestoreId = ?', whereArgs: [firestoreId]);
+    return r.isNotEmpty ? CardModel.fromMap(r.first) : null;
+  }
+
+  Future<void> deleteAlbumByFirestoreId(String firestoreId) async {
+    Database db = await database;
+    await db.delete('albums', where: 'firestoreId = ?', whereArgs: [firestoreId]);
+  }
+
+  Future<void> deleteCardByFirestoreId(String firestoreId) async {
+    Database db = await database;
+    final r = await db.query('cards', columns: ['id'], where: 'firestoreId = ?', whereArgs: [firestoreId]);
+    if (r.isNotEmpty) await deleteCard(r.first['id'] as int);
   }
 
   Future<void> addPendingSync(String tableName, int localId, String changeType, {String? data}) async {
@@ -1235,6 +1344,11 @@ class DatabaseHelper {
     return await db.query('deck_cards');
   }
 
+  Future<void> resetCollectionsLockState() async {
+    Database db = await database;
+    await db.update('collections', {'isUnlocked': 0});
+  }
+
   Future<void> clearUserData() async {
     Database db = await database;
     await db.transaction((txn) async {
@@ -1243,6 +1357,32 @@ class DatabaseHelper {
       await txn.delete('cards');
       await txn.delete('albums');
       await txn.delete('pending_sync');
+      // Reset all collections to locked - unlock state is per-user
+      await txn.update('collections', {'isUnlocked': 0});
+    });
+  }
+
+  /// Clear ALL data including user data and catalog (for logout/account switch)
+  /// CRITICAL for privacy: prevents data leaks between different accounts
+  Future<void> clearAllData() async {
+    Database db = await database;
+    await db.transaction((txn) async {
+      // User data tables
+      await txn.delete('deck_cards');
+      await txn.delete('decks');
+      await txn.delete('cards');
+      await txn.delete('albums');
+      await txn.delete('pending_sync');
+
+      // Catalog tables (will be re-downloaded on next login)
+      await txn.delete('catalog_cards');
+      await txn.delete('catalog_card_sets');
+      await txn.delete('catalog_metadata');
+
+      // Yu-Gi-Oh specific tables
+      await txn.delete('yugioh_cards');
+      await txn.delete('yugioh_prints');
+      await txn.delete('yugioh_prices');
     });
   }
 }

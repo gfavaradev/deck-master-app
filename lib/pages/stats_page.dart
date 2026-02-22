@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
+import '../services/sync_service.dart';
 
 class StatsPage extends StatefulWidget {
   const StatsPage({super.key});
@@ -12,11 +14,21 @@ class _StatsPageState extends State<StatsPage> {
   final DataRepository _dbHelper = DataRepository();
   Map<String, dynamic>? _stats;
   bool _isLoading = true;
+  StreamSubscription<String>? _syncSub;
 
   @override
   void initState() {
     super.initState();
     _loadStats();
+    _syncSub = SyncService().onRemoteChange.listen((_) {
+      if (mounted) _loadStats();
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadStats() async {
@@ -43,24 +55,11 @@ class _StatsPageState extends State<StatsPage> {
               child: ListView(
                 padding: const EdgeInsets.all(16.0),
                 children: [
-                  _buildStatCard(
-                    'Carte Totali',
-                    _stats?['totalCards'].toString() ?? '0',
-                    Icons.copy,
-                    Colors.blue,
-                  ),
-                  _buildStatCard(
-                    'Valore Stimato',
-                    '€${(_stats?['totalValue'] as double? ?? 0.0).toStringAsFixed(2)}',
-                    Icons.euro,
-                    Colors.green,
-                  ),
-                  _buildStatCard(
-                    'Collezioni Attive',
-                    _stats?['unlockedCollections'].toString() ?? '0',
-                    Icons.grid_view,
-                    Colors.purple,
-                  ),
+                  _buildStatCard('Carte Uniche', _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.blue),
+                  _buildStatCard('Totale Copie', _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
+                  _buildStatCard('Doppioni', ((_stats?['totalCards'] as int? ?? 0) - (_stats?['uniqueCards'] as int? ?? 0)).toString(), Icons.content_copy, Colors.orange),
+                  _buildStatCard('Valore Stimato', '€${(_stats?['totalValue'] as double? ?? 0.0).toStringAsFixed(2)}', Icons.euro, Colors.green),
+                  _buildStatCard('Collezioni Attive', _stats?['unlockedCollections'].toString() ?? '0', Icons.grid_view, Colors.purple),
                 ],
               ),
             ),

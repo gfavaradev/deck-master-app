@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'home_page.dart';
+import '../services/data_repository.dart';
+import 'main_layout.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class LoginPage extends StatefulWidget {
@@ -12,6 +13,7 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final AuthService _authService = AuthService();
+  final DataRepository _repo = DataRepository();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
@@ -29,22 +31,50 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final result = await signInMethod();
       if (result != null || signInMethod.toString().contains('signInOffline')) {
+        try {
+          await _repo.syncOnLogin();
+        } catch (e) {
+          debugPrint('Sync on login failed: $e');
+        }
         if (mounted) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const HomePage()),
+            MaterialPageRoute(builder: (context) => const MainLayout()),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Accesso annullato o non riuscito')),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        String errorMessage = 'Errore durante l\'accesso';
-        if (e.toString().contains('user-not-found')) errorMessage = 'Utente non trovato';
-        else if (e.toString().contains('wrong-password')) errorMessage = 'Password errata';
-        else if (e.toString().contains('email-already-in-use')) errorMessage = 'Email già in uso';
-        
+        String errorMessage;
+        final msg = e.toString();
+        if (msg.contains('user-not-found')) {
+          errorMessage = 'Utente non trovato';
+        } else if (msg.contains('wrong-password') || msg.contains('invalid-credential')) {
+          errorMessage = 'Credenziali non valide';
+        } else if (msg.contains('email-already-in-use')) {
+          errorMessage = 'Email già in uso';
+        } else if (msg.contains('popup-closed-by-user') || msg.contains('cancelled')) {
+          errorMessage = 'Accesso annullato';
+        } else if (msg.contains('popup-blocked')) {
+          errorMessage = 'Popup bloccato dal browser. Consenti i popup per questo sito.';
+        } else if (msg.contains('unauthorized-domain')) {
+          errorMessage = 'Dominio non autorizzato in Firebase Console';
+        } else if (msg.contains('network')) {
+          errorMessage = 'Errore di rete. Controlla la connessione.';
+        } else {
+          errorMessage = 'Errore: $msg';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
+          SnackBar(
+            content: Text(errorMessage),
+            duration: const Duration(seconds: 6),
+          ),
         );
       }
     } finally {
@@ -110,7 +140,7 @@ class _LoginPageState extends State<LoginPage> {
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 10,
                         offset: const Offset(0, 5),
                       ),
@@ -252,7 +282,7 @@ class _LoginPageState extends State<LoginPage> {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 8,
               offset: const Offset(0, 4),
             ),

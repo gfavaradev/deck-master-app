@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
+import '../services/sync_service.dart';
 import 'card_list_page.dart';
 
 class AlbumListPage extends StatefulWidget {
@@ -20,11 +22,21 @@ class AlbumListPage extends StatefulWidget {
 class _AlbumListPageState extends State<AlbumListPage> {
   final DataRepository _dbHelper = DataRepository();
   List<AlbumModel> _albums = [];
+  StreamSubscription<String>? _syncSub;
 
   @override
   void initState() {
     super.initState();
     _refreshAlbums();
+    _syncSub = SyncService().onRemoteChange.listen((_) {
+      if (mounted) _refreshAlbums();
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _refreshAlbums() async {
@@ -79,21 +91,45 @@ class _AlbumListPageState extends State<AlbumListPage> {
     );
   }
 
-  Color _getOccupancyColor(int current, int max) {
-    if (max == 0) return Colors.green;
-    double ratio = current / max;
-    if (ratio >= 1.0) return Colors.red;
-    if (ratio >= 0.6) return Colors.amber;
-    return Colors.green;
+  void _showDeleteConfirmation(AlbumModel album) {
+    final pageContext = context;
+    showDialog(
+      context: pageContext,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Elimina Album'),
+        content: Text(
+          album.currentCount > 0
+              ? 'Sei sicuro di voler eliminare "${album.name}"?\n\n'
+                  'Verranno eliminate anche tutte le ${album.currentCount} carte contenute in questo album.\n\n'
+                  'Questa azione non può essere annullata.'
+              : 'Sei sicuro di voler eliminare "${album.name}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _dbHelper.deleteAlbum(album.id!);
+              if (!pageContext.mounted) return;
+              _refreshAlbums();
+              ScaffoldMessenger.of(pageContext).showSnackBar(
+                SnackBar(content: Text('Album "${album.name}" eliminato')),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Elimina', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Album ${widget.collectionName}'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
       body: _albums.isEmpty
           ? const Center(child: Text('Nessun album creato.'))
           : ListView.builder(
@@ -106,21 +142,29 @@ class _AlbumListPageState extends State<AlbumListPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => CardListPage(
-                          collectionName: widget.collectionName,
-                          collectionKey: widget.collectionKey,
-                          albumId: album.id,
+                        builder: (context) => Scaffold(
+                          appBar: AppBar(
+                            title: Text(album.name),
+                            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+                          ),
+                          body: CardListPage(
+                            collectionName: widget.collectionName,
+                            collectionKey: widget.collectionKey,
+                            albumId: album.id,
+                          ),
                         ),
                       ),
                     );
                   },
-                  title: Text(album.name),
-                  subtitle: Text(
-                    'Occupazione: ${album.currentCount}/${album.maxCapacity} carte',
-                    style: TextStyle(
-                      color: _getOccupancyColor(album.currentCount, album.maxCapacity),
-                      fontWeight: FontWeight.bold,
-                    ),
+                  title: Row(
+                    children: [
+                      Text(album.name),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${album.currentCount}/${album.maxCapacity}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      ),
+                    ],
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -128,10 +172,7 @@ class _AlbumListPageState extends State<AlbumListPage> {
                       IconButton(icon: const Icon(Icons.edit), onPressed: () => _showAddAlbumDialog(album: album)),
                       IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () async {
-                          await _dbHelper.deleteAlbum(album.id!);
-                          if (mounted) _refreshAlbums();
-                        },
+                        onPressed: () => _showDeleteConfirmation(album),
                       ),
                     ],
                   ),

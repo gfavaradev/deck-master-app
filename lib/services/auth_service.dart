@@ -1,14 +1,23 @@
+import 'dart:io' show Platform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'package:deck_master/services/user_service.dart';
+import 'package:deck_master/services/database_helper.dart';
+import 'package:deck_master/services/sync_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  final UserService _userService = UserService();
   static const String _offlineKey = 'is_offline_mode';
   bool _isGoogleInitialized = false;
+
+  // Platform support checks
+  bool get isFacebookAuthSupported => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+  bool get isAppleSignInSupported => !kIsWeb && (Platform.isIOS || Platform.isMacOS);
 
   Stream<User?> get user => _auth.authStateChanges();
 
@@ -33,37 +42,82 @@ class AuthService {
 
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      await _ensureGoogleInitialized();
-      final googleUser = await _googleSignIn.authenticate();
+      UserCredential userCredential;
 
-      final googleAuth = await googleUser.authentication;
-      
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        idToken: googleAuth.idToken,
-      );
+      if (kIsWeb) {
+        // Web: signInWithPopup apre un popup OAuth (supportato da firebase_auth_web)
+        final googleProvider = GoogleAuthProvider();
+        userCredential = await _auth.signInWithPopup(googleProvider);
+      } else if (!kIsWeb && Platform.isWindows) {
+        // Windows desktop: apre il browser per OAuth
+        final googleProvider = GoogleAuthProvider();
+        userCredential = await _auth.signInWithProvider(googleProvider);
+      } else {
+        // Mobile (Android / iOS): use GoogleSignIn package
+        await _ensureGoogleInitialized();
+        final googleUser = await _googleSignIn.authenticate();
+        final googleAuth = googleUser.authentication;
+        final credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
+        userCredential = await _auth.signInWithCredential(credential);
+      }
 
-      final userCredential = await _auth.signInWithCredential(credential);
       await setOfflineMode(false);
+
+      // Create or update user document in Firestore
+      final user = userCredential.user;
+      if (user != null) {
+        final userExists = await _userService.userExists(user.uid);
+        if (!userExists) {
+          await _userService.createUser(
+            uid: user.uid,
+            email: user.email ?? '',
+            displayName: user.displayName,
+            photoUrl: user.photoURL,
+          );
+        } else {
+          await _userService.updateLastLogin(user.uid);
+        }
+      }
+
       return userCredential;
     } on FirebaseAuthException catch (e) {
       debugPrint('Firebase Auth Error: [${e.code}] ${e.message}');
-      return null;
+      rethrow;
     } catch (e) {
       debugPrint('Google Sign-In Error: $e');
-      if (e.toString().contains('16')) {
-        debugPrint('TIP: Check if SHA-1 fingerprint is correctly registered in Firebase Console.');
-      }
-      return null;
+      rethrow;
     }
   }
 
   Future<UserCredential?> signInWithFacebook() async {
+    if (!isFacebookAuthSupported) {
+      debugPrint('Facebook authentication is not supported on this platform (${kIsWeb ? 'Web' : Platform.operatingSystem})');
+      return null;
+    }
+
     try {
       final LoginResult result = await FacebookAuth.instance.login();
       if (result.status == LoginStatus.success) {
         final AuthCredential credential = FacebookAuthProvider.credential(result.accessToken!.tokenString);
         final userCredential = await _auth.signInWithCredential(credential);
         await setOfflineMode(false);
+
+        // Create or update user document in Firestore
+        final user = userCredential.user;
+        if (user != null) {
+          final userExists = await _userService.userExists(user.uid);
+          if (!userExists) {
+            await _userService.createUser(
+              uid: user.uid,
+              email: user.email ?? '',
+              displayName: user.displayName,
+              photoUrl: user.photoURL,
+            );
+          } else {
+            await _userService.updateLastLogin(user.uid);
+          }
+        }
+
         return userCredential;
       }
       return null;
@@ -84,6 +138,13 @@ class AuthService {
     try {
       final userCredential = await _auth.signInWithEmailAndPassword(email: email, password: password);
       await setOfflineMode(false);
+
+      // Update last login
+      final user = userCredential.user;
+      if (user != null) {
+        await _userService.updateLastLogin(user.uid);
+      }
+
       return userCredential;
     } on FirebaseAuthException catch (e) {
       debugPrint('Firebase Auth Error: [${e.code}] ${e.message}');
@@ -98,6 +159,18 @@ class AuthService {
     try {
       final userCredential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
       await setOfflineMode(false);
+
+      // Create user document in Firestore with default 'user' role
+      final user = userCredential.user;
+      if (user != null) {
+        await _userService.createUser(
+          uid: user.uid,
+          email: user.email ?? email,
+          displayName: user.displayName,
+          photoUrl: user.photoURL,
+        );
+      }
+
       return userCredential;
     } on FirebaseAuthException catch (e) {
       debugPrint('Firebase Auth Error: [${e.code}] ${e.message}');
@@ -109,16 +182,23 @@ class AuthService {
   }
 
   Future<void> signOut() async {
-    try {
-      await _googleSignIn.signOut();
-    } catch (e) {
-      debugPrint('Error during Google signOut: $e');
+    SyncService().stopListening();
+
+    // GoogleSignIn package is only used on mobile — skip on web
+    if (!kIsWeb) {
+      try {
+        await _googleSignIn.signOut();
+      } catch (e) {
+        debugPrint('Error during Google signOut: $e');
+      }
     }
 
-    try {
-      await FacebookAuth.instance.logOut();
-    } catch (e) {
-      debugPrint('Error during Facebook logOut: $e');
+    if (isFacebookAuthSupported) {
+      try {
+        await FacebookAuth.instance.logOut();
+      } catch (e) {
+        debugPrint('Error during Facebook logOut: $e');
+      }
     }
 
     try {
@@ -127,6 +207,25 @@ class AuthService {
       debugPrint('Error during Firebase signOut: $e');
     }
 
+    // SQLite is not available on web — skip local data clear
+    if (!kIsWeb) {
+      try {
+        final dbHelper = DatabaseHelper();
+        await dbHelper.clearUserData();
+        debugPrint('User personal data cleared on logout (albums, cards, decks)');
+      } catch (e) {
+        debugPrint('Error clearing user data: $e');
+      }
+    }
+
     await setOfflineMode(false);
   }
+
+  /// Check if current user is administrator
+  Future<bool> isCurrentUserAdmin() async {
+    return await _userService.isCurrentUserAdmin();
+  }
+
+  /// Get UserService instance for advanced user management
+  UserService get userService => _userService;
 }

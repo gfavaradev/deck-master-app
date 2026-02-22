@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/card_model.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
+import '../services/sync_service.dart';
 import '../widgets/card_item.dart';
 import '../widgets/collection_summary.dart';
 import '../widgets/card_dialogs.dart';
@@ -30,11 +32,22 @@ class _CardListPageState extends State<CardListPage> {
   List<AlbumModel> _availableAlbums = [];
   bool _isGridView = false;
   final TextEditingController _searchController = TextEditingController();
+  StreamSubscription<String>? _syncSub;
 
   @override
   void initState() {
     super.initState();
     _refreshCards();
+    _syncSub = SyncService().onRemoteChange.listen((_) {
+      if (mounted) _refreshCards();
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSub?.cancel();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _refreshCards() async {
@@ -51,9 +64,11 @@ class _CardListPageState extends State<CardListPage> {
     if (widget.albumId != null) {
       // Se siamo in un album specifico, mostriamo solo le carte di quell'album
       processedCards = data.where((c) => c.albumId == widget.albumId).toList();
+      debugPrint('🔍 Album View - Album ID: ${widget.albumId}, Carte trovate: ${processedCards.length}/${data.length}');
     } else {
       // Vista generale: escludi le carte dall'album "Doppioni"
       processedCards = data.where((c) => !doppioniIds.contains(c.albumId)).toList();
+      debugPrint('🔍 Vista Generale - Carte (escluso Doppioni): ${processedCards.length}/${data.length}');
     }
 
     setState(() {
@@ -69,6 +84,13 @@ class _CardListPageState extends State<CardListPage> {
       _filteredCards = _allCards
           .where((card) => card.name.toLowerCase().contains(query.toLowerCase()))
           .toList();
+
+      // Sort by serialNumber ascending (like catalog)
+      _filteredCards.sort((a, b) {
+        final serialA = a.serialNumber.toLowerCase();
+        final serialB = b.serialNumber.toLowerCase();
+        return serialA.compareTo(serialB);
+      });
     });
   }
 
@@ -76,7 +98,7 @@ class _CardListPageState extends State<CardListPage> {
     // Gestione carte dal catalogo (non ancora in un album)
     if (card.albumId == -1) {
       if (delta <= 0) return;
-      
+
       final int? selectedId = await showDialog<int>(
         context: context,
         builder: (context) => AlertDialog(
@@ -91,24 +113,54 @@ class _CardListPageState extends State<CardListPage> {
         ),
       );
 
-      if (selectedId != null) {
-        await _repo.insertCard(card.copyWith(
-          resetId: true,
-          albumId: selectedId,
-          quantity: delta,
-        ));
-        _refreshCards();
-      }
+      if (!context.mounted || selectedId == null) return;
+      await _repo.insertCard(card.copyWith(
+        resetId: true,
+        albumId: selectedId,
+        quantity: delta,
+      ));
+      _refreshCards();
       return;
     }
 
-    final album = _availableAlbums.firstWhere((a) => a.id == card.albumId);
+    final album = _availableAlbums.firstWhere(
+      (a) => a.id == card.albumId,
+      orElse: () => AlbumModel(name: 'Sconosciuto', collection: card.collection, maxCapacity: 0),
+    );
     final isDoppioni = album.name == 'Doppioni';
 
+    // Minus on a non-doppioni card: drain doppioni first, floor main at 1
+    if (delta < 0 && !isDoppioni) {
+      if (widget.albumId == null) {
+        // General view: check doppioni list for matching card
+        final doppioniMatch = _doppioniCards.where((c) =>
+          c.name.toLowerCase() == card.name.toLowerCase() &&
+          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase()
+        ).toList();
+
+        if (doppioniMatch.isNotEmpty) {
+          final doppioniCard = doppioniMatch.first;
+          final newDoppioniQty = doppioniCard.quantity - 1;
+          if (newDoppioniQty <= 0) {
+            await _repo.deleteCard(doppioniCard.id!);
+          } else {
+            await _repo.updateCard(doppioniCard.copyWith(quantity: newDoppioniQty));
+          }
+          _refreshCards();
+          return;
+        }
+        // No doppioni left: floor the main card at 1, do nothing
+        return;
+      } else {
+        // Album view: floor the card at 1
+        if (card.quantity + delta < 1) return;
+      }
+    }
+
+    // Plus on a non-doppioni card with quantity >= 1: add to Doppioni
     if (delta > 0 && !isDoppioni && card.quantity >= 1) {
       final doppioniAlbumId = await _getOrCreateDuplicatesAlbum();
-      final existingInDoppioni = _allCards.where((c) => 
-        c.albumId == doppioniAlbumId &&
+      final existingInDoppioni = _doppioniCards.where((c) =>
         c.name.toLowerCase() == card.name.toLowerCase() &&
         c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase()
       ).toList();
@@ -124,8 +176,8 @@ class _CardListPageState extends State<CardListPage> {
           quantity: delta,
         ));
       }
-      
-      if (!mounted) return;
+
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Doppione aggiunto all\'album "Doppioni"'), duration: Duration(seconds: 1))
       );
@@ -139,23 +191,37 @@ class _CardListPageState extends State<CardListPage> {
       return;
     }
 
-    if (delta > 0 && album.currentCount + delta > album.maxCapacity) {
-      final proceed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Capacità Superata'),
-          content: Text('Aumentare la quantità supererà la capacità massima dell\'album (${album.maxCapacity}). Vuoi procedere comunque?'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
-            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Procedi')),
-          ],
-        ),
-      );
-      if (proceed != true) return;
+    if (delta > 0 && album.id != null && album.maxCapacity > 0) {
+      final freshCount = await _repo.getCardCountByAlbum(album.id!);
+      if (freshCount + delta > album.maxCapacity) {
+        if (!context.mounted) return;
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Capacità Superata'),
+            content: Text('Aumentare la quantità supererà la capacità massima dell\'album ($freshCount/${album.maxCapacity}). Vuoi procedere comunque?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Procedi')),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+      }
     }
 
     await _repo.updateCard(card.copyWith(quantity: newQuantity));
     _refreshCards();
+  }
+
+  /// Returns the total quantity for a card: its own quantity + matching doppioni quantity
+  int _getTotalQuantity(CardModel card) {
+    final doppioniQty = _doppioniCards
+      .where((c) =>
+        c.name.toLowerCase() == card.name.toLowerCase() &&
+        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase())
+      .fold(0, (sum, c) => sum + c.quantity);
+    return card.quantity + doppioniQty;
   }
 
   Future<void> _confirmDelete(CardModel card) async {
@@ -220,6 +286,65 @@ class _CardListPageState extends State<CardListPage> {
     return _availableAlbums.firstWhere((a) => a.id == albumId, orElse: () => AlbumModel(name: 'Sconosciuto', collection: '', maxCapacity: 0)).name;
   }
 
+  Widget _buildAlbumBanner() {
+    final album = _availableAlbums.firstWhere(
+      (a) => a.id == widget.albumId,
+      orElse: () => AlbumModel(name: 'Album', collection: '', maxCapacity: 0),
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        border: Border(bottom: BorderSide(color: Colors.blue.shade200)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.book, color: Colors.blue.shade700, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  album.name,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade900,
+                  ),
+                ),
+                Text(
+                  'Stai visualizzando solo le carte di questo album',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade100,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${_allCards.length} carte',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue.shade900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mainValue = _filteredCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
@@ -233,18 +358,70 @@ class _CardListPageState extends State<CardListPage> {
 
     return Column(
       children: [
+        if (widget.albumId != null) _buildAlbumBanner(),
         Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(hintText: 'Cerca carta...', prefixIcon: const Icon(Icons.search), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
-            onChanged: _filterCards,
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Cerca carta...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onChanged: _filterCards,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.list, color: !_isGridView ? Colors.deepPurple : Colors.grey),
+                      onPressed: () {
+                        setState(() => _isGridView = false);
+                      },
+                      tooltip: 'Vista Lista',
+                    ),
+                    Container(width: 1, height: 24, color: Colors.grey.shade300),
+                    IconButton(
+                      icon: Icon(Icons.grid_view, color: _isGridView ? Colors.deepPurple : Colors.grey),
+                      onPressed: () {
+                        setState(() => _isGridView = true);
+                      },
+                      tooltip: 'Vista Griglia',
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         CollectionSummary(uniqueCards: uniqueCards, duplicates: duplicates, totalCards: totalCards, totalValue: totalValue),
         Expanded(
           child: _filteredCards.isEmpty
-              ? const Center(child: Text('Nessuna carta trovata. Usa il Catalogo per aggiungere carte.'))
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.albumId != null
+                          ? 'Nessuna carta in questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
+                          : 'Nessuna carta trovata.\nUsa il Catalogo per aggiungere carte.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                )
               : _isGridView ? _buildGrid() : _buildList(),
         ),
       ],
@@ -256,7 +433,16 @@ class _CardListPageState extends State<CardListPage> {
       itemCount: _filteredCards.length,
       itemBuilder: (context, index) {
         final card = _filteredCards[index];
-        return CardListItem(card: card, albumName: _getAlbumName(card.albumId), onUpdateQuantity: _updateQuantity, onDelete: _confirmDelete, onTap: _showDetails);
+        final inAlbum = widget.albumId != null;
+        return CardListItem(
+          card: card,
+          albumName: _getAlbumName(card.albumId),
+          totalQuantity: inAlbum ? card.quantity : _getTotalQuantity(card),
+          showControls: !inAlbum,
+          onUpdateQuantity: _updateQuantity,
+          onDelete: _confirmDelete,
+          onTap: _showDetails,
+        );
       },
     );
   }
@@ -264,11 +450,24 @@ class _CardListPageState extends State<CardListPage> {
   Widget _buildGrid() {
     return GridView.builder(
       padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.75),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 0.65, // Same as catalog
+      ),
       itemCount: _filteredCards.length,
       itemBuilder: (context, index) {
         final card = _filteredCards[index];
-        return CardGridItem(card: card, albumName: _getAlbumName(card.albumId), onUpdateQuantity: _updateQuantity, onTap: _showDetails);
+        final inAlbum = widget.albumId != null;
+        return CardGridItem(
+          card: card,
+          albumName: _getAlbumName(card.albumId),
+          totalQuantity: inAlbum ? card.quantity : _getTotalQuantity(card),
+          showControls: !inAlbum,
+          onUpdateQuantity: _updateQuantity,
+          onTap: _showDetails,
+        );
       },
     );
   }

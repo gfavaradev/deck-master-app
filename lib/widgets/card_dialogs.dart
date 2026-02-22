@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/card_model.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
@@ -51,10 +52,11 @@ class CardDialogs {
     required String collectionName,
     required String collectionKey,
     required List<AlbumModel> availableAlbums,
-    required Function() onCardAdded,
+    required Function(int albumId) onCardAdded,
     required Future<int> Function() getOrCreateDuplicatesAlbum,
     required List<CardModel> allCards,
     Map<String, dynamic>? initialCatalogCard,
+    int? lastUsedAlbumId,
   }) {
     if (availableAlbums.isEmpty) {
       showDialog(
@@ -75,7 +77,7 @@ class CardDialogs {
                       collectionKey: collectionKey,
                     ),
                   ),
-                ).then((_) => onCardAdded());
+                ).then((_) => onCardAdded(availableAlbums.first.id!));
               },
               child: const Text('Gestisci Album'),
             ),
@@ -95,6 +97,7 @@ class CardDialogs {
         initialCatalogCard: initialCatalogCard,
         onCardAdded: onCardAdded,
         getOrCreateDuplicatesAlbum: getOrCreateDuplicatesAlbum,
+        lastUsedAlbumId: lastUsedAlbumId,
       ),
     );
   }
@@ -106,8 +109,9 @@ class _AddCardDialog extends StatefulWidget {
   final List<AlbumModel> availableAlbums;
   final List<CardModel> allCards;
   final Map<String, dynamic>? initialCatalogCard;
-  final Function() onCardAdded;
+  final Function(int albumId) onCardAdded;
   final Future<int> Function() getOrCreateDuplicatesAlbum;
+  final int? lastUsedAlbumId;
 
   const _AddCardDialog({
     required this.collectionName,
@@ -117,6 +121,7 @@ class _AddCardDialog extends StatefulWidget {
     this.initialCatalogCard,
     required this.onCardAdded,
     required this.getOrCreateDuplicatesAlbum,
+    this.lastUsedAlbumId,
   });
 
   @override
@@ -137,7 +142,14 @@ class _AddCardDialogState extends State<_AddCardDialog> {
 
   Map<String, dynamic>? selectedCatalogCard;
   List<Map<String, dynamic>> availableSets = [];
-  String? selectedSetCode;
+  String? selectedSetCode; // composite key: setCode\x00rarity
+
+  /// Composite key that uniquely identifies a print (set + rarity).
+  String _setKey(Map<String, dynamic> set) {
+    final code = set['setCode'] ?? '';
+    final rarity = set['rarity'] ?? set['setRarity'] ?? '';
+    return '$code\x00$rarity';
+  }
 
   bool get _isYugioh => widget.collectionKey == 'yugioh';
 
@@ -159,7 +171,11 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     quantityController = TextEditingController(text: '1');
     valueController = TextEditingController(text: '0.0');
     descController = TextEditingController(text: displayDesc);
-    selectedAlbumId = widget.availableAlbums.first.id;
+    final hasLastUsed = widget.lastUsedAlbumId != null &&
+        widget.availableAlbums.any((a) => a.id == widget.lastUsedAlbumId);
+    selectedAlbumId = hasLastUsed
+        ? widget.lastUsedAlbumId
+        : widget.availableAlbums.first.id;
     selectedCatalogCard = initial;
 
     _initAsync();
@@ -183,12 +199,15 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       }
       final cardId = selectedCatalogCard!['id'];
       if (cardId != null) {
-        _updateSets(cardId, preSelectedSetCode: preSelectedSetCode);
+        final preSelectedRarity = _isYugioh
+            ? (selectedCatalogCard!['rarityCode'] ?? selectedCatalogCard!['setRarity'])
+            : selectedCatalogCard!['setRarity'];
+        _updateSets(cardId, preSelectedSetCode: preSelectedSetCode, preSelectedRarity: preSelectedRarity?.toString());
       }
     }
   }
 
-  Future<void> _updateSets(dynamic cardId, {String? preSelectedSetCode}) async {
+  Future<void> _updateSets(dynamic cardId, {String? preSelectedSetCode, String? preSelectedRarity}) async {
     List<Map<String, dynamic>> sets;
     if (_isYugioh) {
       sets = await _dbHelper.getYugiohCardPrints(
@@ -203,14 +222,22 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       availableSets = sets;
       if (sets.isNotEmpty) {
         if (preSelectedSetCode != null) {
-          final found = sets.where((s) => s['setCode'] == preSelectedSetCode).toList();
-          selectedSetCode = found.isNotEmpty ? found.first['setCode'] : sets.first['setCode'];
+          List<Map<String, dynamic>> found = [];
+          // Try exact match on both setCode + rarity first
+          if (preSelectedRarity != null) {
+            found = sets.where((s) =>
+              s['setCode'] == preSelectedSetCode &&
+              (s['rarity'] == preSelectedRarity || s['setRarity'] == preSelectedRarity)
+            ).toList();
+          }
+          // Fall back to setCode-only match
+          if (found.isEmpty) {
+            found = sets.where((s) => s['setCode'] == preSelectedSetCode).toList();
+          }
+          selectedSetCode = found.isNotEmpty ? _setKey(found.first) : _setKey(sets.first);
         } else {
-          selectedSetCode = sets.first['setCode'];
-        }
-        if (preSelectedSetCode == null) {
-          final setToApply = sets.firstWhere((s) => s['setCode'] == selectedSetCode);
-          _applySet(setToApply);
+          selectedSetCode = _setKey(sets.first);
+          _applySet(sets.first);
         }
       } else {
         selectedSetCode = null;
@@ -333,7 +360,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                       ? (set['localizedRarity'] ?? set['rarity'] ?? '')
                       : (set['setRarity'] ?? '');
                   return DropdownMenuItem<String>(
-                    value: code,
+                    value: _setKey(set),
                     child: Text('$displayCode - $rarity'),
                   );
                 }).toList(),
@@ -341,7 +368,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                   setState(() {
                     selectedSetCode = val;
                     if (val != null) {
-                      final setToApply = availableSets.firstWhere((s) => s['setCode'] == val);
+                      final setToApply = availableSets.firstWhere((s) => _setKey(s) == val);
                       _applySet(setToApply);
                     }
                   });
@@ -445,6 +472,10 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     
     if (!mounted) return;
     Navigator.pop(context);
-    widget.onCardAdded();
+    // Save last used album for this collection
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setInt('last_album_id_${widget.collectionKey}', albumIdToUse);
+    });
+    widget.onCardAdded(albumIdToUse);
   }
 }

@@ -12,12 +12,14 @@ class MainLayout extends StatefulWidget {
   final int initialIndex;
   final String? collectionKey;
   final String? collectionName;
+  final String? updateNotification;
 
   const MainLayout({
     super.key,
     this.initialIndex = 0,
     this.collectionKey,
     this.collectionName,
+    this.updateNotification,
   });
 
   @override
@@ -35,13 +37,25 @@ class _MainLayoutState extends State<MainLayout> {
     _currentIndex = widget.initialIndex;
     _currentCollectionKey = widget.collectionKey;
     _currentCollectionName = widget.collectionName;
+
+    if (widget.updateNotification != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('App aggiornata alla versione ${widget.updateNotification}'),
+              duration: const Duration(seconds: 4),
+              backgroundColor: Colors.green.shade700,
+            ),
+          );
+        }
+      });
+    }
   }
 
   void _onNavTap(int index) {
-    final bool inCollection = _currentCollectionKey != null;
-
     // In collection mode, index 0 = Home (exit collection)
-    if (inCollection && index == 0) {
+    if (_currentCollectionKey != null && index == 0) {
       _exitCollection();
     } else {
       setState(() {
@@ -62,36 +76,18 @@ class _MainLayoutState extends State<MainLayout> {
     setState(() {
       _currentCollectionKey = null;
       _currentCollectionName = null;
-      _currentIndex = 0; // Torna alla home
+      _currentIndex = 0;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Determina le pagine disponibili in base allo stato
     final bool inCollection = _currentCollectionKey != null;
 
     Widget currentPage;
-    List<BottomNavigationBarItem> navItems;
 
     if (inCollection) {
-      // Modalità collezione: Home, Carte, Catalogo, Album, Deck, Stats, Settings
-      navItems = const [
-        BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.style), label: 'Carte'),
-        BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Catalogo'),
-        BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Album'),
-        BottomNavigationBarItem(icon: Icon(Icons.deck), label: 'Deck'),
-        BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Stats'),
-        BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Impostazioni'),
-      ];
-
       switch (_currentIndex) {
-        case 0:
-          currentPage = HomePageSimple(
-            onCollectionSelected: _onCollectionSelected,
-          );
-          break;
         case 1:
           currentPage = CardListPage(
             collectionKey: _currentCollectionKey!,
@@ -116,54 +112,72 @@ class _MainLayoutState extends State<MainLayout> {
             collectionName: _currentCollectionName!,
           );
           break;
-        case 5:
-          currentPage = const StatsPage();
-          break;
-        case 6:
-          currentPage = const SettingsPage();
-          break;
         default:
-          currentPage = HomePageSimple(
-            onCollectionSelected: _onCollectionSelected,
+          currentPage = CardListPage(
+            collectionKey: _currentCollectionKey!,
+            collectionName: _currentCollectionName!,
           );
       }
     } else {
-      // Modalità normale: Home, Stats, Settings
-      navItems = const [
-        BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Stats'),
-        BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Impostazioni'),
-      ];
+      currentPage = HomePageSimple(onCollectionSelected: _onCollectionSelected);
+    }
 
-      switch (_currentIndex) {
-        case 0:
-          currentPage = HomePageSimple(
-            onCollectionSelected: _onCollectionSelected,
-          );
-          break;
-        case 1:
-          currentPage = const StatsPage();
-          break;
-        case 2:
-          currentPage = const SettingsPage();
-          break;
-        default:
-          currentPage = HomePageSimple(
-            onCollectionSelected: _onCollectionSelected,
-          );
-      }
+    String appBarTitle;
+    if (!inCollection) {
+      appBarTitle = 'Deck Master';
+    } else {
+      const titles = ['Home', 'Le mie Carte', 'Catalogo', 'Album', 'Deck'];
+      appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';
     }
 
     return Scaffold(
-      body: currentPage,
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Colors.grey,
-        items: navItems,
-        onTap: _onNavTap,
+      appBar: AppBar(
+        leading: inCollection
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Torna alla Home',
+                onPressed: _exitCollection,
+              )
+            : null,
+        title: Text(appBarTitle),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'Statistiche',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const StatsPage()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Impostazioni',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SettingsPage()),
+            ),
+          ),
+        ],
       ),
+      body: currentPage,
+      // Bottom nav only shown when inside a collection (Home, Carte, Catalogo, Album, Deck)
+      bottomNavigationBar: inCollection
+          ? BottomNavigationBar(
+              currentIndex: _currentIndex,
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: Theme.of(context).colorScheme.primary,
+              unselectedItemColor: Colors.grey,
+              items: const [
+                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+                BottomNavigationBarItem(icon: Icon(Icons.style), label: 'Carte'),
+                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Catalogo'),
+                BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Album'),
+                BottomNavigationBarItem(icon: Icon(Icons.deck), label: 'Deck'),
+              ],
+              onTap: _onNavTap,
+            )
+          : null,
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/collection_model.dart';
 import '../services/data_repository.dart';
@@ -41,9 +42,13 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   Future<void> _unlock(CollectionModel collection) async {
     await _repo.unlockCollection(collection.key);
 
-    // If unlocking Yu-Gi-Oh, download cards from Firestore
-    if (collection.key == 'yugioh') {
-      await _downloadYugiohCards();
+    // If unlocking Yu-Gi-Oh, download catalog only if not already present/up to date
+    if (!kIsWeb && collection.key == 'yugioh') {
+      final check = await _repo.checkCatalogUpdates();
+      final needsDownload = check['needsUpdate'] == true || check['isFirstDownload'] == true;
+      if (needsDownload) {
+        await _downloadYugiohCards();
+      }
     }
 
     _loadCollections();
@@ -136,52 +141,46 @@ class _HomePageSimpleState extends State<HomePageSimple> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Deck Master'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_unlockedCollections.isNotEmpty) ...[
-                    _buildSectionTitle('Le mie Collezioni'),
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        childAspectRatio: 1.2,
-                      ),
-                      itemCount: _unlockedCollections.length,
-                      itemBuilder: (context, index) =>
-                          _buildCollectionTile(_unlockedCollections[index], true),
-                    ),
-                    const SizedBox(height: 30),
-                  ],
-                  _buildSectionTitle('Collezioni Disponibili'),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
-                      childAspectRatio: 1.2,
-                    ),
-                    itemCount: _availableCollections.length,
-                    itemBuilder: (context, index) =>
-                        _buildCollectionTile(_availableCollections[index], false),
-                  ),
-                ],
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_unlockedCollections.isNotEmpty) ...[
+            _buildSectionTitle('Le mie Collezioni'),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1.2,
               ),
+              itemCount: _unlockedCollections.length,
+              itemBuilder: (context, index) =>
+                  _buildCollectionTile(_unlockedCollections[index], true),
             ),
+            const SizedBox(height: 30),
+          ],
+          _buildSectionTitle('Collezioni Disponibili'),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 1.2,
+            ),
+            itemCount: _availableCollections.length,
+            itemBuilder: (context, index) =>
+                _buildCollectionTile(_availableCollections[index], false),
+          ),
+        ],
+      ),
     );
   }
 
