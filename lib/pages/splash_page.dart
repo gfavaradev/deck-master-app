@@ -142,27 +142,32 @@ class _SplashPageState extends State<SplashPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF161929),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset('assets/icon/logo_dm_carte_collezionabili_1.png', height: 120),
+            Image.asset('assets/icon/dm_logo_no_white.png', height: 180),
             const SizedBox(height: 20),
             const Text(
               'Deck Master',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             const SizedBox(height: 10),
             if (_downloadProgress != null)
               SizedBox(
                 width: 200,
-                child: LinearProgressIndicator(value: _downloadProgress),
+                child: LinearProgressIndicator(
+                  value: _downloadProgress,
+                  color: Color(0xFFD4AF37),
+                  backgroundColor: Colors.white24,
+                ),
               )
             else
-              const CircularProgressIndicator(),
+              const CircularProgressIndicator(color: Color(0xFFD4AF37)),
             if (_statusMessage.isNotEmpty) ...[
               const SizedBox(height: 10),
-              Text(_statusMessage, style: const TextStyle(color: Colors.grey)),
+              Text(_statusMessage, style: const TextStyle(color: Colors.white54)),
             ],
           ],
         ),

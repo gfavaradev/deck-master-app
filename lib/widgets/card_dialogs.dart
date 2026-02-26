@@ -313,7 +313,9 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Album ─────────────────────────────────────────────────────
             DropdownButtonFormField<int>(
               value: selectedAlbumId,
               decoration: const InputDecoration(labelText: 'Seleziona Album'),
@@ -325,7 +327,9 @@ class _AddCardDialogState extends State<_AddCardDialog> {
               }).toList(),
               onChanged: (val) => setState(() => selectedAlbumId = val),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 20),
+
+            // ── Ricerca / Carta selezionata ────────────────────────────────
             if (selectedCatalogCard == null)
               TextField(
                 decoration: const InputDecoration(
@@ -371,20 +375,11 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 subtitle: Text(selectedCatalogCard!['type'] ?? ''),
-                trailing: IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () => setState(() {
-                    selectedCatalogCard = null;
-                    availableSets = [];
-                    selectedSetCode = null;
-                    nameController.clear();
-                    typeController.clear();
-                    descController.clear();
-                  }),
-                ),
               ),
+            const SizedBox(height: 16),
 
-            if (availableSets.isNotEmpty)
+            // ── Set / Seriale ──────────────────────────────────────────────
+            if (availableSets.isNotEmpty) ...[
               DropdownButtonFormField<String>(
                 value: selectedSetCode,
                 decoration: const InputDecoration(labelText: 'Seleziona Set / Seriale'),
@@ -411,15 +406,38 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                   });
                 },
               ),
+              const SizedBox(height: 16),
+            ],
 
+            // ── Quantità e Valore ──────────────────────────────────────────
             Row(
               children: [
-                Expanded(child: TextField(controller: quantityController, decoration: const InputDecoration(labelText: 'Quantità'), keyboardType: TextInputType.number)),
-                const SizedBox(width: 10),
-                Expanded(child: TextField(controller: valueController, decoration: const InputDecoration(labelText: 'Valore (€)'), keyboardType: TextInputType.number)),
+                Expanded(
+                  child: TextField(
+                    controller: quantityController,
+                    decoration: const InputDecoration(labelText: 'Quantità'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: valueController,
+                    decoration: const InputDecoration(labelText: 'Valore (€)'),
+                    keyboardType: TextInputType.number,
+                    readOnly: true,
+                  ),
+                ),
               ],
             ),
-            TextField(controller: descController, decoration: const InputDecoration(labelText: 'Descrizione'), maxLines: 3),
+            const SizedBox(height: 16),
+
+            // ── Descrizione ────────────────────────────────────────────────
+            TextField(
+              controller: descController,
+              decoration: const InputDecoration(labelText: 'Descrizione'),
+              maxLines: 3,
+            ),
           ],
         ),
       ),

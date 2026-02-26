@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
@@ -21,6 +23,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isOffline = false;
   bool _isDownloading = false;
   bool _isAdmin = false;
+  bool _notificationsEnabled = false;
   String _selectedLanguage = 'EN';
   String _downloadStatus = '';
   double? _downloadProgress;
@@ -31,6 +34,50 @@ class _SettingsPageState extends State<SettingsPage> {
     _checkOfflineMode();
     _loadLanguagePreference();
     _checkAdminStatus();
+    _loadNotificationPreference();
+  }
+
+  Future<void> _loadNotificationPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _notificationsEnabled = prefs.getBool('notifications_enabled') ?? false;
+      });
+    }
+  }
+
+  Future<void> _toggleNotifications(bool value) async {
+    if (value) {
+      final plugin = FlutterLocalNotificationsPlugin();
+      bool granted = false;
+
+      final android = plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (android != null) {
+        granted = await android.requestNotificationsPermission() ?? false;
+      } else {
+        final ios = plugin.resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
+        if (ios != null) {
+          granted = await ios.requestPermissions(alert: true, badge: true, sound: true) ?? false;
+        } else {
+          granted = true; // altri platform (web/desktop)
+        }
+      }
+
+      if (!granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Permesso notifiche negato. Abilitalo nelle impostazioni di sistema.')),
+          );
+        }
+        return;
+      }
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notifications_enabled', value);
+    if (mounted) setState(() => _notificationsEnabled = value);
   }
 
   Future<void> _checkOfflineMode() async {
@@ -73,35 +120,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
           _buildCatalogSection(),
           const Divider(),
-          ListTile(
-            leading: const Icon(Icons.sync),
-            title: const Text('Sincronizza Dati'),
-            subtitle: const Text('Sincronizza dati con il cloud'),
-            onTap: () async {
-              try {
-                await _repo.fullSync();
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Sincronizzazione completata!')),
-                );
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Errore sync: $e')),
-                );
-              }
-            },
-          ),
-          const ListTile(
-            leading: Icon(Icons.notifications),
-            title: Text('Notifiche'),
-            subtitle: Text('Configura le notifiche'),
-          ),
-          const ListTile(
-            leading: Icon(Icons.language),
-            title: Text('Lingua App'),
-            subtitle: Text('Italiano'),
-          ),
+          _buildGeneralSection(),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
@@ -167,6 +186,54 @@ class _SettingsPageState extends State<SettingsPage> {
         SnackBar(content: Text(msg), duration: const Duration(seconds: 5)),
       );
     }
+  }
+
+  Widget _buildGeneralSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(
+            'Generale',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.sync),
+          title: const Text('Sincronizza Dati'),
+          subtitle: const Text('Sincronizza dati con il cloud'),
+          onTap: () async {
+            try {
+              await _repo.fullSync();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Sincronizzazione completata!')),
+              );
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Errore sync: $e')),
+              );
+            }
+          },
+        ),
+        const Divider(indent: 16, endIndent: 16),
+        SwitchListTile(
+          secondary: const Icon(Icons.notifications),
+          title: const Text('Notifiche Push'),
+          subtitle: const Text('Ricevi notifiche dall\'app'),
+          value: _notificationsEnabled,
+          onChanged: _toggleNotifications,
+        ),
+        const Divider(indent: 16, endIndent: 16),
+        const ListTile(
+          leading: Icon(Icons.language),
+          title: Text('Lingua App'),
+          subtitle: Text('Italiano'),
+        ),
+      ],
+    );
   }
 
   Widget _buildCatalogSection() {

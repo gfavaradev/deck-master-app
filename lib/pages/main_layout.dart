@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 import 'home_page_simple.dart';
 import 'card_list_page.dart';
 import 'catalog_page.dart';
@@ -174,8 +175,9 @@ class _MainLayoutState extends State<MainLayout> {
           ? BottomNavigationBar(
               currentIndex: _currentIndex,
               type: BottomNavigationBarType.fixed,
-              selectedItemColor: Theme.of(context).colorScheme.primary,
-              unselectedItemColor: Colors.grey,
+              backgroundColor: AppColors.bgMedium,
+              selectedItemColor: AppColors.gold,
+              unselectedItemColor: AppColors.textHint,
               items: const [
                 BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
                 BottomNavigationBarItem(icon: Icon(Icons.style), label: 'Carte'),

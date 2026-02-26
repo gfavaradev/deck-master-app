@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/collection_model.dart';
 import '../services/data_repository.dart';
+import '../theme/app_colors.dart';
 
 /// Home page semplificata - mostra solo la griglia delle collezioni
 class HomePageSimple extends StatefulWidget {
@@ -192,17 +193,34 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
-      child: Text(
-        title,
-        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 22,
+            decoration: BoxDecoration(
+              color: AppColors.gold,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildCollectionTile(CollectionModel collection, bool isUnlocked) {
     final bool hasCatalog = _catalogAvailable.contains(collection.key);
-    Color color = _getCollectionColor(collection.key);
-    String logoUrl = _getCollectionLogoUrl(collection.key);
+    final Color color = _getCollectionColor(collection.key);
+    final String logoUrl = _getCollectionLogoUrl(collection.key);
 
     return InkWell(
       onTap: () {
@@ -213,60 +231,86 @@ class _HomePageSimpleState extends State<HomePageSimple> {
           _showUnlockDialog(collection);
         }
       },
-      child: Opacity(
-        opacity: isUnlocked ? 1.0 : 0.4,
-        child: Card(
-          elevation: isUnlocked ? 4 : 0,
-          color: isUnlocked ? Colors.white : Colors.grey.withValues(alpha: 0.1),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-            side: BorderSide(
-                color: isUnlocked ? color.withValues(alpha: 0.5) : Colors.grey),
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(15),
+          gradient: isUnlocked
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFCDD8FF), Color(0xFFDDD0FF)],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFB4BCD8), Color(0xFFC4BCD8)],
+                ),
+          border: Border.all(
+            color: isUnlocked
+                ? AppColors.gold.withValues(alpha: 0.55)
+                : const Color(0x33FFFFFF),
+            width: isUnlocked ? 1.5 : 1.0,
           ),
-          child: Stack(
-            children: [
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(15.0),
+          boxShadow: isUnlocked
+              ? [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.18),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  )
+                ]
+              : null,
+        ),
+        child: Stack(
+          children: [
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(14.0),
+                child: Opacity(
+                  opacity: isUnlocked ? 1.0 : 0.5,
                   child: Image.asset(
                     logoUrl,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => Icon(Icons.style,
-                        size: 50, color: isUnlocked ? color : Colors.grey),
+                    errorBuilder: (context, error, stackTrace) => Icon(
+                      Icons.style,
+                      size: 50,
+                      color: isUnlocked ? color : AppColors.textHint,
+                    ),
                   ),
                 ),
               ),
-              if (!hasCatalog)
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(15)),
-                    ),
-                    child: const Text(
-                      'Prossimamente',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
+            ),
+            if (!hasCatalog)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  decoration: const BoxDecoration(
+                    color: Color(0xCC0D0F1E),
+                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(15)),
+                  ),
+                  child: const Text(
+                    'Prossimamente',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.gold,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
                     ),
                   ),
-                )
-              else if (!isUnlocked)
-                const Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Icon(Icons.lock, size: 18, color: Colors.grey),
                 ),
-            ],
-          ),
+              )
+            else if (!isUnlocked)
+              const Positioned(
+                top: 8,
+                right: 8,
+                child: Icon(Icons.lock_outline, size: 18, color: AppColors.gold),
+              ),
+          ],
         ),
       ),
     );

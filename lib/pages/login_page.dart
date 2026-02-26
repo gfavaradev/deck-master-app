@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
@@ -112,16 +113,76 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.blue.shade900, Colors.blue.shade600],
+      body: Stack(
+        children: [
+          // Base gradient
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [AppColors.bgDark, Color(0xFF121526), AppColors.bgMedium],
+                stops: [0.0, 0.55, 1.0],
+              ),
+            ),
           ),
-        ),
-        child: _isSocialOnly ? _buildSocialOnlyLayout() : _buildFullLayout(),
+          // Glow blu/viola in alto (dietro il logo)
+          Positioned(
+            top: -70,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                width: 340,
+                height: 340,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [AppColors.glowBlue, Color(0x224D7FFF), Colors.transparent],
+                    stops: [0.0, 0.5, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Glow viola a sinistra (metà pagina)
+          Positioned(
+            top: 220,
+            left: -55,
+            child: Container(
+              width: 190,
+              height: 190,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [AppColors.glowPurple, Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+          // Glow dorato in basso a destra
+          Positioned(
+            bottom: -60,
+            right: -60,
+            child: Container(
+              width: 230,
+              height: 230,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [AppColors.glowGold, Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+          // Contenuto
+          SizedBox(
+            width: double.infinity,
+            child: _isSocialOnly ? _buildSocialOnlyLayout() : _buildFullLayout(),
+          ),
+        ],
       ),
     );
   }
@@ -129,74 +190,88 @@ class _LoginPageState extends State<LoginPage> {
   // ─── Layout solo social (Android / iOS) ────────────────────────────────────
 
   Widget _buildSocialOnlyLayout() {
+    final screenHeight = MediaQuery.of(context).size.height;
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 30),
-        child: Column(
-          children: [
-            const Spacer(flex: 2),
-            Image.asset('assets/icon/logo_dm_carte_collezionabili_1.png', height: 120),
-            const SizedBox(height: 16),
-            Text(
-              'Deck Master',
-              style: GoogleFonts.poppins(
-                fontSize: 38,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            Text(
-              'La tua collezione di carte',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Accedi per continuare',
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                color: Colors.white54,
-              ),
-            ),
-            const Spacer(flex: 2),
-            if (_isLoading)
-              const CircularProgressIndicator(color: Colors.white)
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: screenHeight),
+          child: IntrinsicHeight(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: Column(
                 children: [
-                  _buildSocialButton(
-                    svgAsset: 'assets/icon/google.svg',
-                    onPressed: () => _handleSignIn(_authService.signInWithGoogle),
+                  const Spacer(flex: 2),
+                  Image.asset('assets/icon/dm_logo_no_white.png', height: 160),
+                  const SizedBox(height: 16),
+                  ShaderMask(
+                    shaderCallback: (bounds) => const LinearGradient(
+                      colors: [AppColors.gold, AppColors.blue, AppColors.purple],
+                      stops: [0.0, 0.55, 1.0],
+                    ).createShader(bounds),
+                    child: Text(
+                      'Deck Master',
+                      style: GoogleFonts.poppins(
+                        fontSize: 38,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
-                  // TODO: riabilitare quando Facebook app è in modalità Live
-                  // const SizedBox(width: 24),
-                  // _buildSocialButton(
-                  //   svgAsset: 'assets/icon/facebook.svg',
-                  //   onPressed: () => _handleSignIn(_authService.signInWithFacebook),
-                  // ),
+                  Text(
+                    'La tua collezione di carte',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  const Spacer(flex: 2),
+                  Text(
+                    'Accedi per continuare',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: Colors.white54,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_isLoading)
+                    const CircularProgressIndicator(color: AppColors.gold)
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildSocialButton(
+                          svgAsset: 'assets/icon/google.svg',
+                          onPressed: () => _handleSignIn(_authService.signInWithGoogle),
+                        ),
+                        // TODO: riabilitare quando Facebook app è in modalità Live
+                        // const SizedBox(width: 24),
+                        // _buildSocialButton(
+                        //   svgAsset: 'assets/icon/facebook.svg',
+                        //   onPressed: () => _handleSignIn(_authService.signInWithFacebook),
+                        // ),
+                      ],
+                    ),
+                  const Spacer(flex: 1),
+                  TextButton(
+                    onPressed: _isLoading
+                        ? null
+                        : () => _handleSignIn(() async {
+                              await _authService.signInOffline();
+                              return true;
+                            }),
+                    child: const Text(
+                      'Continua Offline',
+                      style: TextStyle(
+                        color: Colors.white,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                 ],
               ),
-            const Spacer(flex: 1),
-            TextButton(
-              onPressed: _isLoading
-                  ? null
-                  : () => _handleSignIn(() async {
-                        await _authService.signInOffline();
-                        return true;
-                      }),
-              child: const Text(
-                'Continua Offline',
-                style: TextStyle(
-                  color: Colors.white,
-                  decoration: TextDecoration.underline,
-                ),
-              ),
             ),
-            const SizedBox(height: 24),
-          ],
+          ),
         ),
       ),
     );
@@ -212,14 +287,20 @@ class _LoginPageState extends State<LoginPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const SizedBox(height: 100),
-            Image.asset('assets/icon/logo_dm_carte_collezionabili_1.png', height: 130),
+            Image.asset('assets/icon/dm_logo_no_white.png', height: 170),
             const SizedBox(height: 20),
-            Text(
-              'Deck Master',
-              style: GoogleFonts.poppins(
-                fontSize: 40,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [AppColors.gold, AppColors.blue, AppColors.purple],
+                stops: [0.0, 0.55, 1.0],
+              ).createShader(bounds),
+              child: Text(
+                'Deck Master',
+                style: GoogleFonts.poppins(
+                  fontSize: 40,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
             ),
             const SizedBox(height: 8),
