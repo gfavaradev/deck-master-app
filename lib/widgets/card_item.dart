@@ -62,7 +62,6 @@ class CardListItem extends StatelessWidget {
             ? Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const SizedBox(width: 12),
                   IconButton(
                     icon: const Icon(Icons.remove_circle_outline, size: 20),
                     onPressed: () => onUpdateQuantity(card, -1),

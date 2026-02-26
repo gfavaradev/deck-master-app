@@ -43,13 +43,22 @@ class SyncService {
 
     _listeners.add(FirebaseFirestore.instance
         .collection('users/$userId/albums').snapshots()
-        .listen(_handleAlbumChanges));
+        .listen(
+          (s) => _handleAlbumChanges(s).catchError((e) => debugPrint('Album listener error: $e')),
+          onError: (e) => debugPrint('Album stream error: $e'),
+        ));
     _listeners.add(FirebaseFirestore.instance
         .collection('users/$userId/cards').snapshots()
-        .listen(_handleCardChanges));
+        .listen(
+          (s) => _handleCardChanges(s).catchError((e) => debugPrint('Card listener error: $e')),
+          onError: (e) => debugPrint('Card stream error: $e'),
+        ));
     _listeners.add(FirebaseFirestore.instance
         .collection('users/$userId/decks').snapshots()
-        .listen(_handleDeckChanges));
+        .listen(
+          (s) => _handleDeckChanges(s).catchError((e) => debugPrint('Deck listener error: $e')),
+          onError: (e) => debugPrint('Deck stream error: $e'),
+        ));
 
     debugPrint('Real-time listeners started for user $userId');
   }
@@ -140,7 +149,9 @@ class SyncService {
       if (change.type == DocumentChangeType.removed) {
         await db.delete('decks', where: 'firestoreId = ?', whereArgs: [change.doc.id]);
       } else {
-        final data = change.doc.data() as Map<String, dynamic>;
+        final rawData = change.doc.data();
+        if (rawData == null) continue;
+        final data = rawData as Map<String, dynamic>;
         final existing = await db.query('decks',
             where: 'firestoreId = ?', whereArgs: [change.doc.id]);
         if (existing.isNotEmpty) {

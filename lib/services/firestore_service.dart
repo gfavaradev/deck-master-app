@@ -92,6 +92,51 @@ class FirestoreService {
     }
   }
 
+  /// Fetch specific catalog chunks from Firestore (for incremental/delta updates).
+  /// Only the chunks listed in [chunkIds] are downloaded.
+  Future<List<Map<String, dynamic>>> fetchCatalogChunks(
+    String catalogName,
+    List<String> chunkIds, {
+    void Function(int current, int total)? onProgress,
+  }) async {
+    try {
+      AppLogger.info('Fetching ${chunkIds.length} chunks for $catalogName', tag: 'FirestoreService');
+      final List<Map<String, dynamic>> allCards = [];
+      final total = chunkIds.length;
+
+      for (int i = 0; i < total; i++) {
+        final chunkId = chunkIds[i];
+        final doc = await _firestore
+            .collection(FirestorePaths.catalog(catalogName))
+            .doc(FirestoreConstants.catalogChunks)
+            .collection(FirestoreConstants.catalogItems)
+            .doc(chunkId)
+            .get();
+
+        if (doc.exists && doc.data() != null) {
+          final List<dynamic> cards = doc.data()!['cards'] ?? [];
+          for (var card in cards) {
+            allCards.add(Map<String, dynamic>.from(card as Map));
+          }
+        }
+        onProgress?.call(i + 1, total);
+      }
+
+      AppLogger.success(
+        'Fetched ${allCards.length} cards from ${chunkIds.length} chunks of $catalogName',
+        tag: 'FirestoreService',
+      );
+      return allCards;
+    } catch (e) {
+      AppLogger.error(
+        'Error fetching catalog chunks for $catalogName',
+        tag: 'FirestoreService',
+        error: e,
+      );
+      rethrow;
+    }
+  }
+
   /// Backward compatibility: Fetch Yu-Gi-Oh catalog
   @Deprecated('Use fetchCatalog(CatalogConstants.yugioh) instead')
   Future<List<Map<String, dynamic>>> fetchYugiohCatalog({

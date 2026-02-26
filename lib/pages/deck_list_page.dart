@@ -2,6 +2,62 @@ import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
 import 'deck_detail_page.dart';
 
+/// Dialog separato come StatefulWidget: il TextEditingController viene
+/// disposto da Flutter nel metodo dispose() al momento corretto (dopo
+/// l'animazione di chiusura), evitando l'assertion _dependents.isEmpty.
+class _AddDeckDialog extends StatefulWidget {
+  const _AddDeckDialog();
+
+  @override
+  State<_AddDeckDialog> createState() => _AddDeckDialogState();
+}
+
+class _AddDeckDialogState extends State<_AddDeckDialog> {
+  final _nameController = TextEditingController();
+  String? _nameError;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Nuovo Deck'),
+      content: TextField(
+        controller: _nameController,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: 'Nome Deck',
+          errorText: _nameError,
+        ),
+        onChanged: (_) {
+          if (_nameError != null) setState(() => _nameError = null);
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annulla'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final name = _nameController.text.trim();
+            if (name.isEmpty) {
+              setState(() => _nameError = 'Il nome è obbligatorio');
+              return;
+            }
+            Navigator.pop(context, name);
+          },
+          child: const Text('Crea'),
+        ),
+      ],
+    );
+  }
+}
+
 class DeckListPage extends StatefulWidget {
   final String collectionName;
   final String collectionKey;
@@ -28,37 +84,21 @@ class _DeckListPageState extends State<DeckListPage> {
 
   Future<void> _refreshDecks() async {
     final data = await _dbHelper.getDecksByCollection(widget.collectionKey);
-    setState(() {
-      _decks = data;
-    });
+    if (mounted) {
+      setState(() {
+        _decks = data;
+      });
+    }
   }
 
-  void _showAddDeckDialog() {
-    final nameController = TextEditingController();
-    showDialog(
+  Future<void> _showAddDeckDialog() async {
+    final deckName = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nuovo Deck'),
-        content: TextField(
-          controller: nameController,
-          decoration: const InputDecoration(labelText: 'Nome Deck'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.isNotEmpty) {
-                await _dbHelper.insertDeck(nameController.text, widget.collectionKey);
-                if (!context.mounted) return;
-                Navigator.pop(context);
-                _refreshDecks();
-              }
-            },
-            child: const Text('Crea'),
-          ),
-        ],
-      ),
-    ).then((_) => nameController.dispose());
+      builder: (_) => const _AddDeckDialog(),
+    );
+    if (deckName == null || !mounted) return;
+    await _dbHelper.insertDeck(deckName, widget.collectionKey);
+    _refreshDecks();
   }
 
   @override

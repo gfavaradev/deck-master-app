@@ -49,44 +49,60 @@ class _AlbumListPageState extends State<AlbumListPage> {
   void _showAddAlbumDialog({AlbumModel? album}) {
     final nameController = TextEditingController(text: album?.name);
     final capacityController = TextEditingController(text: album?.maxCapacity.toString() ?? '100');
+    String? nameError;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(album == null ? 'Nuovo Album' : 'Modifica Album'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nome Album')),
-            TextField(
-              controller: capacityController,
-              decoration: const InputDecoration(labelText: 'Capacità Massima'),
-              keyboardType: TextInputType.number,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(album == null ? 'Nuovo Album' : 'Modifica Album'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  labelText: 'Nome Album',
+                  errorText: nameError,
+                ),
+                onChanged: (_) {
+                  if (nameError != null) setDialogState(() => nameError = null);
+                },
+              ),
+              TextField(
+                controller: capacityController,
+                decoration: const InputDecoration(labelText: 'Capacità Massima'),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
+            ElevatedButton(
+              onPressed: () async {
+                if (nameController.text.trim().isEmpty) {
+                  setDialogState(() => nameError = 'Il nome è obbligatorio');
+                  return;
+                }
+                final newAlbum = AlbumModel(
+                  id: album?.id,
+                  name: nameController.text.trim(),
+                  collection: widget.collectionKey,
+                  maxCapacity: int.tryParse(capacityController.text) ?? 100,
+                );
+                if (album == null) {
+                  await _dbHelper.insertAlbum(newAlbum);
+                } else {
+                  await _dbHelper.updateAlbum(newAlbum);
+                }
+                if (!context.mounted) return;
+                Navigator.pop(context);
+                _refreshAlbums();
+              },
+              child: const Text('Salva'),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-          ElevatedButton(
-            onPressed: () async {
-              final newAlbum = AlbumModel(
-                id: album?.id,
-                name: nameController.text,
-                collection: widget.collectionKey,
-                maxCapacity: int.tryParse(capacityController.text) ?? 100,
-              );
-              if (album == null) {
-                await _dbHelper.insertAlbum(newAlbum);
-              } else {
-                await _dbHelper.updateAlbum(newAlbum);
-              }
-              if (!context.mounted) return;
-              Navigator.pop(context);
-              _refreshAlbums();
-            },
-            child: const Text('Salva'),
-          ),
-        ],
       ),
     );
   }

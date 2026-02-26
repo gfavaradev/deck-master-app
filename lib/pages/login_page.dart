@@ -1,4 +1,7 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
 import 'main_layout.dart';
@@ -18,6 +21,9 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isLogin = true;
+
+  /// Su mobile (Android/iOS) usiamo solo social login
+  bool get _isSocialOnly => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   @override
   void dispose() {
@@ -115,180 +121,255 @@ class _LoginPageState extends State<LoginPage> {
             colors: [Colors.blue.shade900, Colors.blue.shade600],
           ),
         ),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 30),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(height: 100),
-                const Icon(Icons.style, size: 100, color: Colors.white),
-                const SizedBox(height: 20),
-                Text(
-                  'Deck Master',
-                  style: GoogleFonts.poppins(
-                    fontSize: 40,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+        child: _isSocialOnly ? _buildSocialOnlyLayout() : _buildFullLayout(),
+      ),
+    );
+  }
+
+  // ─── Layout solo social (Android / iOS) ────────────────────────────────────
+
+  Widget _buildSocialOnlyLayout() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 30),
+        child: Column(
+          children: [
+            const Spacer(flex: 2),
+            Image.asset('assets/icon/logo_dm_carte_collezionabili_1.png', height: 120),
+            const SizedBox(height: 16),
+            Text(
+              'Deck Master',
+              style: GoogleFonts.poppins(
+                fontSize: 38,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              'La tua collezione di carte',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Accedi per continuare',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: Colors.white54,
+              ),
+            ),
+            const Spacer(flex: 2),
+            if (_isLoading)
+              const CircularProgressIndicator(color: Colors.white)
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildSocialButton(
+                    svgAsset: 'assets/icon/google.svg',
+                    onPressed: () => _handleSignIn(_authService.signInWithGoogle),
                   ),
+                  // TODO: riabilitare quando Facebook app è in modalità Live
+                  // const SizedBox(width: 24),
+                  // _buildSocialButton(
+                  //   svgAsset: 'assets/icon/facebook.svg',
+                  //   onPressed: () => _handleSignIn(_authService.signInWithFacebook),
+                  // ),
+                ],
+              ),
+            const Spacer(flex: 1),
+            TextButton(
+              onPressed: _isLoading
+                  ? null
+                  : () => _handleSignIn(() async {
+                        await _authService.signInOffline();
+                        return true;
+                      }),
+              child: const Text(
+                'Continua Offline',
+                style: TextStyle(
+                  color: Colors.white,
+                  decoration: TextDecoration.underline,
                 ),
-                const SizedBox(height: 50),
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Layout completo con email/password (Web / Desktop) ────────────────────
+
+  Widget _buildFullLayout() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 30),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 100),
+            Image.asset('assets/icon/logo_dm_carte_collezionabili_1.png', height: 130),
+            const SizedBox(height: 20),
+            Text(
+              'Deck Master',
+              style: GoogleFonts.poppins(
+                fontSize: 40,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Accedi per continuare',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 42),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
                   ),
-                  child: Column(
-                    children: [
-                      Text(
-                        _isLogin ? 'Accedi' : 'Registrati',
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue.shade900,
-                        ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    _isLogin ? 'Accedi' : 'Registrati',
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade900,
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                  TextField(
+                    controller: _emailController,
+                    decoration: InputDecoration(
+                      hintText: 'Email',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(height: 25),
-                      TextField(
-                        controller: _emailController,
-                        decoration: InputDecoration(
-                          hintText: 'Email',
-                          prefixIcon: const Icon(Icons.email_outlined),
-                          border: OutlineInputBorder(
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      hintText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                  if (_isLoading)
+                    const CircularProgressIndicator()
+                  else
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _emailAuth,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade900,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 15),
-                      TextField(
-                        controller: _passwordController,
-                        obscureText: true,
-                        decoration: InputDecoration(
-                          hintText: 'Password',
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 25),
-                      if (_isLoading)
-                        const CircularProgressIndicator()
-                      else
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: _emailAuth,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue.shade900,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Text(
-                              _isLogin ? 'ACCEDI' : 'REGISTRATI',
-                              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                      TextButton(
-                        onPressed: () => setState(() => _isLogin = !_isLogin),
                         child: Text(
-                          _isLogin
-                              ? 'Non hai un account? Registrati'
-                              : 'Hai già un account? Accedi',
-                          style: TextStyle(color: Colors.blue.shade900),
+                          _isLogin ? 'ACCEDI' : 'REGISTRATI',
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
                         ),
                       ),
-                    ],
+                    ),
+                  TextButton(
+                    onPressed: () => setState(() => _isLogin = !_isLogin),
+                    child: Text(
+                      _isLogin
+                          ? 'Non hai un account? Registrati'
+                          : 'Hai già un account? Accedi',
+                      style: TextStyle(color: Colors.blue.shade900),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 30),
+            Row(
+              children: [
+                const Expanded(child: Divider(color: Colors.white70)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(
+                    'Oppure continua con',
+                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
                   ),
                 ),
-                const SizedBox(height: 30),
-                Row(
-                  children: [
-                    const Expanded(child: Divider(color: Colors.white70)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        'Oppure continua con',
-                        style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
-                      ),
-                    ),
-                    const Expanded(child: Divider(color: Colors.white70)),
-                  ],
-                ),
-                const SizedBox(height: 25),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildSocialButton(
-                      icon: Icons.g_mobiledata,
-                      color: Colors.white,
-                      iconColor: Colors.red,
-                      onPressed: () => _handleSignIn(_authService.signInWithGoogle),
-                    ),
-                    const SizedBox(width: 20),
-                    _buildSocialButton(
-                      icon: Icons.facebook,
-                      color: const Color(0xFF1877F2),
-                      iconColor: Colors.white,
-                      onPressed: () => _handleSignIn(_authService.signInWithFacebook),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 30),
-                TextButton(
-                  onPressed: () => _handleSignIn(() async {
-                    await _authService.signInOffline();
-                    return true;
-                  }),
-                  child: const Text(
-                    'Continua Offline',
-                    style: TextStyle(color: Colors.white, decoration: TextDecoration.underline),
-                  ),
-                ),
-                const SizedBox(height: 50),
+                const Expanded(child: Divider(color: Colors.white70)),
               ],
             ),
-          ),
+            const SizedBox(height: 25),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildSocialButton(
+                  svgAsset: 'assets/icon/google.svg',
+                  onPressed: () => _handleSignIn(_authService.signInWithGoogle),
+                ),
+                // TODO: riabilitare quando Facebook app è in modalità Live
+                // const SizedBox(width: 20),
+                // _buildSocialButton(
+                //   svgAsset: 'assets/icon/facebook.svg',
+                //   onPressed: () => _handleSignIn(_authService.signInWithFacebook),
+                // ),
+              ],
+            ),
+            const SizedBox(height: 30),
+            TextButton(
+              onPressed: () => _handleSignIn(() async {
+                await _authService.signInOffline();
+                return true;
+              }),
+              child: const Text(
+                'Continua Offline',
+                style: TextStyle(color: Colors.white, decoration: TextDecoration.underline),
+              ),
+            ),
+            const SizedBox(height: 50),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildSocialButton({
-    required IconData icon,
-    required Color color,
-    required Color iconColor,
+    required String svgAsset,
     required VoidCallback onPressed,
   }) {
     return InkWell(
       onTap: onPressed,
-      child: Container(
+      borderRadius: BorderRadius.circular(30),
+      child: SizedBox(
         width: 60,
         height: 60,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Icon(icon, color: iconColor, size: 35),
+        child: SvgPicture.asset(svgAsset),
       ),
     );
   }

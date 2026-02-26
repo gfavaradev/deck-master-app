@@ -62,6 +62,11 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_yugioh_prints_set_name ON yugioh_prints(set_name)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_yugioh_prices_print_id ON yugioh_prices(print_id)');
 
+    // cards table indices — critical for getCardsByCollection and getAlbumsByCollection
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_collection ON cards(collection)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_albumId ON cards(albumId)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_catalogId ON cards(catalogId)');
+
     return db;
   }
 
@@ -421,10 +426,14 @@ class DatabaseHelper {
 
   Future<List<AlbumModel>> getAlbumsByCollection(String collection) async {
     Database db = await database;
+    // LEFT JOIN + GROUP BY is a single pass; avoids N correlated subqueries
     List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT a.*, (SELECT COALESCE(SUM(c.quantity), 0) FROM cards c WHERE c.albumId = a.id) as currentCount
+      SELECT a.id, a.name, a.collection, a.maxCapacity, a.firestoreId,
+             COALESCE(SUM(c.quantity), 0) as currentCount
       FROM albums a
+      LEFT JOIN cards c ON c.albumId = a.id
       WHERE a.collection = ?
+      GROUP BY a.id, a.name, a.collection, a.maxCapacity, a.firestoreId
     ''', [collection]);
     return List.generate(maps.length, (i) => AlbumModel.fromMap(maps[i]));
   }
@@ -527,7 +536,8 @@ class DatabaseHelper {
     for (var row in ownedResults) {
       final name = row['name'].toString().toLowerCase();
       final serial = row['serialNumber'].toString().toLowerCase();
-      final key = "${name}_$serial";
+      final rarity = row['rarity'].toString().toLowerCase();
+      final key = "${name}_${serial}_$rarity";
 
       if (merged.containsKey(key) && merged[key]!.id == null) {
         merged[key] = CardModel.fromMap(row);
@@ -595,7 +605,8 @@ class DatabaseHelper {
     for (var row in ownedResults) {
       final name = row['name'].toString().toLowerCase();
       final serial = row['serialNumber'].toString().toLowerCase();
-      final key = "${name}_$serial";
+      final rarity = row['rarity'].toString().toLowerCase();
+      final key = "${name}_${serial}_$rarity";
 
       if (merged.containsKey(key) && merged[key]!.id == null) {
         merged[key] = CardModel.fromMap(row);
@@ -623,7 +634,7 @@ class DatabaseHelper {
                u.collection,
                u.imageUrl
         FROM cards u
-        LEFT JOIN yugioh_cards yc ON CAST(yc.id AS TEXT) = u.catalogId
+        LEFT JOIN yugioh_cards yc ON yc.id = CAST(u.catalogId AS INTEGER)
         WHERE u.collection = 'yugioh'
       ''');
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
@@ -654,7 +665,7 @@ class DatabaseHelper {
                u.collection,
                u.imageUrl
         FROM cards u
-        LEFT JOIN yugioh_cards yc ON CAST(yc.id AS TEXT) = u.catalogId
+        LEFT JOIN yugioh_cards yc ON yc.id = CAST(u.catalogId AS INTEGER)
         WHERE u.collection = 'yugioh' AND (yc.name = ? OR u.name = ?) AND u.serialNumber = ?
       ''', [name, name, serialNumber]);
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
@@ -751,13 +762,13 @@ class DatabaseHelper {
     return result.first['total'] as int? ?? 0;
   }
 
-  /// Returns an existing card in [albumId] with the same [catalogId] and [serialNumber], or null.
-  Future<CardModel?> findCardInAlbum(int albumId, String? catalogId, String serialNumber) async {
+  /// Returns an existing card in [albumId] with the same [catalogId], [serialNumber] and [rarity], or null.
+  Future<CardModel?> findCardInAlbum(int albumId, String? catalogId, String serialNumber, String rarity) async {
     Database db = await database;
     final results = await db.query(
       'cards',
-      where: 'albumId = ? AND catalogId = ? AND serialNumber = ?',
-      whereArgs: [albumId, catalogId, serialNumber],
+      where: 'albumId = ? AND catalogId = ? AND serialNumber = ? AND rarity = ?',
+      whereArgs: [albumId, catalogId, serialNumber, rarity],
       limit: 1,
     );
     if (results.isEmpty) return null;
@@ -909,6 +920,28 @@ class DatabaseHelper {
     });
   }
 
+  /// Delete specific Yu-Gi-Oh cards by their IDs (incremental catalog update).
+  /// Also removes associated prints and prices since FK cascades are not enabled.
+  Future<void> deleteYugiohCardsByIds(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.transaction((txn) async {
+      await txn.rawDelete(
+        'DELETE FROM yugioh_prices WHERE print_id IN (SELECT id FROM yugioh_prints WHERE card_id IN ($placeholders))',
+        ids,
+      );
+      await txn.rawDelete(
+        'DELETE FROM yugioh_prints WHERE card_id IN ($placeholders)',
+        ids,
+      );
+      await txn.rawDelete(
+        'DELETE FROM yugioh_cards WHERE id IN ($placeholders)',
+        ids,
+      );
+    });
+  }
+
   Future<void> saveCatalogMetadata({
     required String catalogName,
     required int version,
@@ -975,7 +1008,7 @@ class DatabaseHelper {
             'linkmarkers': cardData['linkmarkers'],
             'name': cardData['name'],
             'description': cardData['description'],
-            'image_url': cardData['image_url'],
+            'image_url': cardData['imageUrl'] ?? cardData['image_url'],
             'name_it': cardData['name_it'],
             'description_it': cardData['description_it'],
             'name_fr': cardData['name_fr'],
@@ -1241,6 +1274,16 @@ class DatabaseHelper {
       JOIN cards c ON dc.cardId = c.id
       WHERE dc.deckId = ?
     ''', [deckId]);
+  }
+
+  Future<List<Map<String, dynamic>>> getDecksForCard(int cardId) async {
+    Database db = await database;
+    return await db.rawQuery('''
+      SELECT d.id, d.name, dc.quantity
+      FROM deck_cards dc
+      JOIN decks d ON dc.deckId = d.id
+      WHERE dc.cardId = ?
+    ''', [cardId]);
   }
 
   Future<void> removeCardFromDeck(int deckId, int cardId) async {

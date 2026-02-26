@@ -31,6 +31,7 @@ class _CardListPageState extends State<CardListPage> {
   List<CardModel> _doppioniCards = [];
   List<AlbumModel> _availableAlbums = [];
   bool _isGridView = false;
+  bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   StreamSubscription<String>? _syncSub;
 
@@ -51,11 +52,15 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Future<void> _refreshCards() async {
-    // Usa getCardsByCollection per mostrare solo le carte effettivamente possedute
-    // (non le carte del catalogo)
-    final data = await _repo.getCardsByCollection(widget.collectionKey);
-    final albums = await _repo.getAlbumsByCollection(widget.collectionKey);
+    // Run both queries in parallel — SQLite serializes internally but avoids
+    // the Dart await overhead of sequential calls
+    final results = await Future.wait([
+      _repo.getCardsByCollection(widget.collectionKey),
+      _repo.getAlbumsByCollection(widget.collectionKey),
+    ]);
     if (!mounted) return;
+    final data = results[0] as List<CardModel>;
+    final albums = results[1] as List<AlbumModel>;
 
     List<CardModel> processedCards = data;
 
@@ -75,6 +80,7 @@ class _CardListPageState extends State<CardListPage> {
       _allCards = processedCards;
       _doppioniCards = data.where((c) => doppioniIds.contains(c.albumId)).toList();
       _availableAlbums = albums;
+      _isLoading = false;
       _filterCards(_searchController.text);
     });
   }
@@ -134,8 +140,9 @@ class _CardListPageState extends State<CardListPage> {
       if (widget.albumId == null) {
         // General view: check doppioni list for matching card
         final doppioniMatch = _doppioniCards.where((c) =>
-          c.name.toLowerCase() == card.name.toLowerCase() &&
-          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase()
+          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
+          c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
+          (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
         ).toList();
 
         if (doppioniMatch.isNotEmpty) {
@@ -161,8 +168,9 @@ class _CardListPageState extends State<CardListPage> {
     if (delta > 0 && !isDoppioni && card.quantity >= 1) {
       final doppioniAlbumId = await _getOrCreateDuplicatesAlbum();
       final existingInDoppioni = _doppioniCards.where((c) =>
-        c.name.toLowerCase() == card.name.toLowerCase() &&
-        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase()
+        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
+        c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
+        (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
       ).toList();
 
       if (existingInDoppioni.isNotEmpty) {
@@ -177,7 +185,7 @@ class _CardListPageState extends State<CardListPage> {
         ));
       }
 
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Doppione aggiunto all\'album "Doppioni"'), duration: Duration(seconds: 1))
       );
@@ -194,7 +202,7 @@ class _CardListPageState extends State<CardListPage> {
     if (delta > 0 && album.id != null && album.maxCapacity > 0) {
       final freshCount = await _repo.getCardCountByAlbum(album.id!);
       if (freshCount + delta > album.maxCapacity) {
-        if (!context.mounted) return;
+        if (!mounted) return;
         final proceed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -218,8 +226,9 @@ class _CardListPageState extends State<CardListPage> {
   int _getTotalQuantity(CardModel card) {
     final doppioniQty = _doppioniCards
       .where((c) =>
-        c.name.toLowerCase() == card.name.toLowerCase() &&
-        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase())
+        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
+        c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
+        (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId))
       .fold(0, (sum, c) => sum + c.quantity);
     return card.quantity + doppioniQty;
   }
@@ -244,9 +253,10 @@ class _CardListPageState extends State<CardListPage> {
       if (widget.albumId == null) {
         // Se siamo nella vista generale, eliminiamo TUTTE le istanze di questa carta (tutti gli album)
         final allRelated = await _repo.getCardsByCollection(widget.collectionKey);
-        final toDelete = allRelated.where((c) => 
-          c.name.toLowerCase() == card.name.toLowerCase() && 
-          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase()
+        final toDelete = allRelated.where((c) =>
+          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
+          c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
+          (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
         );
         for (var c in toDelete) {
           await _repo.deleteCard(c.id!);
@@ -272,12 +282,19 @@ class _CardListPageState extends State<CardListPage> {
     return id;
   }
 
-  void _showDetails(CardModel card) {
+  Future<void> _showDetails(CardModel card) async {
+    final decks = card.id != null
+        ? await _repo.getDecksForCard(card.id!)
+        : <Map<String, dynamic>>[];
+    if (!mounted) return;
     CardDialogs.showDetails(
       context: context,
       card: card,
       albumName: _getAlbumName(card.albumId),
       onDelete: _confirmDelete,
+      availableAlbums: _availableAlbums,
+      onAlbumChanged: _refreshCards,
+      cardDecks: decks,
     );
   }
 
@@ -405,24 +422,26 @@ class _CardListPageState extends State<CardListPage> {
         ),
         CollectionSummary(uniqueCards: uniqueCards, duplicates: duplicates, totalCards: totalCards, totalValue: totalValue),
         Expanded(
-          child: _filteredCards.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
-                      const SizedBox(height: 16),
-                      Text(
-                        widget.albumId != null
-                          ? 'Nessuna carta in questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
-                          : 'Nessuna carta trovata.\nUsa il Catalogo per aggiungere carte.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey.shade600),
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _filteredCards.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          Text(
+                            widget.albumId != null
+                              ? 'Nessuna carta in questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
+                              : 'Nessuna carta trovata.\nUsa il Catalogo per aggiungere carte.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
-              : _isGridView ? _buildGrid() : _buildList(),
+                    )
+                  : _isGridView ? _buildGrid() : _buildList(),
         ),
       ],
     );

@@ -6,6 +6,8 @@ import 'album_list_page.dart';
 import 'deck_list_page.dart';
 import 'stats_page.dart';
 import 'settings_page.dart';
+import 'admin_home_page.dart';
+import '../services/auth_service.dart';
 
 /// Layout principale con barra di navigazione persistente
 class MainLayout extends StatefulWidget {
@@ -30,6 +32,8 @@ class _MainLayoutState extends State<MainLayout> {
   late int _currentIndex;
   String? _currentCollectionKey;
   String? _currentCollectionName;
+  bool _isAdmin = false;
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
@@ -37,6 +41,7 @@ class _MainLayoutState extends State<MainLayout> {
     _currentIndex = widget.initialIndex;
     _currentCollectionKey = widget.collectionKey;
     _currentCollectionName = widget.collectionName;
+    _checkAdmin();
 
     if (widget.updateNotification != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -80,51 +85,54 @@ class _MainLayoutState extends State<MainLayout> {
     });
   }
 
+  Future<void> _checkAdmin() async {
+    final isAdmin = await _authService.isCurrentUserAdmin();
+    if (mounted) {
+      setState(() {
+        _isAdmin = isAdmin;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool inCollection = _currentCollectionKey != null;
 
-    Widget currentPage;
+    // IndexedStack keeps all in-collection pages alive so switching tab is instant (no reload)
+    final Widget currentPage;
 
     if (inCollection) {
-      switch (_currentIndex) {
-        case 1:
-          currentPage = CardListPage(
+      currentPage = IndexedStack(
+        key: ValueKey(_currentCollectionKey),
+        index: _currentIndex - 1, // _currentIndex is always 1–4 inside a collection
+        children: [
+          CardListPage(
             collectionKey: _currentCollectionKey!,
             collectionName: _currentCollectionName!,
-          );
-          break;
-        case 2:
-          currentPage = CatalogPage(
+          ),
+          CatalogPage(
             collectionKey: _currentCollectionKey!,
             collectionName: _currentCollectionName!,
-          );
-          break;
-        case 3:
-          currentPage = AlbumListPage(
+          ),
+          AlbumListPage(
             collectionKey: _currentCollectionKey!,
             collectionName: _currentCollectionName!,
-          );
-          break;
-        case 4:
-          currentPage = DeckListPage(
+          ),
+          DeckListPage(
             collectionKey: _currentCollectionKey!,
             collectionName: _currentCollectionName!,
-          );
-          break;
-        default:
-          currentPage = CardListPage(
-            collectionKey: _currentCollectionKey!,
-            collectionName: _currentCollectionName!,
-          );
-      }
+          ),
+        ],
+      );
     } else {
-      currentPage = HomePageSimple(onCollectionSelected: _onCollectionSelected);
+      currentPage = _isAdmin
+          ? const AdminCatalogBody()
+          : HomePageSimple(onCollectionSelected: _onCollectionSelected);
     }
 
     String appBarTitle;
     if (!inCollection) {
-      appBarTitle = 'Deck Master';
+      appBarTitle = _isAdmin ? 'Admin — Gestione Catalogo' : 'Deck Master';
     } else {
       const titles = ['Home', 'Le mie Carte', 'Catalogo', 'Album', 'Deck'];
       appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';

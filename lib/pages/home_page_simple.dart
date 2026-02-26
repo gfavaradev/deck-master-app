@@ -17,6 +17,8 @@ class HomePageSimple extends StatefulWidget {
 }
 
 class _HomePageSimpleState extends State<HomePageSimple> {
+  static const _catalogAvailable = {'yugioh'};
+
   final DataRepository _repo = DataRepository();
   List<CollectionModel> _unlockedCollections = [];
   List<CollectionModel> _availableCollections = [];
@@ -47,14 +49,14 @@ class _HomePageSimpleState extends State<HomePageSimple> {
       final check = await _repo.checkCatalogUpdates();
       final needsDownload = check['needsUpdate'] == true || check['isFirstDownload'] == true;
       if (needsDownload) {
-        await _downloadYugiohCards();
+        await _downloadYugiohCards(check);
       }
     }
 
     _loadCollections();
   }
 
-  Future<void> _downloadYugiohCards() async {
+  Future<void> _downloadYugiohCards([Map<String, dynamic>? updateInfo]) async {
     if (!mounted) return;
 
     final statusNotifier = ValueNotifier<String>('Connessione a Firestore...');
@@ -107,9 +109,12 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     }
 
     try {
-      statusNotifier.value = 'Scaricando le carte Yu-Gi-Oh da Firestore...';
+      statusNotifier.value = updateInfo?['canDoIncremental'] == true
+          ? 'Aggiornamento catalogo in corso...'
+          : 'Scaricando le carte Yu-Gi-Oh da Firestore...';
 
       await _repo.downloadYugiohCatalog(
+        updateInfo: updateInfo,
         onProgress: (currentChunk, totalChunks) {
           progressNotifier.value = currentChunk / totalChunks;
           detailNotifier.value = 'Chunk $currentChunk di $totalChunks';
@@ -195,11 +200,13 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   }
 
   Widget _buildCollectionTile(CollectionModel collection, bool isUnlocked) {
+    final bool hasCatalog = _catalogAvailable.contains(collection.key);
     Color color = _getCollectionColor(collection.key);
     String logoUrl = _getCollectionLogoUrl(collection.key);
 
     return InkWell(
       onTap: () {
+        if (!hasCatalog) return;
         if (isUnlocked) {
           widget.onCollectionSelected(collection.key, collection.name);
         } else {
@@ -229,7 +236,30 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                   ),
                 ),
               ),
-              if (!isUnlocked)
+              if (!hasCatalog)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(15)),
+                    ),
+                    child: const Text(
+                      'Prossimamente',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                )
+              else if (!isUnlocked)
                 const Positioned(
                   top: 8,
                   right: 8,

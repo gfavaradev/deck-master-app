@@ -57,9 +57,12 @@ class _SplashPageState extends State<SplashPage> {
       final needsDownload = check['needsUpdate'] == true || check['isFirstDownload'] == true;
       if (!needsDownload) return;
 
-      setState(() => _statusMessage = 'Download catalogo in corso...');
+      setState(() => _statusMessage = check['canDoIncremental'] == true
+          ? 'Aggiornamento in corso...'
+          : 'Download catalogo in corso...');
 
       await _repo.downloadYugiohCatalog(
+        updateInfo: check,
         onProgress: (current, total) {
           if (mounted) {
             setState(() {
@@ -87,13 +90,19 @@ class _SplashPageState extends State<SplashPage> {
     }
   }
 
-  _checkAuth() async {
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
+  Future<void> _checkAuth() async {
+    // Wait for Firebase to restore auth state from local storage.
+    // authStateChanges().first resolves as soon as state is known (typically < 300 ms),
+    // while isOfflineMode and _checkAppVersion run in parallel to save time.
+    final userFuture = FirebaseAuth.instance.authStateChanges().first;
+    final offlineFuture = _authService.isOfflineMode();
+    final versionFuture = _checkAppVersion();
 
-    final User? user = FirebaseAuth.instance.currentUser;
-    final bool isOffline = await _authService.isOfflineMode();
-    final updatedVersion = await _checkAppVersion();
+    final User? user = await userFuture;
+    final bool isOffline = await offlineFuture;
+    final String? updatedVersion = await versionFuture;
+
+    if (!mounted) return;
 
     if (user != null) {
       setState(() => _statusMessage = 'Sincronizzazione...');
@@ -137,7 +146,7 @@ class _SplashPageState extends State<SplashPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.style, size: 100, color: Colors.blue),
+            Image.asset('assets/icon/logo_dm_carte_collezionabili_1.png', height: 120),
             const SizedBox(height: 20),
             const Text(
               'Deck Master',

@@ -12,37 +12,74 @@ class CardDialogs {
     required CardModel card,
     required String albumName,
     required Function(CardModel) onDelete,
+    List<AlbumModel> availableAlbums = const [],
+    VoidCallback? onAlbumChanged,
+    List<Map<String, dynamic>> cardDecks = const [],
   }) {
+    int? selectedAlbumId = card.albumId == -1 ? null : card.albumId;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(card.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('S/N: ${card.serialNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-            Text('Album: $albumName', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('Quantità: ${card.quantity}'),
-            Text('Valore unitario: €${card.value.toStringAsFixed(2)}'),
-            Text('Valore totale: €${(card.value * card.quantity).toStringAsFixed(2)}'),
-            Text('Tipo: ${card.type}'),
-            Text('Rarità: ${card.rarity}'),
-            const SizedBox(height: 10),
-            const Text('Descrizione:', style: TextStyle(fontWeight: FontWeight.bold)),
-            Text(card.description),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(card.name),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('S/N: ${card.serialNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                const SizedBox(height: 8),
+                if (availableAlbums.isNotEmpty)
+                  DropdownButtonFormField<int>(
+                    value: selectedAlbumId,
+                    decoration: const InputDecoration(labelText: 'Album', isDense: true),
+                    items: availableAlbums.map((album) {
+                      return DropdownMenuItem<int>(
+                        value: album.id,
+                        child: Text(album.name),
+                      );
+                    }).toList(),
+                    onChanged: (newId) async {
+                      if (newId == null || newId == selectedAlbumId) return;
+                      setDialogState(() => selectedAlbumId = newId);
+                      await DataRepository().updateCard(card.copyWith(albumId: newId));
+                      onAlbumChanged?.call();
+                    },
+                  )
+                else
+                  Text('Album: $albumName', style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text('Quantità: ${card.quantity}'),
+                Text('Valore unitario: €${card.value.toStringAsFixed(2)}'),
+                Text('Valore totale: €${(card.value * card.quantity).toStringAsFixed(2)}'),
+                Text('Tipo: ${card.type}'),
+                Text('Rarità: ${card.rarity}'),
+                if (cardDecks.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text('Deck:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ...cardDecks.map((d) => Text(
+                    '• ${d['name']} (x${d['quantity']})',
+                    style: const TextStyle(fontSize: 13),
+                  )),
+                ],
+                const SizedBox(height: 10),
+                const Text('Descrizione:', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(card.description),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                onDelete(card);
+              },
+              child: const Text('Elimina', style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              onDelete(card);
-            },
-            child: const Text('Elimina', style: TextStyle(color: Colors.red)),
-          ),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
-        ],
       ),
     );
   }
@@ -375,8 +412,6 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                 },
               ),
 
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nome Carta'), readOnly: selectedCatalogCard != null),
-            TextField(controller: serialController, decoration: const InputDecoration(labelText: 'Numero di Serie')),
             Row(
               children: [
                 Expanded(child: TextField(controller: quantityController, decoration: const InputDecoration(labelText: 'Quantità'), keyboardType: TextInputType.number)),
@@ -384,8 +419,6 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                 Expanded(child: TextField(controller: valueController, decoration: const InputDecoration(labelText: 'Valore (€)'), keyboardType: TextInputType.number)),
               ],
             ),
-            TextField(controller: rarityController, decoration: const InputDecoration(labelText: 'Rarità')),
-            TextField(controller: typeController, decoration: const InputDecoration(labelText: 'Tipo'), readOnly: selectedCatalogCard != null),
             TextField(controller: descController, decoration: const InputDecoration(labelText: 'Descrizione'), maxLines: 3),
           ],
         ),
@@ -401,16 +434,16 @@ class _AddCardDialogState extends State<_AddCardDialog> {
   }
 
   Future<void> _saveCard() async {
-    final String name = nameController.text;
-    final String serialNumber = serialController.text;
-    final int quantity = int.tryParse(quantityController.text) ?? 1;
-    
-    if (name.isEmpty || serialNumber.isEmpty) {
+    if (selectedCatalogCard == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nome e Numero di Serie sono obbligatori')),
+        const SnackBar(content: Text('Seleziona una carta dal catalogo')),
       );
       return;
     }
+
+    final String name = nameController.text;
+    final String serialNumber = serialController.text;
+    final int quantity = int.tryParse(quantityController.text) ?? 1;
 
     // Cerchiamo istanze già esistenti nel database invece di usare una lista potenzialmente vecchia
     final existingInstances = await _dbHelper.findOwnedInstances(widget.collectionKey, name, serialNumber);

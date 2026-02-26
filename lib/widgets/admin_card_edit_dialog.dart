@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 /// Comprehensive dialog for adding/editing catalog cards
 /// Tabs: Info Base | Traduzioni | Stats | Set per Lingua
@@ -393,9 +395,21 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                         child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 11)),
                       ),
                       title: Text(s['set_name'] ?? '—', style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text(
-                        '${s['set_code'] ?? ''} • ${s['print_code'] ?? ''} • ${s['rarity'] ?? ''}',
-                        style: const TextStyle(fontSize: 11),
+                      subtitle: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${s['set_code'] ?? ''} • ${s['rarity'] ?? ''} • €${(s['set_price'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                              style: const TextStyle(fontSize: 11),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if ((s['image_url'] as String?)?.isNotEmpty == true)
+                            const Padding(
+                              padding: EdgeInsets.only(left: 4),
+                              child: Icon(Icons.image, size: 14, color: Colors.green),
+                            ),
+                        ],
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -429,56 +443,161 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
   Future<Map<String, dynamic>?> _showSetDialog({required String lang, Map<String, dynamic>? initialData}) async {
     final setCodeCtrl = TextEditingController(text: initialData?['set_code'] ?? '');
     final setNameCtrl = TextEditingController(text: initialData?['set_name'] ?? '');
-    final printCodeCtrl = TextEditingController(text: initialData?['print_code'] ?? '');
     final rarityCtrl = TextEditingController(text: initialData?['rarity'] ?? '');
+    final priceCtrl = TextEditingController(
+      text: (initialData?['set_price'] as num?)?.toStringAsFixed(2) ?? '0.00',
+    );
+    final imageUrlCtrl = TextEditingController(text: initialData?['image_url'] ?? '');
     final langLabel = _setLanguageLabels[lang] ?? lang.toUpperCase();
+
+    bool uploading = false;
+    String? uploadError;
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: Text('${initialData == null ? 'Aggiungi' : 'Modifica'} Set — $langLabel'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _dialogField(setCodeCtrl, 'Set Code *', 'es. LOB'),
-              const SizedBox(height: 12),
-              _dialogField(setNameCtrl, 'Set Name *', 'es. Legend of Blue Eyes White Dragon'),
-              const SizedBox(height: 12),
-              _dialogField(printCodeCtrl, 'Print Code *', 'es. LOB-001'),
-              const SizedBox(height: 12),
-              _dialogField(rarityCtrl, 'Rarità *', 'es. Ultra Rare, Super Rare, Common'),
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          return AlertDialog(
+            title: Text('${initialData == null ? 'Aggiungi' : 'Modifica'} Set — $langLabel'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _dialogField(setCodeCtrl, 'Set Code *', 'es. LOB-EN001'),
+                  const SizedBox(height: 12),
+                  _dialogField(setNameCtrl, 'Set Name *', 'es. Legend of Blue Eyes White Dragon'),
+                  const SizedBox(height: 12),
+                  _dialogField(rarityCtrl, 'Rarità *', 'es. Ultra Rare, Super Rare, Common'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: priceCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Prezzo (€)',
+                      hintText: 'es. 4.50',
+                      border: OutlineInputBorder(),
+                      prefixText: '€ ',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Image URL field + upload button
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: imageUrlCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Image URL',
+                            hintText: 'https://... oppure carica →',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: imageUrlCtrl.text.contains('firebasestorage')
+                                ? const Icon(Icons.check_circle, color: Colors.green, size: 18)
+                                : null,
+                          ),
+                          readOnly: imageUrlCtrl.text.contains('firebasestorage'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      uploading
+                          ? const SizedBox(
+                              width: 36,
+                              height: 36,
+                              child: Padding(
+                                padding: EdgeInsets.all(6),
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            )
+                          : IconButton(
+                              icon: const Icon(Icons.upload_file, color: Colors.orange),
+                              tooltip: 'Carica immagine su Storage',
+                              onPressed: () => _uploadSetImage(
+                                setS,
+                                imageUrlCtrl,
+                                setCodeCtrl.text.trim(),
+                                (v) => setS(() => uploading = v),
+                                (e) => setS(() => uploadError = e),
+                              ),
+                            ),
+                    ],
+                  ),
+                  if (uploadError != null) ...[
+                    const SizedBox(height: 4),
+                    Text(uploadError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
+              ElevatedButton(
+                onPressed: uploading
+                    ? null
+                    : () {
+                        if ([setCodeCtrl, setNameCtrl, rarityCtrl].any((c) => c.text.trim().isEmpty)) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Tutti i campi sono obbligatori')),
+                          );
+                          return;
+                        }
+                        final imageUrl = imageUrlCtrl.text.trim();
+                        Navigator.pop(ctx, {
+                          'set_code': setCodeCtrl.text.trim(),
+                          'set_name': setNameCtrl.text.trim(),
+                          'rarity': rarityCtrl.text.trim(),
+                          'set_price': double.tryParse(priceCtrl.text) ?? 0.0,
+                          if (imageUrl.isNotEmpty) 'image_url': imageUrl,
+                        });
+                      },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                child: const Text('Salva'),
+              ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Annulla')),
-          ElevatedButton(
-            onPressed: () {
-              if ([setCodeCtrl, setNameCtrl, printCodeCtrl, rarityCtrl].any((c) => c.text.trim().isEmpty)) {
-                ScaffoldMessenger.of(dialogCtx).showSnackBar(
-                  const SnackBar(content: Text('Tutti i campi sono obbligatori')),
-                );
-                return;
-              }
-              Navigator.pop(dialogCtx, {
-                'set_code': setCodeCtrl.text.trim(),
-                'set_name': setNameCtrl.text.trim(),
-                'print_code': printCodeCtrl.text.trim(),
-                'rarity': rarityCtrl.text.trim(),
-              });
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-            child: const Text('Salva'),
-          ),
-        ],
+          );
+        },
       ),
     );
 
-    for (final c in [setCodeCtrl, setNameCtrl, printCodeCtrl, rarityCtrl]) {
+    for (final c in [setCodeCtrl, setNameCtrl, rarityCtrl, priceCtrl, imageUrlCtrl]) {
       c.dispose();
     }
     return result;
+  }
+
+  Future<void> _uploadSetImage(
+    StateSetter setState2,
+    TextEditingController imageUrlCtrl,
+    String setCode,
+    void Function(bool) setLoading,
+    void Function(String?) setError,
+  ) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final bytes = result.files.first.bytes;
+    if (bytes == null) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      final safeCode = setCode.replaceAll(RegExp(r'[/\s]'), '_');
+      final path = safeCode.isNotEmpty
+          ? 'catalog/yugioh/images/${_cardId}_$safeCode.jpg'
+          : 'catalog/yugioh/images/$_cardId.jpg';
+      final ref = FirebaseStorage.instance.ref(path);
+      await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+      final url = await ref.getDownloadURL();
+      setState2(() => imageUrlCtrl.text = url);
+    } catch (e) {
+      setError('Upload fallito: $e');
+    } finally {
+      setLoading(false);
+    }
   }
 
   Widget _dialogField(TextEditingController ctrl, String label, String hint) {

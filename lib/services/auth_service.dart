@@ -23,9 +23,14 @@ class AuthService {
 
   String? get currentUserId => _auth.currentUser?.uid;
 
+  // Web client ID from google-services.json (client_type: 3)
+  // Required by Android Credential Manager to request an ID token for Firebase Auth
+  static const String _googleServerClientId =
+      '983642109584-pm5dfs2r7qh11ts79vve7vm46kkqqpe6.apps.googleusercontent.com';
+
   Future<void> _ensureGoogleInitialized() async {
     if (!_isGoogleInitialized) {
-      await _googleSignIn.initialize();
+      await _googleSignIn.initialize(serverClientId: _googleServerClientId);
       _isGoogleInitialized = true;
     }
   }

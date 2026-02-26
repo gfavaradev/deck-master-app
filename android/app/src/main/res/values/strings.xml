@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Deck Master</string>
+    <string name="facebook_app_id">883211694673703</string>
+    <string name="fb_login_protocol_scheme">fb883211694673703</string>
+    <string name="facebook_client_token">b03b8144e4940915b719994bb544bd0c</string>
+</resources>

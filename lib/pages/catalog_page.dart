@@ -46,10 +46,12 @@ class _CatalogPageState extends State<CatalogPage> {
   // Multi-selection state
   bool _isSelectionMode = false;
   Set<String> _selectedCardIds = {}; // Use card IDs instead of indices
+  bool _isAdding = false;
 
   Timer? _debounce;
   String _lastQuery = '';
   StreamSubscription<String>? _syncSub;
+  StreamSubscription<String>? _langSub;
 
   @override
   void initState() {
@@ -58,6 +60,13 @@ class _CatalogPageState extends State<CatalogPage> {
     _init();
     _syncSub = SyncService().onRemoteChange.listen((_) {
       if (mounted) _loadAlbumsAndOwned();
+    });
+    // Reload catalog immediately when the display language changes
+    _langSub = LanguageService.onLanguageChanged.listen((lang) {
+      if (mounted) {
+        _preferredLanguage = lang;
+        _loadCards();
+      }
     });
   }
 
@@ -76,6 +85,7 @@ class _CatalogPageState extends State<CatalogPage> {
   @override
   void dispose() {
     _syncSub?.cancel();
+    _langSub?.cancel();
     _debounce?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
@@ -285,141 +295,186 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 
   Future<void> _addSelectedToCollection() async {
-    if (_selectedCardIds.isEmpty) return;
+    if (_isAdding || _selectedCardIds.isEmpty) return;
+    setState(() => _isAdding = true);
 
-    // Get selected cards by matching keys
-    final selectedCards = _catalogCards
-        .where((card) => _selectedCardIds.contains(_getCardKey(card)))
-        .toList();
+    try {
+      // Get selected cards by matching keys
+      final selectedCards = _catalogCards
+          .where((card) => _selectedCardIds.contains(_getCardKey(card)))
+          .toList();
 
-    // Sort albums: last used first, rest in original order
-    final sortedAlbums = List<AlbumModel>.from(_availableAlbums);
-    if (_lastUsedAlbumId != null) {
-      sortedAlbums.sort((a, b) {
-        if (a.id == _lastUsedAlbumId) return -1;
-        if (b.id == _lastUsedAlbumId) return 1;
-        return 0;
-      });
-    }
+      // Sort albums: last used first, rest in original order
+      final sortedAlbums = List<AlbumModel>.from(_availableAlbums);
+      if (_lastUsedAlbumId != null) {
+        sortedAlbums.sort((a, b) {
+          if (a.id == _lastUsedAlbumId) return -1;
+          if (b.id == _lastUsedAlbumId) return 1;
+          return 0;
+        });
+      }
 
-    // Show album selection dialog
-    final selectedAlbum = await showDialog<AlbumModel>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Seleziona Album'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: sortedAlbums.isEmpty
-              ? const Text('Nessun album disponibile. Creane uno prima.')
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: sortedAlbums.length,
-                  itemBuilder: (context, index) {
-                    final album = sortedAlbums[index];
-                    final isLastUsed = album.id == _lastUsedAlbumId;
-                    return ListTile(
-                      leading: Icon(
-                        isLastUsed ? Icons.star : Icons.photo_album,
-                        color: isLastUsed ? Colors.amber : null,
-                      ),
-                      title: Text(album.name),
-                      subtitle: isLastUsed
-                          ? const Text('Ultimo usato',
-                              style: TextStyle(fontSize: 11, color: Colors.amber))
-                          : null,
-                      onTap: () => Navigator.pop(context, album),
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annulla'),
+      // Show album selection dialog
+      final selectedAlbum = await showDialog<AlbumModel>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Seleziona Album'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: sortedAlbums.isEmpty
+                ? const Text('Nessun album disponibile. Creane uno prima.')
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: sortedAlbums.length,
+                    itemBuilder: (context, index) {
+                      final album = sortedAlbums[index];
+                      final isLastUsed = album.id == _lastUsedAlbumId;
+                      return ListTile(
+                        leading: Icon(
+                          isLastUsed ? Icons.star : Icons.photo_album,
+                          color: isLastUsed ? Colors.amber : null,
+                        ),
+                        title: Text(album.name),
+                        subtitle: isLastUsed
+                            ? const Text('Ultimo usato',
+                                style: TextStyle(fontSize: 11, color: Colors.amber))
+                            : null,
+                        onTap: () => Navigator.pop(context, album),
+                      );
+                    },
+                  ),
           ),
-        ],
-      ),
-    );
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annulla'),
+            ),
+          ],
+        ),
+      );
 
-    if (selectedAlbum == null) return;
+      if (selectedAlbum == null) return;
 
-    // Check album capacity before adding
-    final currentCount = await _dbHelper.getCardCountByAlbum(selectedAlbum.id!);
-    final remaining = selectedAlbum.maxCapacity - currentCount;
-    if (remaining <= 0) {
-      if (mounted) {
+      // Check album capacity before adding
+      final currentCount = await _dbHelper.getCardCountByAlbum(selectedAlbum.id!);
+      final remaining = selectedAlbum.maxCapacity - currentCount;
+      if (remaining <= 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Album "${selectedAlbum.name}" è pieno ($currentCount/${selectedAlbum.maxCapacity}).'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      final cardsToAdd = selectedCards.length > remaining ? remaining : selectedCards.length;
+      final limitedCards = selectedCards.sublist(0, cardsToAdd);
+      if (cardsToAdd < selectedCards.length && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Album "${selectedAlbum.name}" è pieno ($currentCount/${selectedAlbum.maxCapacity}).'),
-            backgroundColor: Colors.red,
+            content: Text('Album quasi pieno: aggiunte solo $cardsToAdd/${selectedCards.length} carte.'),
+            backgroundColor: Colors.orange,
           ),
         );
       }
-      return;
-    }
-    final cardsToAdd = selectedCards.length > remaining ? remaining : selectedCards.length;
-    final limitedCards = selectedCards.sublist(0, cardsToAdd);
-    if (cardsToAdd < selectedCards.length && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Album quasi pieno: aggiunte solo $cardsToAdd/${selectedCards.length} carte.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
 
-    // Add cards to collection; increment quantity if the same print already exists
-    int addedCount = 0;
-    int updatedCount = 0;
-    for (final card in limitedCards) {
-      try {
-        final catalogId = card['id']?.toString();
-        final serialNumber = card['localizedSetCode'] ?? card['setCode'] ?? '';
-
-        final existing = await _dbHelper.findCardInAlbum(selectedAlbum.id!, catalogId, serialNumber);
-        if (existing != null) {
-          await _dbHelper.updateCard(existing.copyWith(quantity: existing.quantity + 1));
-          updatedCount++;
-        } else {
-          final cardModel = CardModel(
-            catalogId: catalogId,
-            name: card['localizedName'] ?? card['name'] ?? 'Unknown',
-            serialNumber: serialNumber,
-            collection: widget.collectionKey,
-            albumId: selectedAlbum.id!,
-            type: card['type'] ?? '',
-            rarity: card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'] ?? '',
-            description: card['localizedDescription'] ?? card['description'] ?? '',
-            imageUrl: card['artwork'] ?? card['imageUrl'],
-          );
-          await _dbHelper.insertCard(cardModel);
-          addedCount++;
-        }
-      } catch (e) {
-        debugPrint('Error adding card: $e');
+      // Show progress dialog for multiple cards
+      ValueNotifier<int>? progressNotifier;
+      final totalToAdd = limitedCards.length;
+      if (totalToAdd > 1 && mounted) {
+        progressNotifier = ValueNotifier<int>(0);
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => PopScope(
+            canPop: false,
+            child: AlertDialog(
+              title: const Text('Aggiunta in corso...'),
+              content: ValueListenableBuilder<int>(
+                valueListenable: progressNotifier!,
+                builder: (context, progress, _) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      LinearProgressIndicator(
+                        value: totalToAdd > 0 ? progress / totalToAdd : null,
+                      ),
+                      const SizedBox(height: 12),
+                      Text('$progress / $totalToAdd carte elaborate'),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        );
       }
-    }
 
-    if (mounted) {
-      final parts = <String>[];
-      if (addedCount > 0) parts.add('$addedCount aggiunte');
-      if (updatedCount > 0) parts.add('$updatedCount quantità aggiornate');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${parts.join(', ')} in "${selectedAlbum.name}"'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      // Add cards to collection; increment quantity if the same print already exists
+      int addedCount = 0;
+      int updatedCount = 0;
+      for (final card in limitedCards) {
+        try {
+          final catalogId = card['id']?.toString();
+          final serialNumber = card['localizedSetCode'] ?? card['setCode'] ?? '';
+          final rarity = card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'] ?? '';
 
-      // Remember last used album
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('last_album_id_${widget.collectionKey}', selectedAlbum.id!);
-      setState(() => _lastUsedAlbumId = selectedAlbum.id);
+          final existing = await _dbHelper.findCardInAlbum(selectedAlbum.id!, catalogId, serialNumber, rarity);
+          if (existing != null) {
+            await _dbHelper.updateCard(existing.copyWith(quantity: existing.quantity + 1));
+            updatedCount++;
+          } else {
+            final cardModel = CardModel(
+              catalogId: catalogId,
+              name: card['localizedName'] ?? card['name'] ?? 'Unknown',
+              serialNumber: serialNumber,
+              collection: widget.collectionKey,
+              albumId: selectedAlbum.id!,
+              type: card['type'] ?? '',
+              rarity: rarity,
+              description: card['localizedDescription'] ?? card['description'] ?? '',
+              imageUrl: card['artwork'] ?? card['imageUrl'],
+            );
+            await _dbHelper.insertCard(cardModel);
+            addedCount++;
+          }
+        } catch (e) {
+          debugPrint('Error adding card: $e');
+        }
+        progressNotifier?.value++;
+      }
 
-      // Clear selection and reload
-      _clearSelection();
-      await _loadAlbumsAndOwned();
-      await _loadCards();
+      // Close progress dialog
+      if (progressNotifier != null && mounted) {
+        Navigator.pop(context);
+        progressNotifier.dispose();
+      }
+
+      if (mounted) {
+        final parts = <String>[];
+        if (addedCount > 0) parts.add('$addedCount aggiunte');
+        if (updatedCount > 0) parts.add('$updatedCount quantità aggiornate');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${parts.join(', ')} in "${selectedAlbum.name}"'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Remember last used album
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('last_album_id_${widget.collectionKey}', selectedAlbum.id!);
+        setState(() => _lastUsedAlbumId = selectedAlbum.id);
+
+        // Clear selection and reload
+        _clearSelection();
+        await _loadAlbumsAndOwned();
+        await _loadCards();
+      }
+    } finally {
+      if (mounted) setState(() => _isAdding = false);
     }
   }
 
@@ -634,10 +689,16 @@ class _CatalogPageState extends State<CatalogPage> {
             bottom: 16,
             right: 16,
             child: FloatingActionButton.extended(
-              onPressed: _addSelectedToCollection,
-              icon: const Icon(Icons.add),
-              label: Text('Aggiungi ${_selectedCardIds.length}'),
-              backgroundColor: Colors.deepPurple,
+              onPressed: _isAdding ? null : _addSelectedToCollection,
+              icon: _isAdding
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add),
+              label: Text(_isAdding ? 'Aggiungendo...' : 'Aggiungi ${_selectedCardIds.length}'),
+              backgroundColor: _isAdding ? Colors.grey : Colors.deepPurple,
             ),
           ),
       ],

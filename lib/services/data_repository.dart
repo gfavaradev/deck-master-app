@@ -61,6 +61,11 @@ class DataRepository {
 
       // Compare versions
       if (remoteVersion > localVersion) {
+        // Incremental update is only safe when exactly one version ahead and the
+        // metadata contains the list of modified chunks from that single publish.
+        final versionDiff = remoteVersion - localVersion;
+        final modifiedChunks = remoteMetadata['modifiedChunks'] as List<dynamic>? ?? [];
+        final canDoIncremental = versionDiff == 1 && modifiedChunks.isNotEmpty;
         return {
           'needsUpdate': true,
           'isFirstDownload': false,
@@ -68,6 +73,11 @@ class DataRepository {
           'remoteVersion': remoteVersion,
           'localTotalCards': localTotalCards,
           'totalCards': remoteTotalCards,
+          'canDoIncremental': canDoIncremental,
+          'modifiedChunks': canDoIncremental ? modifiedChunks : [],
+          'deletedCards': canDoIncremental
+              ? (remoteMetadata['deletedCards'] as List<dynamic>? ?? [])
+              : [],
         };
       }
 
@@ -137,7 +147,7 @@ class DataRepository {
     String lookupKey(String? code, String? rarity) =>
         '${code ?? ''}\x00${rarity ?? ''}';
 
-    final artworkUrl = 'https://images.ygoprodeck.com/images/cards/${card['id']}.jpg';
+    final fallbackArtworkUrl = 'https://images.ygoprodeck.com/images/cards/${card['id']}.jpg';
 
     final prints = enSets.map((en) {
       final enCode = en['set_code']?.toString() ?? '';
@@ -146,6 +156,10 @@ class DataRepository {
       final fr = frLookup[lookupKey(toLocalCode(enCode, 'fr'), enRarity)];
       final de = deLookup[lookupKey(toLocalCode(enCode, 'de'), enRarity)];
       final pt = ptLookup[lookupKey(toLocalCode(enCode, 'pt'), enRarity)];
+      // Use per-set image_url if specified by admin, otherwise fall back to card-level artwork URL
+      final artworkUrl = (en['image_url'] as String?)?.isNotEmpty == true
+          ? en['image_url'] as String
+          : fallbackArtworkUrl;
       return {
         'set_code':       en['set_code'],
         'set_name':       en['set_name'],
@@ -180,10 +194,25 @@ class DataRepository {
   Future<void> downloadYugiohCatalog({
     void Function(int current, int total)? onProgress,
     void Function(double progress)? onSaveProgress,
+    Map<String, dynamic>? updateInfo,
   }) async {
     if (kIsWeb) return; // Web has no local SQLite catalog; reads from Firestore directly
 
-    // Get metadata first to save after download
+    // Use incremental update when the update info confirms it is safe to do so
+    if (updateInfo?['canDoIncremental'] == true) {
+      final modifiedChunks = (updateInfo!['modifiedChunks'] as List<dynamic>)
+          .cast<String>();
+      final deletedCards = updateInfo['deletedCards'] as List<dynamic>? ?? [];
+      await _applyIncrementalUpdate(
+        modifiedChunks: modifiedChunks,
+        deletedCardIds: deletedCards,
+        onProgress: onProgress,
+        onSaveProgress: onSaveProgress,
+      );
+      return;
+    }
+
+    // Full download
     final remoteMetadata = await _firestoreService.getCatalogMetadata('yugioh');
 
     final cards = await _firestoreService.fetchCatalog(
@@ -215,6 +244,56 @@ class DataRepository {
         );
       } catch (e) {
         debugPrint('Warning: failed to save catalog metadata: $e');
+      }
+    }
+  }
+
+  /// Applies an incremental catalog update: fetches only the modified chunks,
+  /// deletes removed cards, upserts changed cards, and updates the local version.
+  Future<void> _applyIncrementalUpdate({
+    required List<String> modifiedChunks,
+    required List<dynamic> deletedCardIds,
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+  }) async {
+    final remoteMetadata = await _firestoreService.getCatalogMetadata('yugioh');
+
+    // Fetch only the chunks that changed
+    final cards = await _firestoreService.fetchCatalogChunks(
+      CatalogConstants.yugioh,
+      modifiedChunks,
+      onProgress: onProgress,
+    );
+
+    // Delete cards that were removed in this publish
+    if (deletedCardIds.isNotEmpty) {
+      final idsToDelete = deletedCardIds
+          .whereType<num>()
+          .map((id) => id.toInt())
+          .toList();
+      if (idsToDelete.isNotEmpty) {
+        await _dbHelper.deleteYugiohCardsByIds(idsToDelete);
+      }
+    }
+
+    // Upsert modified cards (INSERT OR REPLACE handles both add and edit)
+    if (cards.isNotEmpty) {
+      final normalizedCards = cards.map(_normalizeCardForSQLite).toList();
+      await _dbHelper.insertYugiohCards(normalizedCards, onProgress: onSaveProgress);
+    }
+
+    // Update local metadata version so we don't re-download next time
+    if (remoteMetadata != null) {
+      try {
+        await _dbHelper.saveCatalogMetadata(
+          catalogName: 'yugioh',
+          version: remoteMetadata['version'] as int? ?? 1,
+          totalCards: remoteMetadata['totalCards'] as int? ?? 0,
+          totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+          lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+        );
+      } catch (e) {
+        debugPrint('Warning: failed to save catalog metadata after incremental update: $e');
       }
     }
   }
@@ -398,9 +477,9 @@ class DataRepository {
     return await _dbHelper.getCardCountByAlbum(albumId);
   }
 
-  Future<CardModel?> findCardInAlbum(int albumId, String? catalogId, String serialNumber) async {
+  Future<CardModel?> findCardInAlbum(int albumId, String? catalogId, String serialNumber, String rarity) async {
     if (kIsWeb) return null;
-    return await _dbHelper.findCardInAlbum(albumId, catalogId, serialNumber);
+    return await _dbHelper.findCardInAlbum(albumId, catalogId, serialNumber, rarity);
   }
 
   // ============================================================
@@ -558,19 +637,23 @@ class DataRepository {
   Future<int> insertDeck(String name, String collection) async {
     final localId = await _dbHelper.insertDeck(name, collection);
     // Push to Firestore
-    if (await _syncService.canSync()) {
-      try {
-        final userId = _authService.currentUserId;
-        if (userId != null) {
-          final firestoreId = await _firestoreService.insertDeck(userId, name, collection);
-          await _dbHelper.updateFirestoreId('decks', localId, firestoreId);
+    try {
+      if (await _syncService.canSync()) {
+        try {
+          final userId = _authService.currentUserId;
+          if (userId != null) {
+            final firestoreId = await _firestoreService.insertDeck(userId, name, collection);
+            await _dbHelper.updateFirestoreId('decks', localId, firestoreId);
+          }
+        } catch (e) {
+          debugPrint('Error syncing deck insert: $e');
+          await _dbHelper.addPendingSync('decks', localId, 'insert');
         }
-      } catch (e) {
-        debugPrint('Error syncing deck insert: $e');
+      } else {
         await _dbHelper.addPendingSync('decks', localId, 'insert');
       }
-    } else {
-      await _dbHelper.addPendingSync('decks', localId, 'insert');
+    } catch (e) {
+      debugPrint('Error in deck sync flow: $e');
     }
     return localId;
   }
@@ -606,6 +689,10 @@ class DataRepository {
 
   Future<List<Map<String, dynamic>>> getDeckCards(int deckId) async {
     return await _dbHelper.getDeckCards(deckId);
+  }
+
+  Future<List<Map<String, dynamic>>> getDecksForCard(int cardId) async {
+    return await _dbHelper.getDecksForCard(cardId);
   }
 
   Future<void> removeCardFromDeck(int deckId, int cardId) async {

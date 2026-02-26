@@ -1,4 +1,4 @@
-package com.example.deck_master
+package com.giuseppe.deckmaster
 
 import io.flutter.embedding.android.FlutterActivity
 

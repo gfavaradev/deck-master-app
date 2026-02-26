@@ -17,22 +17,33 @@ class CollectionSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       color: Colors.blue.withValues(alpha: 0.1),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Doppioni: $duplicates', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-              Text(
-                'Valore: €${totalValue.toStringAsFixed(2)}',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
-              ),
-            ],
-          )
+          _buildStat('Uniche', uniqueCards.toString(), Colors.blue),
+          _buildStat('Doppioni', duplicates.toString(), Colors.orange),
+          _buildStat('Totali', totalCards.toString(), Colors.deepPurple),
+          _buildStat('Valore', '€${totalValue.toStringAsFixed(2)}', Colors.green),
         ],
       ),
+    );
+  }
+
+  Widget _buildStat(String label, String value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
+        ),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: Colors.grey),
+        ),
+      ],
     );
   }
 }
