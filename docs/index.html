@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deck Master – Gestione Account e Dati</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+    }
+    header {
+      background: linear-gradient(135deg, #1565C0, #1976D2);
+      color: white;
+      padding: 40px 20px;
+      text-align: center;
+    }
+    header h1 { font-size: 2em; margin-bottom: 8px; }
+    header p { opacity: 0.85; font-size: 1.05em; }
+    main {
+      max-width: 680px;
+      margin: 40px auto;
+      padding: 0 20px 60px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .card h2 {
+      color: #1565C0;
+      font-size: 1.25em;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card p { line-height: 1.7; margin-bottom: 12px; color: #555; }
+    ol { padding-left: 20px; }
+    ol li { line-height: 1.8; color: #555; }
+    ol li strong { color: #333; }
+    .badge {
+      display: inline-block;
+      background: #E3F2FD;
+      color: #1565C0;
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 0.82em;
+      font-weight: 600;
+    }
+    .warning {
+      background: #FFF3E0;
+      border-left: 4px solid #FF9800;
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      margin-top: 14px;
+      font-size: 0.92em;
+      color: #6D4C41;
+    }
+    a { color: #1565C0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    footer {
+      text-align: center;
+      color: #999;
+      font-size: 0.85em;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Deck Master</h1>
+  <p>Gestione Account e Dati Personali</p>
+</header>
+
+<main>
+
+  <div class="card" id="elimina-account">
+    <h2>
+      <span>&#128465;</span>
+      Elimina Account
+      <span class="badge">Dall'app</span>
+    </h2>
+    <p>Puoi eliminare il tuo account direttamente dall'app in pochi secondi:</p>
+    <ol>
+      <li>Apri <strong>Deck Master</strong></li>
+      <li>Tocca l'icona <strong>Impostazioni</strong> in alto a destra</li>
+      <li>Scorri fino in fondo e tocca <strong>Elimina Account</strong></li>
+      <li>Leggi il messaggio di conferma e tocca <strong>Elimina</strong></li>
+    </ol>
+    <div class="warning">
+      &#9888;&#65039; Questa azione e' <strong>irreversibile</strong>. Verranno eliminati permanentemente
+      account, deck, album e tutte le carte salvate.
+    </div>
+    <p style="margin-top:16px;">
+      Preferisci farlo via email?
+      <a href="mailto:g.favara.dev@gmail.com?subject=Richiesta%20eliminazione%20account%20Deck%20Master">
+        Scrivici qui
+      </a>
+    </p>
+  </div>
+
+  <div class="card" id="elimina-dati">
+    <h2>
+      <span>&#128194;</span>
+      Elimina Solo i Dati
+      <span class="badge">Via email</span>
+    </h2>
+    <p>
+      Se vuoi eliminare solo i tuoi dati (deck, album, carte) mantenendo l'account,
+      invia una richiesta a:
+    </p>
+    <p>
+      <a href="mailto:g.favara.dev@gmail.com?subject=Richiesta%20eliminazione%20dati%20Deck%20Master">
+        g.favara.dev@gmail.com
+      </a>
+    </p>
+    <p>
+      Indica nell'oggetto: <em>"Richiesta eliminazione dati Deck Master"</em>.<br>
+      La richiesta verra' elaborata entro <strong>30 giorni</strong>.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>
+      <span>&#128203;</span>
+      Dati che vengono eliminati
+    </h2>
+    <p>In caso di eliminazione account o dati, rimuoviamo:</p>
+    <ol>
+      <li>Email e nome utente (da Google Sign-In)</li>
+      <li>Tutti i deck creati</li>
+      <li>Tutti gli album creati</li>
+      <li>Tutte le carte nella tua collezione</li>
+      <li>Le preferenze e impostazioni salvate</li>
+    </ol>
+  </div>
+
+</main>
+
+<footer>
+  <p>Deck Master &copy; 2026 &nbsp;&middot;&nbsp;
+    <a href="mailto:g.favara.dev@gmail.com">g.favara.dev@gmail.com</a>
+  </p>
+</footer>
+
+</body>
+</html>

@@ -115,9 +115,58 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.delete_forever, color: Colors.red),
+            title: const Text('Elimina Account', style: TextStyle(color: Colors.red)),
+            subtitle: const Text('Cancella account e tutti i dati associati'),
+            onTap: _isOffline ? null : _confirmDeleteAccount,
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Elimina Account'),
+        content: const Text(
+          'Sei sicuro? Questa azione è irreversibile.\n\n'
+          'Il tuo account e tutti i dati (deck, album, carte) verranno eliminati definitivamente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Elimina'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _authService.deleteAccount();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+        (route) => false,
+      );
+    } on Exception catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().contains('requires-recent-login')
+          ? 'Per sicurezza, esegui prima il logout e accedi di nuovo, poi riprova.'
+          : 'Errore durante l\'eliminazione: $e';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(seconds: 5)),
+      );
+    }
   }
 
   Widget _buildCatalogSection() {

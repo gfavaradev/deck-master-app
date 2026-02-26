@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
@@ -233,4 +234,52 @@ class AuthService {
 
   /// Get UserService instance for advanced user management
   UserService get userService => _userService;
+
+  /// Delete the current user's account and all associated data
+  Future<void> deleteAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final uid = user.uid;
+
+    // Stop real-time listeners before deleting
+    SyncService().stopListening();
+
+    // Delete Firestore subcollections and user document
+    try {
+      final firestore = FirebaseFirestore.instance;
+      for (final col in ['decks', 'albums', 'cards']) {
+        final docs = await firestore.collection('users/$uid/$col').get();
+        for (final doc in docs.docs) {
+          await doc.reference.delete();
+        }
+      }
+      await _userService.deleteUser(uid);
+    } catch (e) {
+      debugPrint('Error deleting Firestore data: $e');
+    }
+
+    // Clear local SQLite data
+    if (!kIsWeb) {
+      try {
+        final dbHelper = DatabaseHelper();
+        await dbHelper.clearUserData();
+      } catch (e) {
+        debugPrint('Error clearing local data: $e');
+      }
+    }
+
+    // Sign out from social providers
+    if (!kIsWeb) {
+      try { await _googleSignIn.signOut(); } catch (_) {}
+    }
+    if (isFacebookAuthSupported) {
+      try { await FacebookAuth.instance.logOut(); } catch (_) {}
+    }
+
+    // Delete Firebase Auth account (may throw requires-recent-login)
+    await user.delete();
+
+    await setOfflineMode(false);
+  }
 }
