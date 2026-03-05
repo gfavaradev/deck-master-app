@@ -726,4 +726,166 @@ class DataRepository {
   Future<void> insertYugiohCards(List<Map<String, dynamic>> cards, {Function(double)? onProgress}) async {
     await _dbHelper.insertYugiohCards(cards, onProgress: onProgress);
   }
+
+  // ============================================================
+  // One Piece Catalog (from Firestore)
+  // ============================================================
+
+  Future<Map<String, dynamic>> checkOnepieceCatalogUpdates() async {
+    if (kIsWeb) return {'needsUpdate': false, 'totalCards': 0};
+    try {
+      final remoteMetadata = await _firestoreService.getCatalogMetadata('onepiece');
+      if (remoteMetadata == null) {
+        return {'needsUpdate': false, 'error': 'Remote metadata not found'};
+      }
+
+      final remoteVersion = remoteMetadata['version'] as int? ?? 0;
+      final remoteTotalCards = remoteMetadata['totalCards'] as int? ?? 0;
+      final localMetadata = await _dbHelper.getCatalogMetadata('onepiece');
+
+      if (localMetadata == null) {
+        return {
+          'needsUpdate': true,
+          'isFirstDownload': true,
+          'remoteVersion': remoteVersion,
+          'totalCards': remoteTotalCards,
+        };
+      }
+
+      final localVersion = localMetadata['version'] as int? ?? 0;
+      final localTotalCards = localMetadata['total_cards'] as int? ?? 0;
+
+      if (remoteVersion > localVersion) {
+        final versionDiff = remoteVersion - localVersion;
+        final modifiedChunks = remoteMetadata['modifiedChunks'] as List<dynamic>? ?? [];
+        final canDoIncremental = versionDiff == 1 && modifiedChunks.isNotEmpty;
+        return {
+          'needsUpdate': true,
+          'isFirstDownload': false,
+          'localVersion': localVersion,
+          'remoteVersion': remoteVersion,
+          'localTotalCards': localTotalCards,
+          'totalCards': remoteTotalCards,
+          'canDoIncremental': canDoIncremental,
+          'modifiedChunks': canDoIncremental ? modifiedChunks : [],
+          'deletedCards': canDoIncremental
+              ? (remoteMetadata['deletedCards'] as List<dynamic>? ?? [])
+              : [],
+        };
+      }
+
+      return {
+        'needsUpdate': false,
+        'localVersion': localVersion,
+        'totalCards': localTotalCards,
+        'lastUpdated': localMetadata['last_updated'],
+      };
+    } catch (e) {
+      return {'needsUpdate': false, 'error': e.toString()};
+    }
+  }
+
+  Future<void> downloadOnepieceCatalog({
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+    Map<String, dynamic>? updateInfo,
+  }) async {
+    if (kIsWeb) return;
+
+    if (updateInfo?['canDoIncremental'] == true) {
+      final modifiedChunks = (updateInfo!['modifiedChunks'] as List<dynamic>).cast<String>();
+      final deletedCards = updateInfo['deletedCards'] as List<dynamic>? ?? [];
+      await _applyOnepieceIncrementalUpdate(
+        modifiedChunks: modifiedChunks,
+        deletedCardIds: deletedCards,
+        onProgress: onProgress,
+        onSaveProgress: onSaveProgress,
+      );
+      return;
+    }
+
+    final remoteMetadata = await _firestoreService.getCatalogMetadata('onepiece');
+    final cards = await _firestoreService.fetchCatalog(
+      CatalogConstants.onepiece,
+      onProgress: onProgress,
+    );
+    if (cards.isEmpty) return;
+
+    await _dbHelper.insertOnepieceCards(cards, onProgress: onSaveProgress);
+
+    if (remoteMetadata != null) {
+      await _dbHelper.saveCatalogMetadata(
+        catalogName: 'onepiece',
+        version: remoteMetadata['version'] as int? ?? 1,
+        totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+        totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+        lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  Future<void> _applyOnepieceIncrementalUpdate({
+    required List<String> modifiedChunks,
+    required List<dynamic> deletedCardIds,
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+  }) async {
+    final remoteMetadata = await _firestoreService.getCatalogMetadata('onepiece');
+    final modifiedCards = await _firestoreService.fetchCatalogChunks(
+      CatalogConstants.onepiece,
+      modifiedChunks,
+      onProgress: onProgress,
+    );
+
+    final deletedIds = deletedCardIds.map((e) => e as int).toList();
+    if (deletedIds.isNotEmpty) await _dbHelper.deleteOnepieceCardsByIds(deletedIds);
+    if (modifiedCards.isNotEmpty) {
+      await _dbHelper.insertOnepieceCards(modifiedCards, onProgress: onSaveProgress);
+    }
+
+    if (remoteMetadata != null) {
+      await _dbHelper.saveCatalogMetadata(
+        catalogName: 'onepiece',
+        version: remoteMetadata['version'] as int? ?? 1,
+        totalCards: remoteMetadata['totalCards'] as int? ?? 0,
+        totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+        lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  Future<void> redownloadOnepieceCatalog({
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+  }) async {
+    if (kIsWeb) return;
+    final remoteMetadata = await _firestoreService.getCatalogMetadata('onepiece');
+    final cards = await _firestoreService.fetchCatalog(
+      CatalogConstants.onepiece,
+      onProgress: onProgress,
+    );
+    if (cards.isEmpty) return;
+
+    await _dbHelper.clearOnepieceCatalog();
+    await _dbHelper.insertOnepieceCards(cards, onProgress: onSaveProgress);
+
+    if (remoteMetadata != null) {
+      await _dbHelper.saveCatalogMetadata(
+        catalogName: 'onepiece',
+        version: remoteMetadata['version'] as int? ?? 1,
+        totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+        totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+        lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
+    String? query,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    if (kIsWeb) return [];
+    return await _dbHelper.getOnepieceCatalogCards(query: query, limit: limit, offset: offset);
+  }
 }

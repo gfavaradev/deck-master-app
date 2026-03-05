@@ -2,8 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:http/http.dart' as http;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:deck_master/models/pending_catalog_change.dart';
 import 'package:deck_master/services/database_helper.dart';
 
@@ -33,7 +35,7 @@ class AdminCatalogService {
         final response = await http.get(Uri.parse(sourceUrl));
         if (response.statusCode != 200) return null;
         await ref.putData(
-          response.bodyBytes,
+          await _compressCardImage(response.bodyBytes),
           SettableMetadata(contentType: 'image/jpeg'),
         );
         return await ref.getDownloadURL();
@@ -1146,6 +1148,238 @@ class AdminCatalogService {
     if (value == null) return null;
     if (value is num) return value.toDouble();
     return double.tryParse(value.toString());
+  }
+
+  // ============================================================
+  // OPTCG API — One Piece Catalog Population
+  // ============================================================
+
+  static const String _optcgBaseUrl = 'https://www.optcgapi.com/api';
+
+  /// Comprime un'immagine carta preservando i colori ICC (codec nativi).
+  /// Target: ~60-100 KB — alta qualità, ~50% risparmio rispetto all'originale.
+  Future<Uint8List> _compressCardImage(Uint8List bytes, {int maxWidth = 400, int quality = 88}) async {
+    final result = await FlutterImageCompress.compressWithList(
+      bytes,
+      minWidth: maxWidth,
+      minHeight: 9999, // no height constraint — only width is limited, aspect ratio preserved
+      quality: quality,
+      format: CompressFormat.jpeg,
+    );
+    return result;
+  }
+
+  Future<List<dynamic>> _fetchOptcgEndpoint(String endpoint, {bool optional = false}) async {
+    final response = await http.get(Uri.parse('$_optcgBaseUrl/$endpoint'));
+    if (response.statusCode == 404 && optional) {
+      debugPrint('[OPTCG] Endpoint $endpoint not found (404), skipping.');
+      return [];
+    }
+    if (response.statusCode != 200) throw Exception('OPTCG API error $endpoint: ${response.statusCode}');
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) return decoded;
+    return [];
+  }
+
+  /// Downloads the full One Piece catalog from OPTCG API and uploads to Firestore.
+  Future<Map<String, dynamic>> downloadOnepieceCatalogFromAPI({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    onProgress('Scaricando carte dai set...', null);
+    final setCards = await _fetchOptcgEndpoint('allSetCards/');
+
+    final allRaw = [...setCards];
+    onProgress('${allRaw.length} stampe ricevute. Elaborando...', null);
+
+    // Carica catalog esistente per preservare Firebase Storage URLs
+    final existingCards = await _getExistingCardsMap('onepiece_catalog').timeout(
+      const Duration(seconds: 60),
+      onTimeout: () => {},
+    );
+    final existingImageUrls = <String, String>{};
+    for (final entry in existingCards.entries) {
+      final prints = entry.value['prints'] as List<dynamic>? ?? [];
+      for (final p in prints) {
+        final pm = Map<String, dynamic>.from(p as Map);
+        final artwork = pm['artwork'] as String?;
+        final cardSetId = pm['card_set_id'] as String?;
+        if (artwork != null && artwork.contains('firebasestorage') && cardSetId != null) {
+          existingImageUrls[cardSetId] = artwork;
+        }
+      }
+    }
+
+    // Raggruppa stampe in card base
+    final Map<String, Map<String, dynamic>> cardMap = {};
+    final Map<String, int> cardIdMap = {};
+    int nextId = 1;
+
+    for (final raw in allRaw) {
+      final m = Map<String, dynamic>.from(raw as Map);
+      final name = (m['card_name'] as String? ?? '').trim();
+      final type = (m['card_type'] as String? ?? '').trim();
+      final color = (m['card_color'] as String? ?? '').trim();
+      final cost = m['card_cost'];
+      final power = m['card_power'];
+      final life = m['life'];
+      final cardSetId = (m['card_set_id'] as String? ?? '').trim();
+      if (cardSetId.isEmpty || name.isEmpty) continue;
+
+      final groupKey = '$name\x00$type\x00$color\x00$cost\x00$power\x00$life';
+
+      if (!cardIdMap.containsKey(groupKey)) {
+        cardIdMap[groupKey] = nextId++;
+        cardMap[groupKey] = {
+          'id': cardIdMap[groupKey],
+          'name': name,
+          'card_type': type,
+          'color': color,
+          'cost': cost is num ? cost.toInt() : int.tryParse(cost?.toString() ?? ''),
+          'power': power is num ? power.toInt() : int.tryParse(power?.toString() ?? ''),
+          'life': life is num ? life.toInt() : int.tryParse(life?.toString() ?? ''),
+          'sub_types': (m['sub_types'] is List)
+              ? jsonEncode(m['sub_types'])
+              : m['sub_types']?.toString(),
+          'counter_amount': m['counter_amount'] is num
+              ? (m['counter_amount'] as num).toInt()
+              : int.tryParse(m['counter_amount']?.toString() ?? ''),
+          'attribute': m['attribute']?.toString(),
+          'card_text': m['card_text']?.toString(),
+          'image_url': m['card_image']?.toString(),
+          'prints': <Map<String, dynamic>>[],
+        };
+      }
+
+      final existingArtwork = existingImageUrls[cardSetId];
+      (cardMap[groupKey]!['prints'] as List<Map<String, dynamic>>).add({
+        'card_set_id': cardSetId,
+        'set_id': m['set_id']?.toString(),
+        'set_name': m['set_name']?.toString(),
+        'rarity': m['rarity']?.toString(),
+        'inventory_price': _parseDouble(m['inventory_price']),
+        'market_price': _parseDouble(m['market_price']),
+        'artwork': existingArtwork ?? m['card_image']?.toString(),
+      });
+    }
+
+    final mergedCards = cardMap.values.toList();
+    onProgress('${mergedCards.length} carte uniche. Caricando su Firestore...', null);
+
+    await _uploadCatalogChunks(
+      catalogCollection: 'onepiece_catalog',
+      cards: mergedCards,
+      adminUid: adminUid,
+      isIncremental: false,
+      onProgress: (cur, tot) =>
+          onProgress('Caricando chunk $cur di $tot...', cur / tot),
+    );
+
+    return {'totalCards': mergedCards.length, 'totalPrints': allRaw.length};
+  }
+
+  /// Migra le immagini One Piece su Firebase Storage aggiornando il campo `artwork` nei prints.
+  /// [force] = true salta il controllo sull'URL esistente e ri-verifica ogni file su Storage.
+  Future<Map<String, dynamic>> migrateOnepieceImagesToStorage({
+    required String adminUid,
+    required Function(int current, int total) onProgress,
+    bool force = false,
+  }) async {
+    const catalogCollection = 'onepiece_catalog';
+    final chunkMap = await _downloadChunksMap(catalogCollection, onProgress);
+    if (chunkMap.isEmpty) return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+
+    final sortedChunkIds = chunkMap.keys.toList()..sort();
+
+    // Raccoglie tutti i print che necessitano migrazione
+    final toMigrate = <({String chunkId, int cardIndex, int printIndex, String cardSetId, String sourceUrl})>[];
+    for (final chunkId in sortedChunkIds) {
+      final cards = chunkMap[chunkId]!;
+      for (int i = 0; i < cards.length; i++) {
+        final card = cards[i];
+        final prints = card['prints'] as List<dynamic>? ?? [];
+        for (int j = 0; j < prints.length; j++) {
+          final p = Map<String, dynamic>.from(prints[j] as Map);
+          final artwork = p['artwork'] as String?;
+          final sourceUrl = p['artwork'] as String? ?? card['image_url'] as String?;
+          final needsMigration = sourceUrl != null &&
+              sourceUrl.isNotEmpty &&
+              (force || artwork == null || !artwork.contains('firebasestorage'));
+          if (needsMigration) {
+            toMigrate.add((
+              chunkId: chunkId,
+              cardIndex: i,
+              printIndex: j,
+              cardSetId: p['card_set_id'] as String? ?? '',
+              sourceUrl: sourceUrl,
+            ));
+          }
+        }
+      }
+    }
+
+    if (toMigrate.isEmpty) return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+
+    int migrated = 0, failed = 0;
+    final affectedChunkIds = <String>{};
+
+    for (int i = 0; i < toMigrate.length; i++) {
+      final item = toMigrate[i];
+      onProgress(i + 1, toMigrate.length);
+
+      try {
+        final ref = _storage.ref('catalog/onepiece/images/${item.cardSetId}.jpg');
+        String? storageUrl;
+        try {
+          storageUrl = await ref.getDownloadURL();
+        } catch (_) {
+          final response = await http.get(Uri.parse(item.sourceUrl));
+          if (response.statusCode == 200) {
+            final compressed = await _compressCardImage(response.bodyBytes);
+            await ref.putData(compressed,
+                SettableMetadata(contentType: 'image/jpeg'));
+            storageUrl = await ref.getDownloadURL();
+          }
+        }
+
+        if (storageUrl != null) {
+          final card = Map<String, dynamic>.from(chunkMap[item.chunkId]![item.cardIndex]);
+          final prints = List<dynamic>.from(card['prints'] as List);
+          final print = Map<String, dynamic>.from(prints[item.printIndex] as Map);
+          print['artwork'] = storageUrl;
+          prints[item.printIndex] = print;
+          card['prints'] = prints;
+          // Aggiorna image_url della card con la prima immagine migrata
+          if (!card.containsKey('imageUrl')) card['imageUrl'] = storageUrl;
+          chunkMap[item.chunkId]![item.cardIndex] = card;
+          affectedChunkIds.add(item.chunkId);
+          migrated++;
+        } else {
+          failed++;
+        }
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    for (final chunkId in affectedChunkIds) {
+      await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .set({'cards': chunkMap[chunkId]!});
+    }
+
+    final metadataDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
+    final currentVersion = metadataDoc.exists ? (metadataDoc.data()?['version'] as int? ?? 0) : 0;
+    await _firestore.collection(catalogCollection).doc('metadata').set({
+      'lastUpdated': FieldValue.serverTimestamp(),
+      'version': currentVersion + 1,
+      'updatedBy': adminUid,
+    }, SetOptions(merge: true));
+
+    return {'migrated': migrated, 'failed': failed, 'chunksUpdated': affectedChunkIds.length};
   }
 
   // ============================================================

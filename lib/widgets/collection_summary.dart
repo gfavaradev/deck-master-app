@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 class CollectionSummary extends StatelessWidget {
   final int uniqueCards;
@@ -18,14 +19,14 @@ class CollectionSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.blue.withValues(alpha: 0.1),
+      color: AppColors.glowBlue,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStat('Uniche', uniqueCards.toString(), Colors.blue),
-          _buildStat('Doppioni', duplicates.toString(), Colors.orange),
-          _buildStat('Totali', totalCards.toString(), Colors.deepPurple),
-          _buildStat('Valore', '€${totalValue.toStringAsFixed(2)}', Colors.green),
+          _buildStat('Uniche', uniqueCards.toString(), AppColors.blue),
+          _buildStat('Doppioni', duplicates.toString(), AppColors.gold),
+          _buildStat('Totali', totalCards.toString(), AppColors.purple),
+          _buildStat('Valore', '€${totalValue.toStringAsFixed(2)}', AppColors.gold),
         ],
       ),
     );
@@ -41,7 +42,7 @@ class CollectionSummary extends StatelessWidget {
         ),
         Text(
           label,
-          style: const TextStyle(fontSize: 11, color: Colors.grey),
+          style: const TextStyle(fontSize: 11, color: AppColors.textHint),
         ),
       ],
     );

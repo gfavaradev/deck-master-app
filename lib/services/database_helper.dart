@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -61,6 +61,14 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_yugioh_prints_rarity ON yugioh_prints(rarity)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_yugioh_prints_set_name ON yugioh_prints(set_name)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_yugioh_prices_print_id ON yugioh_prices(print_id)');
+
+    // One Piece indices
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_cards_name ON onepiece_cards(name)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_cards_color ON onepiece_cards(color)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_cards_type ON onepiece_cards(card_type)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_prints_card_id ON onepiece_prints(card_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_prints_set_id ON onepiece_prints(set_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_prints_card_set_id ON onepiece_prints(card_set_id)');
 
     // cards table indices — critical for getCardsByCollection and getAlbumsByCollection
     await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_collection ON cards(collection)');
@@ -101,6 +109,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 7) {
       await db.execute('ALTER TABLE yugioh_cards ADD COLUMN image_url TEXT');
+    }
+    if (oldVersion < 8) {
+      await _createOnepieceTables(db);
     }
   }
 
@@ -277,6 +288,45 @@ class DatabaseHelper {
     await db.execute("DELETE FROM catalog_cards WHERE collection = 'yugioh'");
   }
 
+  Future<void> _createOnepieceTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS onepiece_cards(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        card_type TEXT,
+        color TEXT,
+        cost INTEGER,
+        power INTEGER,
+        life INTEGER,
+        sub_types TEXT,
+        counter_amount INTEGER,
+        attribute TEXT,
+        card_text TEXT,
+        image_url TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS onepiece_prints(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_id INTEGER NOT NULL,
+        card_set_id TEXT NOT NULL,
+        set_id TEXT,
+        set_name TEXT,
+        rarity TEXT,
+        inventory_price REAL,
+        market_price REAL,
+        artwork TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY (card_id) REFERENCES onepiece_cards(id) ON DELETE CASCADE,
+        UNIQUE(card_set_id)
+      )
+    ''');
+  }
+
   Future _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE albums(
@@ -387,6 +437,9 @@ class DatabaseHelper {
 
     // Create yugioh-specific tables
     await _createYugiohTables(db);
+
+    // Create One Piece-specific tables
+    await _createOnepieceTables(db);
 
     // Create pending_sync table
     await db.execute('''
@@ -515,7 +568,15 @@ class DatabaseHelper {
         COALESCE(u.type, yc.type) as type,
         COALESCE(u.description, yc.description) as description,
         u.collection,
-        u.imageUrl,
+        COALESCE(
+          (SELECT artwork FROM yugioh_prints
+           WHERE card_id = CAST(u.catalogId AS INTEGER)
+             AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+               OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+               OR set_code_pt = u.serialNumber)
+           LIMIT 1),
+          u.imageUrl
+        ) as imageUrl,
         u.serialNumber,
         u.albumId,
         u.rarity,
@@ -632,10 +693,38 @@ class DatabaseHelper {
                COALESCE(u.type, yc.type) as type,
                COALESCE(u.description, yc.description) as description,
                u.collection,
-               u.imageUrl
+               COALESCE(
+                 (SELECT artwork FROM yugioh_prints
+                  WHERE card_id = CAST(u.catalogId AS INTEGER)
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1),
+                 u.imageUrl
+               ) as imageUrl
         FROM cards u
         LEFT JOIN yugioh_cards yc ON yc.id = CAST(u.catalogId AS INTEGER)
         WHERE u.collection = 'yugioh'
+      ''');
+      return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
+    }
+
+    if (collection == 'onepiece') {
+      final List<Map<String, dynamic>> maps = await db.rawQuery('''
+        SELECT u.*,
+               COALESCE(u.name, oc.name) as name,
+               COALESCE(u.type, oc.card_type) as type,
+               COALESCE(u.description, oc.card_text) as description,
+               u.collection,
+               COALESCE(
+                 op.artwork,
+                 oc.image_url,
+                 u.imageUrl
+               ) as imageUrl
+        FROM cards u
+        LEFT JOIN onepiece_cards oc ON oc.id = CAST(u.catalogId AS INTEGER)
+        LEFT JOIN onepiece_prints op ON op.card_id = oc.id AND op.card_set_id = u.serialNumber
+        WHERE u.collection = 'onepiece'
       ''');
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
@@ -663,10 +752,38 @@ class DatabaseHelper {
                COALESCE(u.type, yc.type) as type,
                COALESCE(u.description, yc.description) as description,
                u.collection,
-               u.imageUrl
+               COALESCE(
+                 (SELECT artwork FROM yugioh_prints
+                  WHERE card_id = CAST(u.catalogId AS INTEGER)
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1),
+                 u.imageUrl
+               ) as imageUrl
         FROM cards u
         LEFT JOIN yugioh_cards yc ON yc.id = CAST(u.catalogId AS INTEGER)
         WHERE u.collection = 'yugioh' AND (yc.name = ? OR u.name = ?) AND u.serialNumber = ?
+      ''', [name, name, serialNumber]);
+      return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
+    }
+
+    if (collection == 'onepiece') {
+      final List<Map<String, dynamic>> maps = await db.rawQuery('''
+        SELECT u.*,
+               COALESCE(u.name, oc.name) as name,
+               COALESCE(u.type, oc.card_type) as type,
+               COALESCE(u.description, oc.card_text) as description,
+               u.collection,
+               COALESCE(
+                 op.artwork,
+                 oc.image_url,
+                 u.imageUrl
+               ) as imageUrl
+        FROM cards u
+        LEFT JOIN onepiece_cards oc ON oc.id = CAST(u.catalogId AS INTEGER)
+        LEFT JOIN onepiece_prints op ON op.card_id = oc.id AND op.card_set_id = u.serialNumber
+        WHERE u.collection = 'onepiece' AND (oc.name = ? OR u.name = ?) AND u.serialNumber = ?
       ''', [name, name, serialNumber]);
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
@@ -1427,5 +1544,141 @@ class DatabaseHelper {
       await txn.delete('yugioh_prints');
       await txn.delete('yugioh_prices');
     });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // One Piece catalog
+  // ─────────────────────────────────────────────────────────────
+
+  Future<void> clearOnepieceCatalog() async {
+    Database db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('onepiece_prints');
+      await txn.delete('onepiece_cards');
+      await txn.delete('catalog_metadata', where: 'catalog_name = ?', whereArgs: ['onepiece']);
+    });
+  }
+
+  Future<void> deleteOnepieceCardsByIds(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.transaction((txn) async {
+      await txn.rawDelete('DELETE FROM onepiece_prints WHERE card_id IN ($placeholders)', ids);
+      await txn.rawDelete('DELETE FROM onepiece_cards WHERE id IN ($placeholders)', ids);
+    });
+  }
+
+  Future<void> insertOnepieceCards(
+    List<Map<String, dynamic>> cards, {
+    void Function(double progress)? onProgress,
+  }) async {
+    if (cards.isEmpty) return;
+    final db = await database;
+
+    const batchSize = 200;
+    int processed = 0;
+
+    for (int i = 0; i < cards.length; i += batchSize) {
+      final batch = cards.sublist(i, (i + batchSize).clamp(0, cards.length));
+      await db.transaction((txn) async {
+        for (final card in batch) {
+          final prints = card['prints'] as List<dynamic>? ?? [];
+
+          final cardId = await txn.insert(
+            'onepiece_cards',
+            {
+              if (card['id'] != null) 'id': card['id'],
+              'name': card['name'] ?? '',
+              'card_type': card['card_type'],
+              'color': card['color'],
+              'cost': card['cost'],
+              'power': card['power'],
+              'life': card['life'],
+              'sub_types': card['sub_types'],
+              'counter_amount': card['counter_amount'],
+              'attribute': card['attribute'],
+              'card_text': card['card_text'],
+              'image_url': card['image_url'],
+              'created_at': DateTime.now().toIso8601String(),
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+
+          for (final p in prints) {
+            final print = Map<String, dynamic>.from(p as Map);
+            await txn.insert(
+              'onepiece_prints',
+              {
+                'card_id': cardId,
+                'card_set_id': print['card_set_id'],
+                'set_id': print['set_id'],
+                'set_name': print['set_name'],
+                'rarity': print['rarity'],
+                'inventory_price': print['inventory_price'],
+                'market_price': print['market_price'],
+                'artwork': print['artwork'],
+                'created_at': DateTime.now().toIso8601String(),
+                'updated_at': DateTime.now().toIso8601String(),
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+        }
+      });
+
+      processed += batch.length;
+      onProgress?.call(processed / cards.length);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
+    String? query,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    final db = await database;
+    final String searchPattern = '%${query ?? ''}%';
+
+    String whereClause = '';
+    if (query != null && query.isNotEmpty) {
+      whereClause = '''
+        WHERE (
+          oc.name LIKE ?
+          OR op.card_set_id LIKE ?
+          OR op.set_name LIKE ?
+          OR oc.color LIKE ?
+          OR oc.card_type LIKE ?
+        )''';
+    }
+
+    final sql = '''
+      SELECT
+        oc.id, oc.name, oc.card_type, oc.color, oc.cost, oc.power,
+        oc.life, oc.sub_types, oc.counter_amount, oc.attribute,
+        oc.card_text, oc.image_url,
+        op.id AS printId,
+        op.card_set_id AS setCode,
+        op.set_id AS setId,
+        op.set_name AS setName,
+        op.rarity,
+        op.inventory_price AS inventoryPrice,
+        op.market_price AS marketPrice,
+        op.artwork,
+        'onepiece' AS collection,
+        EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(oc.id AS TEXT)) AS isOwned
+      FROM onepiece_cards oc
+      INNER JOIN onepiece_prints op ON oc.id = op.card_id
+      $whereClause
+      ORDER BY op.card_set_id
+      LIMIT ? OFFSET ?
+    ''';
+
+    final args = query != null && query.isNotEmpty
+        ? [searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, limit, offset]
+        : [limit, offset];
+
+    return await db.rawQuery(sql, args);
   }
 }

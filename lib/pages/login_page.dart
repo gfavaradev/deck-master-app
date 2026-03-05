@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, InternetAddress;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
@@ -22,9 +22,28 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isLogin = true;
+  bool _showOfflineButton = false;
 
   /// Su mobile (Android/iOS) usiamo solo social login
   bool get _isSocialOnly => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  @override
+  void initState() {
+    super.initState();
+    _checkConnectivity();
+  }
+
+  Future<void> _checkConnectivity() async {
+    try {
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(seconds: 3));
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        if (mounted) setState(() => _showOfflineButton = true);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _showOfflineButton = true);
+    }
+  }
 
   @override
   void dispose() {
@@ -77,6 +96,7 @@ class _LoginPageState extends State<LoginPage> {
         } else {
           errorMessage = 'Errore: $msg';
         }
+        setState(() => _showOfflineButton = true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
@@ -243,30 +263,13 @@ class _LoginPageState extends State<LoginPage> {
                           svgAsset: 'assets/icon/google.svg',
                           onPressed: () => _handleSignIn(_authService.signInWithGoogle),
                         ),
-                        // TODO: riabilitare quando Facebook app è in modalità Live
-                        // const SizedBox(width: 24),
-                        // _buildSocialButton(
-                        //   svgAsset: 'assets/icon/facebook.svg',
-                        //   onPressed: () => _handleSignIn(_authService.signInWithFacebook),
-                        // ),
+                        if (_showOfflineButton) ...[
+                          const SizedBox(width: 24),
+                          _buildOfflineButton(),
+                        ],
                       ],
                     ),
                   const Spacer(flex: 1),
-                  TextButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () => _handleSignIn(() async {
-                              await _authService.signInOffline();
-                              return true;
-                            }),
-                    child: const Text(
-                      'Continua Offline',
-                      style: TextStyle(
-                        color: Colors.white,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -414,24 +417,11 @@ class _LoginPageState extends State<LoginPage> {
                   svgAsset: 'assets/icon/google.svg',
                   onPressed: () => _handleSignIn(_authService.signInWithGoogle),
                 ),
-                // TODO: riabilitare quando Facebook app è in modalità Live
-                // const SizedBox(width: 20),
-                // _buildSocialButton(
-                //   svgAsset: 'assets/icon/facebook.svg',
-                //   onPressed: () => _handleSignIn(_authService.signInWithFacebook),
-                // ),
+                if (_showOfflineButton) ...[
+                  const SizedBox(width: 24),
+                  _buildOfflineButton(),
+                ],
               ],
-            ),
-            const SizedBox(height: 30),
-            TextButton(
-              onPressed: () => _handleSignIn(() async {
-                await _authService.signInOffline();
-                return true;
-              }),
-              child: const Text(
-                'Continua Offline',
-                style: TextStyle(color: Colors.white, decoration: TextDecoration.underline),
-              ),
             ),
             const SizedBox(height: 50),
           ],
@@ -451,6 +441,35 @@ class _LoginPageState extends State<LoginPage> {
         width: 60,
         height: 60,
         child: SvgPicture.asset(svgAsset),
+      ),
+    );
+  }
+
+  Widget _buildOfflineButton() {
+    return Tooltip(
+      message: 'Continua senza connessione',
+      child: InkWell(
+        onTap: _isLoading
+            ? null
+            : () => _handleSignIn(() async {
+                  await _authService.signInOffline();
+                  return true;
+                }),
+        borderRadius: BorderRadius.circular(30),
+        child: Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.08),
+            border: Border.all(color: Colors.white30, width: 1.5),
+          ),
+          child: const Icon(
+            Icons.wifi_off_rounded,
+            color: Colors.white70,
+            size: 28,
+          ),
+        ),
       ),
     );
   }

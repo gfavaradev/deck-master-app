@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
+import '../theme/app_colors.dart';
 
 class CardListItem extends StatelessWidget {
   final CardModel card;
@@ -38,52 +39,82 @@ class CardListItem extends StatelessWidget {
         color: Colors.red,
         child: const Icon(Icons.delete, color: Colors.white, size: 32),
       ),
-      child: ListTile(
-        leading: const Icon(Icons.style, size: 40),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '${card.serialNumber} ${card.name}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+      child: InkWell(
+        onTap: () => onTap(card),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              // Immagine / icona
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  width: 40,
+                  height: 56,
+                  child: card.imageUrl != null && card.imageUrl!.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: card.imageUrl!,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => const Icon(Icons.style, size: 40),
+                          errorWidget: (_, __, ___) => const Icon(Icons.style, size: 40),
+                        )
+                      : const Icon(Icons.style, size: 40),
+                ),
               ),
-            ),
-          ],
-        ),
-        subtitle: Text(
-          '${card.rarity} • Album: $albumName • €${card.value.toStringAsFixed(2)}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 12),
-        ),
-        trailing: showControls
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline, size: 20),
-                    onPressed: () => onUpdateQuantity(card, -1),
-                  ),
-                  Text(
+              const SizedBox(width: 12),
+              // Nome + info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${card.serialNumber} ${card.name}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${card.rarity} • Album: $albumName • €${card.value.toStringAsFixed(2)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Controlli quantità
+              if (showControls) ...[
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline, size: 20),
+                  onPressed: () => onUpdateQuantity(card, -1),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                SizedBox(
+                  width: 12,
+                  child: Text(
                     totalQuantity.toString(),
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline, size: 20),
-                    onPressed: () => onUpdateQuantity(card, 1),
-                  ),
-                ],
-              )
-            : Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, size: 20),
+                  onPressed: () => onUpdateQuantity(card, 1),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ] else
+                Text(
                   'x$totalQuantity',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-              ),
-        onTap: () => onTap(card),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -127,17 +158,17 @@ class CardGridItem extends StatelessWidget {
                           imageUrl: card.imageUrl!,
                           fit: BoxFit.cover,
                           placeholder: (_, __) => Container(
-                            color: Colors.grey.withValues(alpha: 0.08),
+                            color: AppColors.bgMedium,
                             child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                           ),
                           errorWidget: (_, __, ___) => Container(
-                            color: Colors.grey.withValues(alpha: 0.08),
-                            child: Center(child: Icon(Icons.style, size: 48, color: Colors.green.shade600)),
+                            color: AppColors.bgMedium,
+                            child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
                           ),
                         )
                       : Container(
-                          color: Colors.grey.withValues(alpha: 0.08),
-                          child: Center(child: Icon(Icons.style, size: 48, color: Colors.green.shade600)),
+                          color: AppColors.bgMedium,
+                          child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
                         ),
                   // Quantity badge overlay
                   Positioned(
@@ -146,7 +177,7 @@ class CardGridItem extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.deepPurple,
+                        color: AppColors.purple,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -178,13 +209,13 @@ class CardGridItem extends StatelessWidget {
                               style: const TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.blue,
+                                color: AppColors.blue,
                               ),
                             ),
                           if (card.serialNumber.isNotEmpty && card.rarity.isNotEmpty)
                             const TextSpan(
                               text: ' • ',
-                              style: TextStyle(fontSize: 9, color: Colors.grey),
+                              style: TextStyle(fontSize: 9, color: AppColors.textHint),
                             ),
                           if (card.rarity.isNotEmpty)
                             TextSpan(
@@ -215,7 +246,7 @@ class CardGridItem extends StatelessWidget {
                   // Album + Value
                   Text(
                     '$albumName • €${card.value.toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 8, color: Colors.grey.shade600),
+                    style: const TextStyle(fontSize: 8, color: AppColors.textHint),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -226,8 +257,8 @@ class CardGridItem extends StatelessWidget {
             Container(
               height: 36,
               decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.05),
-                border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                color: AppColors.bgMedium.withValues(alpha: 0.5),
+                border: Border(top: BorderSide(color: AppColors.textHint.withValues(alpha: 0.2))),
               ),
               child: showControls
                   ? Row(

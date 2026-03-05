@@ -176,6 +176,55 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
       );
 
+  // ─── One Piece action handlers ─────────────────────────────────────────────
+
+  Future<void> _downloadFullOnePiece() => _confirmAndRun(
+        'Download Completo One Piece',
+        'Download Completo One Piece TCG',
+        'Scarica l\'intero catalogo One Piece TCG da OPTCG API e '
+            'sostituisce tutti i chunk su Firestore.\n\n'
+            'Le URL immagini già su Firebase Storage vengono preservate.\n\n'
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.downloadOnepieceCatalogFromAPI(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => 'Completato! ${r['totalCards']} carte, ${r['totalPrints']} print caricate.',
+      );
+
+  Future<void> _migrateOnePieceImages() => _confirmAndRun(
+        'Migrazione Immagini One Piece',
+        'Migrazione Immagini One Piece',
+        'Scarica le immagini delle carte One Piece dall\'OPTCG API '
+            'e le carica su Firebase Storage.\n\n'
+            'Solo le immagini non ancora migrate vengono scaricate. '
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.migrateOnepieceImagesToStorage(
+          adminUid: uid,
+          onProgress: (cur, tot) =>
+              _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
+        ),
+        (r) => r['migrated'] == 0 && r['failed'] == 0
+            ? 'Tutte le immagini erano già migrate.'
+            : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
+      );
+
+  Future<void> _forceMigrateOnePieceImages() => _confirmAndRun(
+        'Ri-migrazione Forzata One Piece',
+        'Ri-migrazione Forzata Immagini',
+        'Ri-carica TUTTE le immagini One Piece su Firebase Storage, '
+            'anche quelle già presenti.\n\n'
+            'Usare dopo aver eliminato le immagini dallo Storage. '
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.migrateOnepieceImagesToStorage(
+          adminUid: uid,
+          onProgress: (cur, tot) =>
+              _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
+          force: true,
+        ),
+        (r) => '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
+      );
+
   // ─── UI ───────────────────────────────────────────────────────────────────
 
   @override
@@ -184,11 +233,12 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: collections.length + 1, // +1 for operations card
+      itemCount: collections.length + 2, // +2 for operations cards
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         if (index == 0) return _buildOperationsCard();
-        final col = collections[index - 1];
+        if (index == 1) return _buildOnePieceOperationsCard();
+        final col = collections[index - 2];
         return Card(
           elevation: 2,
           child: ListTile(
@@ -310,6 +360,85 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
               ],
             ),
 
+            if (kIsWeb) ...[
+              const SizedBox(height: 8),
+              const Row(
+                children: [
+                  Icon(Icons.info_outline, size: 12, color: Colors.black38),
+                  SizedBox(width: 4),
+                  Text(
+                    '"Migra Immagini" non disponibile su Web (CORS).',
+                    style: TextStyle(fontSize: 11, color: Colors.black38),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOnePieceOperationsCard() {
+    return Card(
+      elevation: 2,
+      color: Colors.red.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.sailing, color: Colors.red),
+                SizedBox(width: 8),
+                Text(
+                  'Operazioni Catalogo',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'One Piece TCG — Gestione dati Firestore',
+              style: TextStyle(color: Colors.black45, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _opButton(
+                  icon: Icons.download_for_offline,
+                  label: 'Download Completo',
+                  color: Colors.red.shade700,
+                  onTap: _downloadFullOnePiece,
+                  tooltip: 'Scarica tutto il catalogo da OPTCG API',
+                ),
+                _opButton(
+                  icon: Icons.cloud_upload,
+                  label: 'Migra Immagini',
+                  color: Colors.orange.shade800,
+                  onTap: kIsWeb ? null : _migrateOnePieceImages,
+                  tooltip: kIsWeb
+                      ? 'Non disponibile su Web (CORS)'
+                      : 'Carica immagini su Firebase Storage',
+                ),
+                _opButton(
+                  icon: Icons.refresh,
+                  label: 'Ri-migra Tutto',
+                  color: Colors.deepOrange.shade700,
+                  onTap: kIsWeb ? null : _forceMigrateOnePieceImages,
+                  tooltip: kIsWeb
+                      ? 'Non disponibile su Web (CORS)'
+                      : 'Forza ri-migrazione di tutte le immagini (dopo eliminazione da Storage)',
+                ),
+              ],
+            ),
             if (kIsWeb) ...[
               const SizedBox(height: 8),
               const Row(

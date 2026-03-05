@@ -105,10 +105,12 @@ class _CatalogPageState extends State<CatalogPage> {
 
   /// Check if there's a catalog update available
   Future<void> _checkForUpdates() async {
-    if (widget.collectionKey != 'yugioh') return;
+    if (widget.collectionKey != 'yugioh' && widget.collectionKey != 'onepiece') return;
 
     try {
-      final updateInfo = await _dbHelper.checkCatalogUpdates();
+      final updateInfo = widget.collectionKey == 'onepiece'
+          ? await _dbHelper.checkOnepieceCatalogUpdates()
+          : await _dbHelper.checkCatalogUpdates();
       if (mounted) {
         setState(() {
           _hasUpdate = updateInfo['needsUpdate'] == true;
@@ -125,18 +127,29 @@ class _CatalogPageState extends State<CatalogPage> {
     });
 
     try {
-      await _dbHelper.redownloadYugiohCatalog(
-        onProgress: (current, total) {
-          if (mounted) {
-            setState(() => _downloadProgress = current / total);
-          }
-        },
-        onSaveProgress: (progress) {
-          if (mounted) {
-            setState(() => _downloadProgress = progress);
-          }
-        },
-      );
+      if (widget.collectionKey == 'onepiece') {
+        await _dbHelper.redownloadOnepieceCatalog(
+          onProgress: (current, total) {
+            if (mounted) setState(() => _downloadProgress = current / total);
+          },
+          onSaveProgress: (progress) {
+            if (mounted) setState(() => _downloadProgress = progress);
+          },
+        );
+      } else {
+        await _dbHelper.redownloadYugiohCatalog(
+          onProgress: (current, total) {
+            if (mounted) {
+              setState(() => _downloadProgress = current / total);
+            }
+          },
+          onSaveProgress: (progress) {
+            if (mounted) {
+              setState(() => _downloadProgress = progress);
+            }
+          },
+        );
+      }
 
       if (mounted) {
         setState(() {
@@ -225,8 +238,14 @@ class _CatalogPageState extends State<CatalogPage> {
           limit: _pageSize,
           offset: _currentOffset,
         );
+      } else if (widget.collectionKey == 'onepiece') {
+        cards = await _dbHelper.getOnepieceCatalogCards(
+          query: _lastQuery,
+          limit: _pageSize,
+          offset: _currentOffset,
+        );
       } else {
-        // For non-yugioh, load all at once (usually smaller catalogs)
+        // For other catalogs, load all at once (usually smaller catalogs)
         if (_currentOffset == 0) {
           cards = await _dbHelper.getCatalogCards(widget.collectionKey, query: _lastQuery);
           _hasMoreCards = false;
@@ -432,7 +451,7 @@ class _CatalogPageState extends State<CatalogPage> {
               serialNumber: serialNumber,
               collection: widget.collectionKey,
               albumId: selectedAlbum.id!,
-              type: card['type'] ?? '',
+              type: card['type'] ?? card['card_type'] ?? '',
               rarity: rarity,
               description: card['localizedDescription'] ?? card['description'] ?? '',
               imageUrl: card['artwork'] ?? card['imageUrl'],
@@ -557,6 +576,7 @@ class _CatalogPageState extends State<CatalogPage> {
 
                           final card = _catalogCards[index];
                           final bool isYugioh = widget.collectionKey == 'yugioh';
+                          final bool isOnePiece = widget.collectionKey == 'onepiece';
                           final bool isSelected = _selectedCardIds.contains(_getCardKey(card));
                           final displayName = isYugioh
                               ? (card['localizedName'] ?? card['name'])
@@ -567,7 +587,9 @@ class _CatalogPageState extends State<CatalogPage> {
                               : card['setCode'];
                           final displayRarityCode = isYugioh
                               ? (card['localizedRarityCode'] ?? card['rarityCode'])
-                              : card['rarityCode'];
+                              : isOnePiece
+                                  ? card['rarity']
+                                  : card['rarityCode'];
                           // Is this a foreign-language print? (found via set code search but not in user's language)
                           final bool isForeignPrint = isYugioh && card['isLocalizedPrint'] == 0;
 
@@ -706,7 +728,7 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 
   Widget _buildCardImage(Map<String, dynamic> card, bool isYugioh) {
-    final imageUrl = card['imageUrl'] as String?;
+    final imageUrl = card['artwork'] as String?;
     final isOwned = card['isOwned'] == 1;
     if (imageUrl == null || imageUrl.isEmpty) {
       return Container(

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
+import '../theme/app_colors.dart';
 import 'login_page.dart';
 import 'admin_users_page.dart';
 import 'admin_home_page.dart';
@@ -27,6 +28,11 @@ class _SettingsPageState extends State<SettingsPage> {
   String _selectedLanguage = 'EN';
   String _downloadStatus = '';
   double? _downloadProgress;
+
+  // One Piece download state
+  bool _isDownloadingOP = false;
+  String _downloadStatusOP = '';
+  double? _downloadProgressOP;
 
   @override
   void initState() {
@@ -120,6 +126,8 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
           _buildCatalogSection(),
           const Divider(),
+          _buildOnePieceCatalogSection(),
+          const Divider(),
           _buildGeneralSection(),
           const Divider(),
           ListTile(
@@ -188,6 +196,109 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Widget _buildOnePieceCatalogSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text('Catalogo One Piece TCG', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+        ),
+        ListTile(
+          leading: _isDownloadingOP
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.sailing),
+          title: Text(_isDownloadingOP ? _downloadStatusOP : 'Aggiorna Catalogo'),
+          subtitle: _isDownloadingOP
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(value: _downloadProgressOP),
+                    const SizedBox(height: 4),
+                    Text(
+                      _downloadProgressOP != null
+                        ? '${(_downloadProgressOP! * 100).toInt()}%'
+                        : 'In corso...',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                )
+              : const Text('Scarica/Aggiorna tutte le carte One Piece'),
+          enabled: !_isDownloadingOP,
+          onTap: _downloadOnePieceCatalog,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _downloadOnePieceCatalog() async {
+    if (!mounted) return;
+    setState(() {
+      _isDownloadingOP = true;
+      _downloadStatusOP = 'Controllo aggiornamenti...';
+      _downloadProgressOP = null;
+    });
+
+    try {
+      final updateInfo = await _repo.checkOnepieceCatalogUpdates();
+
+      if (updateInfo['error'] != null) {
+        if (mounted) {
+          setState(() { _isDownloadingOP = false; _downloadStatusOP = ''; _downloadProgressOP = null; });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Errore controllo aggiornamenti: ${updateInfo['error']}')),
+          );
+        }
+        return;
+      }
+
+      if (!(updateInfo['needsUpdate'] as bool)) {
+        if (mounted) {
+          setState(() { _isDownloadingOP = false; _downloadStatusOP = ''; _downloadProgressOP = null; });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Catalogo One Piece già aggiornato!'), duration: Duration(seconds: 2)),
+          );
+        }
+        return;
+      }
+
+      setState(() { _downloadStatusOP = 'Scaricando da Firestore...'; });
+
+      await _repo.redownloadOnepieceCatalog(
+        onProgress: (current, total) {
+          if (mounted) {
+            setState(() {
+              _downloadProgressOP = current / total;
+              _downloadStatusOP = 'Scaricando chunk $current di $total';
+            });
+          }
+        },
+        onSaveProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _downloadProgressOP = progress;
+              _downloadStatusOP = 'Salvando nel database...';
+            });
+          }
+        },
+      );
+
+      if (mounted) {
+        setState(() { _isDownloadingOP = false; _downloadStatusOP = ''; _downloadProgressOP = null; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Catalogo One Piece aggiornato!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() { _isDownloadingOP = false; _downloadStatusOP = ''; _downloadProgressOP = null; });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
+      }
+    }
+  }
+
   Widget _buildGeneralSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,7 +307,7 @@ class _SettingsPageState extends State<SettingsPage> {
           padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Text(
             'Generale',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary),
           ),
         ),
         ListTile(
@@ -242,7 +353,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Text('Catalogo Yu-Gi-Oh!', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+          child: Text('Catalogo Yu-Gi-Oh!', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
         ),
         ListTile(
           leading: _isDownloading

@@ -9,8 +9,9 @@ class CatalogConstants {
   static const String yugioh = 'yugioh';
   static const String pokemon = 'pokemon';
   static const String magic = 'magic';
+  static const String onepiece = 'onepiece';
 
-  static const List<String> allCatalogs = [yugioh, pokemon, magic];
+  static const List<String> allCatalogs = [yugioh, pokemon, magic, onepiece];
 
   /// Get Firestore collection name for a catalog
   static String getCollectionName(String catalog) => '${catalog}_catalog';
@@ -24,6 +25,8 @@ class CatalogConstants {
         return 'Pokémon';
       case magic:
         return 'Magic: The Gathering';
+      case onepiece:
+        return 'One Piece TCG';
       default:
         return catalog;
     }
@@ -235,6 +238,10 @@ class DatabaseConstants {
   static const String yugiohCards = 'yugioh_cards';
   static const String yugiohPrints = 'yugioh_prints';
   static const String yugiohPrices = 'yugioh_prices';
+
+  /// One Piece-specific tables
+  static const String onepieceCards = 'onepiece_cards';
+  static const String onepiecePrints = 'onepiece_prints';
 }
 
 // ============================================================

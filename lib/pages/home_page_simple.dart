@@ -18,7 +18,7 @@ class HomePageSimple extends StatefulWidget {
 }
 
 class _HomePageSimpleState extends State<HomePageSimple> {
-  static const _catalogAvailable = {'yugioh'};
+  static const _catalogAvailable = {'yugioh', 'onepiece'};
 
   final DataRepository _repo = DataRepository();
   List<CollectionModel> _unlockedCollections = [];
@@ -51,6 +51,15 @@ class _HomePageSimpleState extends State<HomePageSimple> {
       final needsDownload = check['needsUpdate'] == true || check['isFirstDownload'] == true;
       if (needsDownload) {
         await _downloadYugiohCards(check);
+      }
+    }
+
+    // If unlocking One Piece, download catalog if not already present/up to date
+    if (!kIsWeb && collection.key == 'onepiece') {
+      final check = await _repo.checkOnepieceCatalogUpdates();
+      final needsDownload = check['needsUpdate'] == true || check['isFirstDownload'] == true;
+      if (needsDownload) {
+        await _downloadOnepieceCards(check);
       }
     }
 
@@ -131,6 +140,86 @@ class _HomePageSimpleState extends State<HomePageSimple> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Catalogo scaricato con successo!')),
+        );
+      }
+      disposeNotifiers();
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore durante il download: $e')),
+        );
+      }
+      disposeNotifiers();
+    }
+  }
+
+  Future<void> _downloadOnepieceCards([Map<String, dynamic>? updateInfo]) async {
+    if (!mounted) return;
+
+    final statusNotifier = ValueNotifier<String>('Connessione a Firestore...');
+    final progressNotifier = ValueNotifier<double?>(null);
+    final detailNotifier = ValueNotifier<String>('');
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('Download in corso'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<double?>(
+                valueListenable: progressNotifier,
+                builder: (context, progress, _) => CircularProgressIndicator(value: progress),
+              ),
+              const SizedBox(height: 20),
+              ValueListenableBuilder<String>(
+                valueListenable: statusNotifier,
+                builder: (context, status, _) => Text(status, textAlign: TextAlign.center),
+              ),
+              const SizedBox(height: 10),
+              ValueListenableBuilder<String>(
+                valueListenable: detailNotifier,
+                builder: (context, detail, _) => Text(
+                  detail,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    void disposeNotifiers() {
+      statusNotifier.dispose();
+      progressNotifier.dispose();
+      detailNotifier.dispose();
+    }
+
+    try {
+      statusNotifier.value = 'Scaricando le carte One Piece da Firestore...';
+
+      await _repo.downloadOnepieceCatalog(
+        updateInfo: updateInfo,
+        onProgress: (currentChunk, totalChunks) {
+          progressNotifier.value = currentChunk / totalChunks;
+          detailNotifier.value = 'Chunk $currentChunk di $totalChunks';
+        },
+        onSaveProgress: (progress) {
+          statusNotifier.value = 'Salvando nel database locale...';
+          progressNotifier.value = progress;
+          detailNotifier.value = '${(progress * 100).toInt()}%';
+        },
+      );
+
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Catalogo One Piece scaricato con successo!')),
         );
       }
       disposeNotifiers();

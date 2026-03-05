@@ -7,6 +7,7 @@ import '../services/sync_service.dart';
 import '../widgets/card_item.dart';
 import '../widgets/collection_summary.dart';
 import '../widgets/card_dialogs.dart';
+import '../theme/app_colors.dart';
 
 class CardListPage extends StatefulWidget {
   final String collectionName;
@@ -313,12 +314,12 @@ class _CardListPageState extends State<CardListPage> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        border: Border(bottom: BorderSide(color: Colors.blue.shade200)),
+        color: AppColors.bgLight,
+        border: Border(bottom: BorderSide(color: AppColors.blue.withValues(alpha: 0.4))),
       ),
       child: Row(
         children: [
-          Icon(Icons.book, color: Colors.blue.shade700, size: 24),
+          const Icon(Icons.book, color: AppColors.blue, size: 24),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -326,17 +327,17 @@ class _CardListPageState extends State<CardListPage> {
               children: [
                 Text(
                   album.name,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue.shade900,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-                Text(
+                const Text(
                   'Stai visualizzando solo le carte di questo album',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.blue.shade700,
+                    color: AppColors.textSecondary,
                   ),
                 ),
               ],
@@ -345,15 +346,15 @@ class _CardListPageState extends State<CardListPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.blue.shade100,
+              color: AppColors.glowBlue,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               '${_allCards.length} carte',
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: Colors.blue.shade900,
+                color: AppColors.blue,
               ),
             ),
           ),
@@ -394,21 +395,21 @@ class _CardListPageState extends State<CardListPage> {
               const SizedBox(width: 8),
               Container(
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(color: AppColors.textHint.withValues(alpha: 0.3)),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
                   children: [
                     IconButton(
-                      icon: Icon(Icons.list, color: !_isGridView ? Colors.deepPurple : Colors.grey),
+                      icon: Icon(Icons.list, color: !_isGridView ? AppColors.purple : AppColors.textHint),
                       onPressed: () {
                         setState(() => _isGridView = false);
                       },
                       tooltip: 'Vista Lista',
                     ),
-                    Container(width: 1, height: 24, color: Colors.grey.shade300),
+                    Container(width: 1, height: 24, color: AppColors.textHint.withValues(alpha: 0.3)),
                     IconButton(
-                      icon: Icon(Icons.grid_view, color: _isGridView ? Colors.deepPurple : Colors.grey),
+                      icon: Icon(Icons.grid_view, color: _isGridView ? AppColors.purple : AppColors.textHint),
                       onPressed: () {
                         setState(() => _isGridView = true);
                       },
@@ -429,14 +430,14 @@ class _CardListPageState extends State<CardListPage> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
+                          const Icon(Icons.inbox, size: 64, color: AppColors.textHint),
                           const SizedBox(height: 16),
                           Text(
                             widget.albumId != null
                               ? 'Nessuna carta in questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
                               : 'Nessuna carta trovata.\nUsa il Catalogo per aggiungere carte.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey.shade600),
+                            style: const TextStyle(color: AppColors.textHint),
                           ),
                         ],
                       ),

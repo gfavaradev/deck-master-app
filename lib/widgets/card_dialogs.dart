@@ -433,11 +433,16 @@ class _AddCardDialogState extends State<_AddCardDialog> {
             const SizedBox(height: 16),
 
             // ── Descrizione ────────────────────────────────────────────────
-            TextField(
-              controller: descController,
-              decoration: const InputDecoration(labelText: 'Descrizione'),
-              maxLines: 3,
-            ),
+            if (descController.text.isNotEmpty) ...[
+              const Text('Descrizione', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 4),
+              Text(
+                descController.text,
+                style: const TextStyle(fontSize: 13),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ],
         ),
       ),

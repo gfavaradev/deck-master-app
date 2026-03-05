@@ -5,8 +5,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'main_layout.dart';
 import 'login_page.dart';
-import '../services/auth_service.dart';
 import '../services/data_repository.dart';
+import '../theme/app_colors.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -16,7 +16,6 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage> {
-  final AuthService _authService = AuthService();
   final DataRepository _repo = DataRepository();
   String _statusMessage = '';
   double? _downloadProgress;
@@ -91,38 +90,29 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   Future<void> _checkAuth() async {
-    // Wait for Firebase to restore auth state from local storage.
-    // authStateChanges().first resolves as soon as state is known (typically < 300 ms),
-    // while isOfflineMode and _checkAppVersion run in parallel to save time.
-    final userFuture = FirebaseAuth.instance.authStateChanges().first;
-    final offlineFuture = _authService.isOfflineMode();
-    final versionFuture = _checkAppVersion();
-
-    final User? user = await userFuture;
-    final bool isOffline = await offlineFuture;
-    final String? updatedVersion = await versionFuture;
+    // currentUser is synchronous and uses the locally cached auth state —
+    // no network call needed, works offline immediately after Firebase.initializeApp().
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String? updatedVersion = await _checkAppVersion();
 
     if (!mounted) return;
 
     if (user != null) {
+      // Try to sync, but never block navigation if offline/slow network.
       setState(() => _statusMessage = 'Sincronizzazione...');
       try {
-        await _repo.syncOnLogin();
+        await _repo.syncOnLogin().timeout(const Duration(seconds: 8));
       } catch (e) {
-        debugPrint('Sync on login failed: $e');
+        debugPrint('Sync on login skipped (offline?): $e');
       }
 
-      // After sync, check if catalog needs downloading (e.g. account switch)
-      await _ensureCatalogDownloaded();
+      // Check catalog updates only if reachable; skip silently if offline.
+      try {
+        await _ensureCatalogDownloaded().timeout(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('Catalog check skipped (offline?): $e');
+      }
 
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => MainLayout(updateNotification: updatedVersion),
-        ),
-      );
-    } else if (isOffline) {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -142,7 +132,7 @@ class _SplashPageState extends State<SplashPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF161929),
+      backgroundColor: AppColors.bgDark,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -151,7 +141,7 @@ class _SplashPageState extends State<SplashPage> {
             const SizedBox(height: 20),
             const Text(
               'Deck Master',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
+              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
             ),
             const SizedBox(height: 10),
             if (_downloadProgress != null)
@@ -159,15 +149,15 @@ class _SplashPageState extends State<SplashPage> {
                 width: 200,
                 child: LinearProgressIndicator(
                   value: _downloadProgress,
-                  color: Color(0xFFD4AF37),
+                  color: AppColors.gold,
                   backgroundColor: Colors.white24,
                 ),
               )
             else
-              const CircularProgressIndicator(color: Color(0xFFD4AF37)),
+              const CircularProgressIndicator(color: AppColors.gold),
             if (_statusMessage.isNotEmpty) ...[
               const SizedBox(height: 10),
-              Text(_statusMessage, style: const TextStyle(color: Colors.white54)),
+              Text(_statusMessage, style: const TextStyle(color: AppColors.textHint)),
             ],
           ],
         ),
