@@ -186,9 +186,10 @@ class AdminCatalogService {
     }
   }
 
-  /// Surgical publish: reads all chunks to locate cards, then writes ONLY
-  /// the chunks that were actually modified (typically 1-2 for edits/deletes,
-  /// or the last chunk for adds).
+  /// Surgical publish: uses the card_index to locate cards directly, then
+  /// downloads and writes ONLY the affected chunks.
+  /// Falls back to a full download if the card_index is missing or stale,
+  /// and rebuilds the index as a side-effect so subsequent publishes are fast.
   Future<void> _publishCatalogChangesSurgical({
     required String catalog,
     required List<PendingCatalogChange> changes,
@@ -197,17 +198,197 @@ class AdminCatalogService {
   }) async {
     final catalogCollection = '${catalog}_catalog';
 
-    // 1. Download all chunks as an ordered map  chunkId → mutable card list
+    // 1. Load card index (cardId → chunkId) and metadata
+    final cardIndex = await _loadCardIndex(catalogCollection);
+    final metadataDoc = await _firestore
+        .collection(catalogCollection)
+        .doc('metadata')
+        .get();
+    if (!metadataDoc.exists) return;
+
+    final totalChunks = metadataDoc.data()?['totalChunks'] as int? ?? 0;
+    final currentVersion = metadataDoc.data()?['version'] as int? ?? 0;
+    var currentTotalCards = metadataDoc.data()?['totalCards'] as int? ?? 0;
+
+    // 2. Sort changes oldest-first
+    final sortedChanges = List<PendingCatalogChange>.from(changes)
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    // 3. Determine which chunks to fetch using the card index.
+    //    If any edit/delete target is missing from the index, fall back to
+    //    full download so the index can be rebuilt from a clean state.
+    final chunksToFetch = <String>{};
+    bool needsFallback = false;
+    for (final change in sortedChanges) {
+      if (change.type == ChangeType.edit || change.type == ChangeType.delete) {
+        final targetId =
+            (change.originalCardId ?? change.cardData['id'])?.toString();
+        if (targetId == null) continue;
+        final chunkId = cardIndex[targetId];
+        if (chunkId != null) {
+          chunksToFetch.add(chunkId);
+        } else {
+          needsFallback = true;
+          break;
+        }
+      }
+    }
+
+    if (needsFallback) {
+      await _publishWithFullDownloadAndRebuildIndex(
+        catalogCollection: catalogCollection,
+        sortedChanges: sortedChanges,
+        adminUid: adminUid,
+        onProgress: onProgress,
+      );
+      return;
+    }
+
+    // For adds, fetch the last existing chunk (it may have room)
+    String? lastChunkId;
+    final hasAdds = sortedChanges.any((c) => c.type == ChangeType.add);
+    if (hasAdds && totalChunks > 0) {
+      lastChunkId = 'chunk_${totalChunks.toString().padLeft(3, '0')}';
+      chunksToFetch.add(lastChunkId);
+    }
+
+    // 4. Download only the needed chunks
+    final totalSteps = chunksToFetch.length + sortedChanges.length + 3;
+    int step = 0;
+    final chunkMap = <String, List<Map<String, dynamic>>>{};
+    for (final chunkId in chunksToFetch) {
+      final chunkDoc = await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+      chunkMap[chunkId] = chunkDoc.exists
+          ? (chunkDoc.data()?['cards'] as List<dynamic>? ?? [])
+              .map((c) => Map<String, dynamic>.from(c as Map))
+              .toList()
+          : [];
+      onProgress(++step, totalSteps);
+    }
+
+    // 5. Apply changes, track affected chunks and index mutations
+    final affectedChunkIds = <String>{};
+    final deletedCardIds = <dynamic>[];
+    final updatedCardIndex = Map<String, String>.from(cardIndex);
+    int chunksCreated = 0;
+    int chunksRemoved = 0;
+
+    for (final change in sortedChanges) {
+      switch (change.type) {
+        case ChangeType.edit:
+        case ChangeType.delete:
+          final targetId = change.originalCardId ?? change.cardData['id'];
+          final targetIdStr = targetId?.toString();
+          if (targetIdStr == null) break;
+          final chunkId = cardIndex[targetIdStr];
+          if (chunkId == null || !chunkMap.containsKey(chunkId)) break;
+          final cards = chunkMap[chunkId]!;
+          final idx = cards.indexWhere((c) => c['id'] == targetId);
+          if (idx == -1) break;
+          if (change.type == ChangeType.edit) {
+            cards[idx] = await _processCardForStorage(change.cardData);
+          } else {
+            cards.removeAt(idx);
+            deletedCardIds.add(targetId);
+            updatedCardIndex.remove(targetIdStr);
+            currentTotalCards--;
+            if (cards.isEmpty) chunksRemoved++;
+          }
+          affectedChunkIds.add(chunkId);
+          break;
+
+        case ChangeType.add:
+          final processedCard = await _processCardForStorage(change.cardData);
+          final cardId = processedCard['id'];
+          lastChunkId ??= totalChunks > 0
+              ? 'chunk_${totalChunks.toString().padLeft(3, '0')}'
+              : null;
+          if (lastChunkId != null && chunkMap.containsKey(lastChunkId)) {
+            final lastChunk = chunkMap[lastChunkId]!;
+            if (lastChunk.length < _chunkSize) {
+              lastChunk.add(processedCard);
+              affectedChunkIds.add(lastChunkId);
+              if (cardId != null) updatedCardIndex[cardId.toString()] = lastChunkId;
+            } else {
+              final newChunkNum = totalChunks + chunksCreated + 1;
+              final newChunkId = 'chunk_${newChunkNum.toString().padLeft(3, '0')}';
+              chunkMap[newChunkId] = [processedCard];
+              affectedChunkIds.add(newChunkId);
+              lastChunkId = newChunkId;
+              chunksCreated++;
+              if (cardId != null) updatedCardIndex[cardId.toString()] = newChunkId;
+            }
+          } else {
+            // No existing chunks — create the first one
+            const newChunkId = 'chunk_001';
+            chunkMap[newChunkId] = [processedCard];
+            affectedChunkIds.add(newChunkId);
+            lastChunkId = newChunkId;
+            chunksCreated++;
+            if (cardId != null) updatedCardIndex[cardId.toString()] = newChunkId;
+          }
+          currentTotalCards++;
+          break;
+      }
+      onProgress(++step, totalSteps);
+    }
+
+    // 6. Write only affected chunks
+    for (final chunkId in affectedChunkIds) {
+      final cards = chunkMap[chunkId]!;
+      if (cards.isEmpty) {
+        await _firestore
+            .collection(catalogCollection)
+            .doc('chunks')
+            .collection('items')
+            .doc(chunkId)
+            .delete();
+      } else {
+        await _firestore
+            .collection(catalogCollection)
+            .doc('chunks')
+            .collection('items')
+            .doc(chunkId)
+            .set({'cards': cards});
+      }
+    }
+
+    // 7. Persist the updated card index
+    await _saveCardIndex(catalogCollection, updatedCardIndex);
+    onProgress(++step, totalSteps);
+
+    // 8. Update metadata using tracked deltas (no need to recount all chunks)
+    final newTotalChunks = totalChunks + chunksCreated - chunksRemoved;
+    await _firestore.collection(catalogCollection).doc('metadata').set({
+      'totalCards': currentTotalCards,
+      'totalChunks': newTotalChunks,
+      'chunkSize': _chunkSize,
+      'lastUpdated': FieldValue.serverTimestamp(),
+      'version': currentVersion + 1,
+      'updatedBy': adminUid,
+      'modifiedChunks': affectedChunkIds.toList(),
+      'deletedCards': deletedCardIds,
+    });
+    onProgress(totalSteps, totalSteps);
+  }
+
+  /// Fallback path: downloads ALL chunks, applies changes, then rebuilds and
+  /// saves the card_index so subsequent publishes use the optimized path.
+  Future<void> _publishWithFullDownloadAndRebuildIndex({
+    required String catalogCollection,
+    required List<PendingCatalogChange> sortedChanges,
+    required String adminUid,
+    required Function(int, int) onProgress,
+  }) async {
     final chunkMap = await _downloadChunksMap(catalogCollection, onProgress);
     if (chunkMap.isEmpty) return;
 
     final sortedChunkIds = chunkMap.keys.toList()..sort();
-
-    // 2. Sort changes by timestamp (oldest first)
-    final sortedChanges = List<PendingCatalogChange>.from(changes)
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-    // 3. Apply each change and track affected chunk IDs
     final affectedChunkIds = <String>{};
     final deletedCardIds = <dynamic>[];
 
@@ -216,7 +397,6 @@ class AdminCatalogService {
         case ChangeType.edit:
         case ChangeType.delete:
           final targetId = change.originalCardId ?? change.cardData['id'];
-          // Find the chunk containing this card
           for (final chunkId in sortedChunkIds) {
             final cards = chunkMap[chunkId]!;
             final idx = cards.indexWhere((c) => c['id'] == targetId);
@@ -234,7 +414,6 @@ class AdminCatalogService {
           break;
 
         case ChangeType.add:
-          // Append to the last chunk; create a new chunk if it exceeds _chunkSize
           final processedCard = await _processCardForStorage(change.cardData);
           final lastChunkId = sortedChunkIds.last;
           final lastChunk = chunkMap[lastChunkId]!;
@@ -242,7 +421,6 @@ class AdminCatalogService {
             lastChunk.add(processedCard);
             affectedChunkIds.add(lastChunkId);
           } else {
-            // Last chunk is full: create a new one
             final newIndex = sortedChunkIds.length + 1;
             final newChunkId = 'chunk_${newIndex.toString().padLeft(3, '0')}';
             chunkMap[newChunkId] = [processedCard];
@@ -253,14 +431,10 @@ class AdminCatalogService {
       }
     }
 
-    // 4. Write ONLY the affected chunks (typically 1-2 writes instead of 70)
-    int step = 0;
-    final totalSteps = affectedChunkIds.length + 1; // +1 for metadata update
-
+    // Write affected chunks
     for (final chunkId in affectedChunkIds) {
       final cards = chunkMap[chunkId]!;
       if (cards.isEmpty) {
-        // Chunk became empty due to deletes — remove it from Firestore
         await _firestore
             .collection(catalogCollection)
             .doc('chunks')
@@ -275,13 +449,21 @@ class AdminCatalogService {
             .doc(chunkId)
             .set({'cards': cards});
       }
-      onProgress(++step, totalSteps);
     }
 
-    // 5. Update metadata (version, totalCards, totalChunks)
+    // Rebuild card index from the full (now-updated) chunk map
+    final newIndex = <String, String>{};
+    for (final entry in chunkMap.entries) {
+      for (final card in entry.value) {
+        final cardId = card['id'];
+        if (cardId != null) newIndex[cardId.toString()] = entry.key;
+      }
+    }
+    await _saveCardIndex(catalogCollection, newIndex);
+
+    // Update metadata
     final nonEmptyChunks = chunkMap.values.where((c) => c.isNotEmpty).toList();
     final totalCards = nonEmptyChunks.fold(0, (acc, c) => acc + c.length);
-
     final metadataDoc = await _firestore
         .collection(catalogCollection)
         .doc('metadata')
@@ -289,7 +471,6 @@ class AdminCatalogService {
     final currentVersion = metadataDoc.exists
         ? (metadataDoc.data()?['version'] as int? ?? 0)
         : 0;
-
     await _firestore.collection(catalogCollection).doc('metadata').set({
       'totalCards': totalCards,
       'totalChunks': nonEmptyChunks.length,
@@ -300,7 +481,32 @@ class AdminCatalogService {
       'modifiedChunks': affectedChunkIds.toList(),
       'deletedCards': deletedCardIds,
     });
-    onProgress(totalSteps, totalSteps);
+  }
+
+  /// Load the card index (cardId → chunkId) from Firestore.
+  /// Returns an empty map if the index document doesn't exist yet.
+  Future<Map<String, String>> _loadCardIndex(String catalogCollection) async {
+    try {
+      final doc = await _firestore
+          .collection(catalogCollection)
+          .doc('card_index')
+          .get();
+      if (!doc.exists) return {};
+      final data = doc.data()?['cards'];
+      if (data is Map) {
+        return data.map((k, v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  /// Persist the card index to Firestore.
+  Future<void> _saveCardIndex(
+      String catalogCollection, Map<String, String> index) async {
+    await _firestore
+        .collection(catalogCollection)
+        .doc('card_index')
+        .set({'cards': index});
   }
 
   /// Downloads all chunks as an ordered map: `chunkId` → mutable list of cards.
@@ -1157,8 +1363,8 @@ class AdminCatalogService {
   static const String _optcgBaseUrl = 'https://www.optcgapi.com/api';
 
   /// Comprime un'immagine carta preservando i colori ICC (codec nativi).
-  /// Target: ~60-100 KB — alta qualità, ~50% risparmio rispetto all'originale.
-  Future<Uint8List> _compressCardImage(Uint8List bytes, {int maxWidth = 400, int quality = 88}) async {
+  /// Target: ~80-100 KB — buona qualità, ~40% risparmio rispetto all'originale.
+  Future<Uint8List> _compressCardImage(Uint8List bytes, {int maxWidth = 400, int quality = 78}) async {
     final result = await FlutterImageCompress.compressWithList(
       bytes,
       minWidth: maxWidth,

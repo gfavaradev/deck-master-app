@@ -210,71 +210,63 @@ class _LoginPageState extends State<LoginPage> {
   // ─── Layout solo social (Android / iOS) ────────────────────────────────────
 
   Widget _buildSocialOnlyLayout() {
-    final screenHeight = MediaQuery.of(context).size.height;
     return SafeArea(
-      child: SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: screenHeight),
-          child: IntrinsicHeight(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: Column(
-                children: [
-                  const Spacer(flex: 2),
-                  Image.asset('assets/icon/dm_logo_no_white.png', height: 160),
-                  const SizedBox(height: 16),
-                  ShaderMask(
-                    shaderCallback: (bounds) => const LinearGradient(
-                      colors: [AppColors.gold, AppColors.blue, AppColors.purple],
-                      stops: [0.0, 0.55, 1.0],
-                    ).createShader(bounds),
-                    child: Text(
-                      'Deck Master',
-                      style: GoogleFonts.poppins(
-                        fontSize: 38,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    'La tua collezione di carte',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.white70,
-                    ),
-                  ),
-                  const Spacer(flex: 2),
-                  Text(
-                    'Accedi per continuare',
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: Colors.white54,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (_isLoading)
-                    const CircularProgressIndicator(color: AppColors.gold)
-                  else
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildSocialButton(
-                          svgAsset: 'assets/icon/google.svg',
-                          onPressed: () => _handleSignIn(_authService.signInWithGoogle),
-                        ),
-                        if (_showOfflineButton) ...[
-                          const SizedBox(width: 24),
-                          _buildOfflineButton(),
-                        ],
-                      ],
-                    ),
-                  const Spacer(flex: 1),
-                  const SizedBox(height: 24),
-                ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 30),
+        child: Column(
+          children: [
+            const Spacer(flex: 2),
+            Image.asset('assets/icon/dm_logo_no_white.png', height: 160),
+            const SizedBox(height: 16),
+            ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [AppColors.gold, AppColors.blue, AppColors.purple],
+                stops: [0.0, 0.55, 1.0],
+              ).createShader(bounds),
+              child: Text(
+                'Deck Master',
+                style: GoogleFonts.poppins(
+                  fontSize: 38,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
             ),
-          ),
+            Text(
+              'La tua collezione di carte',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.white70,
+              ),
+            ),
+            const Spacer(flex: 2),
+            Text(
+              'Accedi per continuare',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: Colors.white54,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_isLoading)
+              const CircularProgressIndicator(color: AppColors.gold)
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildSocialButton(
+                    svgAsset: 'assets/icon/google.svg',
+                    onPressed: () => _handleSignIn(_authService.signInWithGoogle),
+                  ),
+                  if (_showOfflineButton) ...[
+                    const SizedBox(width: 24),
+                    _buildOfflineButton(),
+                  ],
+                ],
+              ),
+            const Spacer(flex: 1),
+            const SizedBox(height: 24),
+          ],
         ),
       ),
     );

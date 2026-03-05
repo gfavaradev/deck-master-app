@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import '../theme/app_colors.dart';
 import 'login_page.dart';
+import 'main_layout.dart';
+import 'profile_page.dart';
 import 'admin_users_page.dart';
 import 'admin_home_page.dart';
 
@@ -22,9 +23,14 @@ class _SettingsPageState extends State<SettingsPage> {
   final DataRepository _repo = DataRepository();
   final User? _user = FirebaseAuth.instance.currentUser;
   bool _isOffline = false;
+  bool _isSigningIn = false;
   bool _isDownloading = false;
+
   bool _isAdmin = false;
   bool _notificationsEnabled = false;
+  bool _notifAppUpdates = true;
+  bool _notifCatalogUpdates = true;
+  final NotificationService _notifService = NotificationService();
   String _selectedLanguage = 'EN';
   String _downloadStatus = '';
   double? _downloadProgress;
@@ -44,45 +50,34 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _loadNotificationPreference() async {
-    final prefs = await SharedPreferences.getInstance();
+    final enabled = await _notifService.isEnabled();
+    final appUpdates = await _notifService.isAppUpdatesEnabled();
+    final catalogUpdates = await _notifService.isCatalogUpdatesEnabled();
     if (mounted) {
       setState(() {
-        _notificationsEnabled = prefs.getBool('notifications_enabled') ?? false;
+        _notificationsEnabled = enabled;
+        _notifAppUpdates = appUpdates;
+        _notifCatalogUpdates = catalogUpdates;
       });
     }
   }
 
   Future<void> _toggleNotifications(bool value) async {
     if (value) {
-      final plugin = FlutterLocalNotificationsPlugin();
-      bool granted = false;
-
-      final android = plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-      if (android != null) {
-        granted = await android.requestNotificationsPermission() ?? false;
-      } else {
-        final ios = plugin.resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>();
-        if (ios != null) {
-          granted = await ios.requestPermissions(alert: true, badge: true, sound: true) ?? false;
-        } else {
-          granted = true; // altri platform (web/desktop)
-        }
-      }
-
+      final granted = await _notifService.enable();
       if (!granted) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Permesso notifiche negato. Abilitalo nelle impostazioni di sistema.')),
+            const SnackBar(
+              content: Text('Permesso notifiche negato. Abilitalo nelle impostazioni di sistema.'),
+            ),
           );
         }
         return;
       }
+    } else {
+      await _notifService.disable();
     }
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notifications_enabled', value);
     if (mounted) setState(() => _notificationsEnabled = value);
   }
 
@@ -101,6 +96,37 @@ class _SettingsPageState extends State<SettingsPage> {
       });
     }
   }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isSigningIn = true);
+    try {
+      final result = await _authService.signInWithGoogle();
+      if (result != null) {
+        try { await _repo.syncOnLogin(); } catch (_) {}
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const MainLayout()),
+            (route) => false,
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Accesso annullato')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSigningIn = false);
+    }
+  }
+
 
   Future<void> _loadLanguagePreference() async {
     final lang = await LanguageService.getPreferredLanguage();
@@ -264,14 +290,22 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
 
-      setState(() { _downloadStatusOP = 'Scaricando da Firestore...'; });
+      final isIncremental = updateInfo['canDoIncremental'] == true;
+      setState(() {
+        _downloadStatusOP = isIncremental
+            ? 'Aggiornamento incrementale...'
+            : 'Scaricando da Firestore...';
+      });
 
-      await _repo.redownloadOnepieceCatalog(
+      await _repo.downloadOnepieceCatalog(
+        updateInfo: updateInfo,
         onProgress: (current, total) {
           if (mounted) {
             setState(() {
               _downloadProgressOP = current / total;
-              _downloadStatusOP = 'Scaricando chunk $current di $total';
+              _downloadStatusOP = isIncremental
+                  ? 'Aggiornando chunk $current di $total'
+                  : 'Scaricando chunk $current di $total';
             });
           }
         },
@@ -298,6 +332,7 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     }
   }
+
 
   Widget _buildGeneralSection() {
     return Column(
@@ -331,12 +366,34 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         const Divider(indent: 16, endIndent: 16),
         SwitchListTile(
-          secondary: const Icon(Icons.notifications),
+          secondary: const Icon(Icons.notifications_outlined),
           title: const Text('Notifiche Push'),
           subtitle: const Text('Ricevi notifiche dall\'app'),
           value: _notificationsEnabled,
           onChanged: _toggleNotifications,
         ),
+        if (_notificationsEnabled) ...[
+          SwitchListTile(
+            contentPadding: const EdgeInsets.only(left: 56, right: 16),
+            title: const Text('Aggiornamenti App', style: TextStyle(fontSize: 14)),
+            subtitle: const Text('Nuove versioni disponibili', style: TextStyle(fontSize: 12)),
+            value: _notifAppUpdates,
+            onChanged: (v) async {
+              await _notifService.setAppUpdates(v);
+              if (mounted) setState(() => _notifAppUpdates = v);
+            },
+          ),
+          SwitchListTile(
+            contentPadding: const EdgeInsets.only(left: 56, right: 16),
+            title: const Text('Aggiornamenti Catalogo', style: TextStyle(fontSize: 14)),
+            subtitle: const Text('Nuove carte e aggiornamenti prezzi', style: TextStyle(fontSize: 12)),
+            value: _notifCatalogUpdates,
+            onChanged: (v) async {
+              await _notifService.setCatalogUpdates(v);
+              if (mounted) setState(() => _notifCatalogUpdates = v);
+            },
+          ),
+        ],
         const Divider(indent: 16, endIndent: 16),
         const ListTile(
           leading: Icon(Icons.language),
@@ -451,6 +508,7 @@ class _SettingsPageState extends State<SettingsPage> {
           isFirstDownload: isFirstDownload,
           remoteVersion: remoteVersion,
           totalCards: totalCards,
+          updateInfo: updateInfo,
         );
       }
     } catch (e) {
@@ -471,19 +529,26 @@ class _SettingsPageState extends State<SettingsPage> {
     required bool isFirstDownload,
     int? remoteVersion,
     int? totalCards,
+    Map<String, dynamic>? updateInfo,
   }) async {
     try {
+      final isIncremental = updateInfo?['canDoIncremental'] == true;
       setState(() {
-        _downloadStatus = 'Scaricando da Firestore...';
+        _downloadStatus = isIncremental
+            ? 'Aggiornamento incrementale...'
+            : 'Scaricando da Firestore...';
         _downloadProgress = null;
       });
 
-      await _repo.redownloadYugiohCatalog(
+      await _repo.downloadYugiohCatalog(
+        updateInfo: updateInfo,
         onProgress: (current, total) {
           if (mounted) {
             setState(() {
               _downloadProgress = current / total;
-              _downloadStatus = 'Scaricando chunk $current di $total';
+              _downloadStatus = isIncremental
+                  ? 'Aggiornando chunk $current di $total'
+                  : 'Scaricando chunk $current di $total';
             });
           }
         },
@@ -599,13 +664,30 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _buildUserSection() {
     if (_isOffline) {
-      return const ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Colors.grey,
-          child: Icon(Icons.person_off, color: Colors.white),
-        ),
-        title: Text('Modalità Offline'),
-        subtitle: Text('I dati non sono sincronizzati sul cloud'),
+      return Column(
+        children: [
+          const ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.grey,
+              child: Icon(Icons.person_off, color: Colors.white),
+            ),
+            title: Text('Modalità Offline'),
+            subtitle: Text('I dati non sono sincronizzati sul cloud'),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: _isSigningIn
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.wifi),
+                label: const Text('Accedi e torna online'),
+                onPressed: _isSigningIn ? null : _signInWithGoogle,
+              ),
+            ),
+          ),
+        ],
       );
     }
 
@@ -626,6 +708,11 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       title: Text(_user.displayName ?? 'Utente'),
       subtitle: Text(_user.email ?? ''),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfilePage()),
+      ),
     );
   }
 }

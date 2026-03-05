@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/background_download_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,9 @@ void main() async {
 
   // Inizializza il servizio per i download in background (solo Android/iOS)
   await BackgroundDownloadService.initialize();
+
+  // Inizializza Firebase Cloud Messaging
+  await NotificationService().initialize();
 
   runApp(const MyApp());
 }
@@ -67,11 +71,11 @@ class MyApp extends StatelessWidget {
           unselectedItemColor: Color(0x80FFFFFF),
           elevation: 0,
         ),
-        cardTheme: const CardTheme(
+        cardTheme: const CardThemeData(
           color: AppColors.bgLight,
           elevation: 2,
         ),
-        dialogTheme: const DialogTheme(
+        dialogTheme: const DialogThemeData(
           backgroundColor: AppColors.bgLight,
           titleTextStyle: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold),
           contentTextStyle: TextStyle(color: AppColors.textSecondary, fontSize: 14),

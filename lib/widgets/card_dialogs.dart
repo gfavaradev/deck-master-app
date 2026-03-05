@@ -232,7 +232,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
             : (selectedCatalogCard!['setRarity'] ?? '');
         valueController.text = _isYugioh
             ? (selectedCatalogCard!['localizedSetPrice'] ?? selectedCatalogCard!['setPrice'] ?? 0.0).toString()
-            : (selectedCatalogCard!['setPrice'] ?? 0.0).toString();
+            : (selectedCatalogCard!['marketPrice'] ?? 0.0).toString();
       }
       final cardId = selectedCatalogCard!['id'];
       if (cardId != null) {
@@ -252,7 +252,9 @@ class _AddCardDialogState extends State<_AddCardDialog> {
         language: _preferredLanguage,
       );
     } else {
-      sets = await _dbHelper.getCardSets(cardId.toString());
+      sets = await _dbHelper.getOnepieceCardPrints(
+        cardId is int ? cardId : int.parse(cardId.toString()),
+      );
     }
     if (!mounted) return;
     setState(() {
@@ -290,7 +292,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     } else {
       serialController.text = set['setCode'] ?? '';
       rarityController.text = set['setRarity'] ?? '';
-      valueController.text = (set['setPrice'] ?? 0.0).toString();
+      valueController.text = (set['marketPrice'] ?? 0.0).toString();
     }
   }
 

@@ -264,6 +264,28 @@ class ValidationConstants {
 }
 
 // ============================================================
+// App Changelog
+// ============================================================
+
+class AppChangelog {
+  /// Entries in ordine decrescente di versione (la più recente prima).
+  /// Aggiungere nuove versioni in testa alla lista.
+  static const List<Map<String, dynamic>> entries = [
+    {
+      'version': '1.0.0',
+      'date': '2025-03-05',
+      'changes': [
+        'Catalogo One Piece TCG disponibile',
+        'Sistemata visualizzazione immagini nella propria collezione',
+        'Aggiornata palette colori dell\'app',
+        'Download catalogo eseguito in background con notifica',
+        'Risolti errori generici di stabilità',
+      ],
+    },
+  ];
+}
+
+// ============================================================
 // UI Constants
 // ============================================================
 

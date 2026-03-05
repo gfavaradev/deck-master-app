@@ -393,9 +393,10 @@ class SyncService {
   Future<void> _syncCollections(String userId) async {
     if (kIsWeb) return; // Web uses Firestore directly via DataRepository.getCollections()
     try {
-      // Reset all collections to locked before applying this user's state
-      await _dbHelper.resetCollectionsLockState();
+      // Fetch from Firestore FIRST — only reset local state if the call succeeds.
+      // If offline, the fetch throws and we keep the existing SQLite state intact.
       final remoteCollections = await _firestoreService.getCollections(userId);
+      await _dbHelper.resetCollectionsLockState();
       for (var col in remoteCollections) {
         if (col.isUnlocked) {
           await _dbHelper.unlockCollection(col.key);
@@ -403,7 +404,7 @@ class SyncService {
       }
       debugPrint('Collections synced: ${remoteCollections.length} collections');
     } catch (e) {
-      debugPrint('Error syncing collections: $e');
+      debugPrint('Collections sync skipped (offline?): $e');
     }
   }
 

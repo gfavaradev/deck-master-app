@@ -3,6 +3,51 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
 import '../theme/app_colors.dart';
 
+void _showFullScreenImage(BuildContext context, String imageUrl) {
+  showDialog<void>(
+    context: context,
+    barrierColor: Colors.black87,
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 48),
+      child: Stack(
+        alignment: Alignment.topRight,
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(ctx),
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 5,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.contain,
+                  placeholder: (c, u) => const SizedBox(
+                    height: 200,
+                    child: Center(
+                        child: CircularProgressIndicator(color: AppColors.gold)),
+                  ),
+                  errorWidget: (c, u, e) =>
+                      const Icon(Icons.broken_image, color: Colors.white, size: 64),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(4),
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              style: IconButton.styleFrom(backgroundColor: Colors.black45),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class CardListItem extends StatelessWidget {
   final CardModel card;
   final String albumName;
@@ -46,19 +91,24 @@ class CardListItem extends StatelessWidget {
           child: Row(
             children: [
               // Immagine / icona
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  width: 40,
-                  height: 56,
-                  child: card.imageUrl != null && card.imageUrl!.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: card.imageUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => const Icon(Icons.style, size: 40),
-                          errorWidget: (_, __, ___) => const Icon(Icons.style, size: 40),
-                        )
-                      : const Icon(Icons.style, size: 40),
+              GestureDetector(
+                onTap: card.imageUrl != null && card.imageUrl!.isNotEmpty
+                    ? () => _showFullScreenImage(context, card.imageUrl!)
+                    : null,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    width: 40,
+                    height: 56,
+                    child: card.imageUrl != null && card.imageUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: card.imageUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (c, u) => const Icon(Icons.style, size: 40),
+                            errorWidget: (c, u, e) => const Icon(Icons.style, size: 40),
+                          )
+                        : const Icon(Icons.style, size: 40),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -150,47 +200,52 @@ class CardGridItem extends StatelessWidget {
           children: [
             // Card image with quantity badge overlay
             Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  card.imageUrl != null && card.imageUrl!.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: card.imageUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            color: AppColors.bgMedium,
-                            child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                          ),
-                          errorWidget: (_, __, ___) => Container(
+              child: GestureDetector(
+                onTap: card.imageUrl != null && card.imageUrl!.isNotEmpty
+                    ? () => _showFullScreenImage(context, card.imageUrl!)
+                    : null,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    card.imageUrl != null && card.imageUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: card.imageUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (c, u) => Container(
+                              color: AppColors.bgMedium,
+                              child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                            ),
+                            errorWidget: (c, u, e) => Container(
+                              color: AppColors.bgMedium,
+                              child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
+                            ),
+                          )
+                        : Container(
                             color: AppColors.bgMedium,
                             child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
                           ),
-                        )
-                      : Container(
-                          color: AppColors.bgMedium,
-                          child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
+                    // Quantity badge overlay
+                    Positioned(
+                      bottom: 4,
+                      right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.purple,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                  // Quantity badge overlay
-                  Positioned(
-                    bottom: 4,
-                    right: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.purple,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'x$totalQuantity',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                        child: Text(
+                          'x$totalQuantity',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             // Card info (similar to catalog)

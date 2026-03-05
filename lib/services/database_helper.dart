@@ -1681,4 +1681,22 @@ class DatabaseHelper {
 
     return await db.rawQuery(sql, args);
   }
+
+  /// Returns all prints for a single One Piece card, with fields mapped for
+  /// use in the card dialog (setCode, setRarity, marketPrice).
+  Future<List<Map<String, dynamic>>> getOnepieceCardPrints(int cardId) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT
+        op.card_set_id AS setCode,
+        op.set_name    AS setName,
+        op.rarity      AS setRarity,
+        op.market_price AS marketPrice,
+        op.artwork
+      FROM onepiece_prints op
+      WHERE op.card_id = ?
+      ORDER BY op.card_set_id
+    ''', [cardId]);
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
 }

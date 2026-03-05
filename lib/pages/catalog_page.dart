@@ -455,6 +455,7 @@ class _CatalogPageState extends State<CatalogPage> {
               rarity: rarity,
               description: card['localizedDescription'] ?? card['description'] ?? '',
               imageUrl: card['artwork'] ?? card['imageUrl'],
+              value: (card['marketPrice'] as num?)?.toDouble() ?? 0.0,
             );
             await _dbHelper.insertCard(cardModel);
             addedCount++;

@@ -606,6 +606,10 @@ class DataRepository {
     return await _dbHelper.getYugiohCardPrints(cardId, language: language);
   }
 
+  Future<List<Map<String, dynamic>>> getOnepieceCardPrints(int cardId) async {
+    return await _dbHelper.getOnepieceCardPrints(cardId);
+  }
+
   Future<List<Map<String, dynamic>>> getCardSets(String cardId) async {
     return await _dbHelper.getCardSets(cardId);
   }

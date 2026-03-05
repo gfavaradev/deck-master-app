@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_colors.dart';
+import 'support_page.dart';
 import 'home_page_simple.dart';
 import 'card_list_page.dart';
 import 'catalog_page.dart';
@@ -7,8 +9,11 @@ import 'album_list_page.dart';
 import 'deck_list_page.dart';
 import 'stats_page.dart';
 import 'settings_page.dart';
+import 'login_page.dart';
+import 'profile_page.dart';
 import 'admin_home_page.dart';
 import '../services/auth_service.dart';
+import 'notifications_page.dart';
 
 /// Layout principale con barra di navigazione persistente
 class MainLayout extends StatefulWidget {
@@ -34,7 +39,9 @@ class _MainLayoutState extends State<MainLayout> {
   String? _currentCollectionKey;
   String? _currentCollectionName;
   bool _isAdmin = false;
+  bool _hasUnreadNotifications = false;
   final AuthService _authService = AuthService();
+  User? _currentUser;
 
   @override
   void initState() {
@@ -42,7 +49,9 @@ class _MainLayoutState extends State<MainLayout> {
     _currentIndex = widget.initialIndex;
     _currentCollectionKey = widget.collectionKey;
     _currentCollectionName = widget.collectionName;
+    _currentUser = FirebaseAuth.instance.currentUser;
     _checkAdmin();
+    _checkUnreadNotifications();
 
     if (widget.updateNotification != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -86,11 +95,29 @@ class _MainLayoutState extends State<MainLayout> {
     });
   }
 
+  Future<void> _logout() async {
+    await _authService.signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginPage()),
+      (route) => false,
+    );
+  }
+
   Future<void> _checkAdmin() async {
     final isAdmin = await _authService.isCurrentUserAdmin();
     if (mounted) {
       setState(() {
         _isAdmin = isAdmin;
+      });
+    }
+  }
+
+  Future<void> _checkUnreadNotifications() async {
+    final hasUnread = await hasUnreadNotifications();
+    if (mounted) {
+      setState(() {
+        _hasUnreadNotifications = hasUnread;
       });
     }
   }
@@ -151,6 +178,36 @@ class _MainLayoutState extends State<MainLayout> {
         title: Text(appBarTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined),
+                tooltip: 'Notifiche',
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const NotificationsPage()),
+                  );
+                  _checkUnreadNotifications();
+                },
+              ),
+              if (_hasUnreadNotifications)
+                Positioned(
+                  right: 10,
+                  top: 10,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Statistiche',
@@ -159,12 +216,67 @@ class _MainLayoutState extends State<MainLayout> {
               MaterialPageRoute(builder: (context) => const StatsPage()),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Impostazioni',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const SettingsPage()),
+          PopupMenuButton<String>(
+            tooltip: 'Menu utente',
+            onSelected: (value) {
+              if (value == 'profile') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
+              } else if (value == 'settings') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
+              } else if (value == 'support') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportPage()));
+              } else if (value == 'logout') {
+                _logout();
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'profile',
+                child: ListTile(
+                  leading: Icon(Icons.manage_accounts_outlined),
+                  title: Text('Profilo'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings),
+                  title: Text('Impostazioni'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'support',
+                child: ListTile(
+                  leading: Icon(Icons.support_agent),
+                  title: Text('Supporto'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'logout',
+                child: ListTile(
+                  leading: Icon(Icons.logout, color: Colors.red),
+                  title: Text('Logout', style: TextStyle(color: Colors.red)),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: CircleAvatar(
+                radius: 18,
+                backgroundImage: _currentUser?.photoURL != null
+                    ? NetworkImage(_currentUser!.photoURL!)
+                    : null,
+                backgroundColor: AppColors.bgLight,
+                child: _currentUser?.photoURL == null
+                    ? const Icon(Icons.person, size: 20, color: AppColors.textSecondary)
+                    : null,
+              ),
             ),
           ),
         ],
