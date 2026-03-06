@@ -694,6 +694,15 @@ class DatabaseHelper {
                COALESCE(u.description, yc.description) as description,
                u.collection,
                COALESCE(
+                 (SELECT set_price FROM yugioh_prints
+                  WHERE card_id = CAST(u.catalogId AS INTEGER)
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1),
+                 u.value
+               ) as value,
+               COALESCE(
                  (SELECT artwork FROM yugioh_prints
                   WHERE card_id = CAST(u.catalogId AS INTEGER)
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
@@ -716,6 +725,7 @@ class DatabaseHelper {
                COALESCE(u.type, oc.card_type) as type,
                COALESCE(u.description, oc.card_text) as description,
                u.collection,
+               COALESCE(op.market_price, u.value) as value,
                COALESCE(
                  op.artwork,
                  oc.image_url,
@@ -743,7 +753,7 @@ class DatabaseHelper {
     return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
   }
 
-  Future<List<CardModel>> findOwnedInstances(String collection, String name, String serialNumber) async {
+  Future<List<CardModel>> findOwnedInstances(String collection, String name, String serialNumber, String rarity) async {
     Database db = await database;
     if (collection == 'yugioh') {
       final List<Map<String, dynamic>> maps = await db.rawQuery('''
@@ -763,8 +773,8 @@ class DatabaseHelper {
                ) as imageUrl
         FROM cards u
         LEFT JOIN yugioh_cards yc ON yc.id = CAST(u.catalogId AS INTEGER)
-        WHERE u.collection = 'yugioh' AND (yc.name = ? OR u.name = ?) AND u.serialNumber = ?
-      ''', [name, name, serialNumber]);
+        WHERE u.collection = 'yugioh' AND (yc.name = ? OR u.name = ?) AND u.serialNumber = ? AND u.rarity = ?
+      ''', [name, name, serialNumber, rarity]);
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
 
@@ -783,8 +793,8 @@ class DatabaseHelper {
         FROM cards u
         LEFT JOIN onepiece_cards oc ON oc.id = CAST(u.catalogId AS INTEGER)
         LEFT JOIN onepiece_prints op ON op.card_id = oc.id AND op.card_set_id = u.serialNumber
-        WHERE u.collection = 'onepiece' AND (oc.name = ? OR u.name = ?) AND u.serialNumber = ?
-      ''', [name, name, serialNumber]);
+        WHERE u.collection = 'onepiece' AND (oc.name = ? OR u.name = ?) AND u.serialNumber = ? AND u.rarity = ?
+      ''', [name, name, serialNumber, rarity]);
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
 
@@ -797,8 +807,8 @@ class DatabaseHelper {
              COALESCE(c.imageUrl, u.imageUrl) as imageUrl
       FROM cards u
       LEFT JOIN catalog_cards c ON u.catalogId = c.id
-      WHERE u.collection = ? AND (c.name = ? OR u.name = ?) AND u.serialNumber = ?
-    ''', [collection, name, name, serialNumber]);
+      WHERE u.collection = ? AND (c.name = ? OR u.name = ?) AND u.serialNumber = ? AND u.rarity = ?
+    ''', [collection, name, name, serialNumber, rarity]);
     return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
   }
 
@@ -1005,7 +1015,32 @@ class DatabaseHelper {
 
     final totalCards = await db.rawQuery('SELECT SUM(quantity) as total FROM cards');
     final uniqueCards = await db.rawQuery('SELECT COUNT(DISTINCT catalogId) as total FROM cards WHERE catalogId IS NOT NULL');
-    final totalValue = await db.rawQuery('SELECT SUM(value * quantity) as total FROM cards');
+    final totalValue = await db.rawQuery('''
+      SELECT SUM(
+        CASE
+          WHEN c.collection = 'yugioh' THEN
+            COALESCE(
+              (SELECT set_price FROM yugioh_prints
+               WHERE card_id = CAST(c.catalogId AS INTEGER)
+                 AND (set_code = c.serialNumber OR set_code_it = c.serialNumber
+                   OR set_code_fr = c.serialNumber OR set_code_de = c.serialNumber
+                   OR set_code_pt = c.serialNumber)
+               LIMIT 1),
+              c.value
+            )
+          WHEN c.collection = 'onepiece' THEN
+            COALESCE(
+              (SELECT market_price FROM onepiece_prints
+               WHERE card_id = CAST(c.catalogId AS INTEGER)
+                 AND card_set_id = c.serialNumber
+               LIMIT 1),
+              c.value
+            )
+          ELSE c.value
+        END * c.quantity
+      ) as total
+      FROM cards c
+    ''');
     final collections = await db.rawQuery('SELECT COUNT(*) as total FROM collections WHERE isUnlocked = 1');
 
     return {

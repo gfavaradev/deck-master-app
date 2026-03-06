@@ -469,8 +469,8 @@ class DataRepository {
     return await _dbHelper.getCardsWithCatalog(collection);
   }
 
-  Future<List<CardModel>> findOwnedInstances(String collection, String name, String serialNumber) async {
-    return await _dbHelper.findOwnedInstances(collection, name, serialNumber);
+  Future<List<CardModel>> findOwnedInstances(String collection, String name, String serialNumber, String rarity) async {
+    return await _dbHelper.findOwnedInstances(collection, name, serialNumber, rarity);
   }
 
   Future<int> getCardCountByAlbum(int albumId) async {

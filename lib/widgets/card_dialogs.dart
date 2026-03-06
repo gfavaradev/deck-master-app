@@ -471,14 +471,15 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     final int quantity = int.tryParse(quantityController.text) ?? 1;
 
     // Cerchiamo istanze già esistenti nel database invece di usare una lista potenzialmente vecchia
-    final existingInstances = await _dbHelper.findOwnedInstances(widget.collectionKey, name, serialNumber);
+    final existingInstances = await _dbHelper.findOwnedInstances(widget.collectionKey, name, serialNumber, rarityController.text);
     
     int albumIdToUse = selectedAlbumId!;
     int quantityForMain = quantity;
     int quantityForDoppioni = 0;
 
     // Se esiste già in QUALSIASI album, questa aggiunta va nei doppioni
-    if (existingInstances.isNotEmpty) {
+    final bool redirectedToDoppioni = existingInstances.isNotEmpty;
+    if (redirectedToDoppioni) {
       albumIdToUse = await widget.getOrCreateDuplicatesAlbum();
     } else if (quantity > 1) {
       // Se ne stiamo aggiungendo più di una per la prima volta, 1 va nel main e le altre nei doppioni
@@ -513,7 +514,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     if (quantityForDoppioni > 0) {
       final doppioniId = await widget.getOrCreateDuplicatesAlbum();
       // Verifichiamo se esiste già nell'album doppioni (potrebbe essere stato appena creato o già esistente)
-      final instancesAfterFirstInsert = await _dbHelper.findOwnedInstances(widget.collectionKey, name, serialNumber);
+      final instancesAfterFirstInsert = await _dbHelper.findOwnedInstances(widget.collectionKey, name, serialNumber, rarityController.text);
       final existingInDoppioni = instancesAfterFirstInsert.where((c) => c.albumId == doppioniId).toList();
 
       if (existingInDoppioni.isNotEmpty) {
@@ -530,10 +531,18 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     
     if (!mounted) return;
     Navigator.pop(context);
-    // Save last used album for this collection
+    // Save last used album (always the user's real choice, not the auto-doppioni album)
     SharedPreferences.getInstance().then((prefs) {
-      prefs.setInt('last_album_id_${widget.collectionKey}', albumIdToUse);
+      prefs.setInt('last_album_id_${widget.collectionKey}', selectedAlbumId!);
     });
+    if (redirectedToDoppioni) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Carta già presente nella collezione → aggiunta ai Doppioni'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
     widget.onCardAdded(albumIdToUse);
   }
 }
