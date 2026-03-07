@@ -229,30 +229,13 @@ class _CatalogPageState extends State<CatalogPage> {
   /// Load a single page of cards
   Future<void> _loadPage() async {
     try {
-      List<Map<String, dynamic>> cards;
-
-      if (widget.collectionKey == 'yugioh') {
-        cards = await _dbHelper.getYugiohCatalogCards(
-          language: _preferredLanguage,
-          query: _lastQuery,
-          limit: _pageSize,
-          offset: _currentOffset,
-        );
-      } else if (widget.collectionKey == 'onepiece') {
-        cards = await _dbHelper.getOnepieceCatalogCards(
-          query: _lastQuery,
-          limit: _pageSize,
-          offset: _currentOffset,
-        );
-      } else {
-        // For other catalogs, load all at once (usually smaller catalogs)
-        if (_currentOffset == 0) {
-          cards = await _dbHelper.getCatalogCards(widget.collectionKey, query: _lastQuery);
-          _hasMoreCards = false;
-        } else {
-          cards = [];
-        }
-      }
+      final cards = await _dbHelper.getCatalogCardsByCollection(
+        widget.collectionKey,
+        query: _lastQuery,
+        language: _preferredLanguage,
+        limit: _pageSize,
+        offset: _currentOffset,
+      );
 
       if (cards.isEmpty || cards.length < _pageSize) {
         _hasMoreCards = false;
@@ -431,34 +414,74 @@ class _CatalogPageState extends State<CatalogPage> {
         );
       }
 
-      // Add cards to collection; increment quantity if the same print already exists
+      // Add cards to collection; route duplicates to Doppioni (same logic as single-card add)
       int addedCount = 0;
       int updatedCount = 0;
+      int doppioniCount = 0;
+      int? doppioniAlbumId;
+
       for (final card in limitedCards) {
         try {
           final catalogId = card['id']?.toString();
+          final name = card['localizedName'] ?? card['name'] ?? 'Unknown';
           final serialNumber = card['localizedSetCode'] ?? card['setCode'] ?? '';
           final rarity = card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'] ?? '';
 
-          final existing = await _dbHelper.findCardInAlbum(selectedAlbum.id!, catalogId, serialNumber, rarity);
-          if (existing != null) {
-            await _dbHelper.updateCard(existing.copyWith(quantity: existing.quantity + 1));
-            updatedCount++;
+          // Check if this exact print exists in ANY album across the whole collection
+          final existingAnywhere = await _dbHelper.findOwnedInstances(
+            widget.collectionKey, name, serialNumber, rarity,
+          );
+
+          if (existingAnywhere.isNotEmpty) {
+            // Already owned → route to Doppioni
+            doppioniAlbumId ??= await _getOrCreateDoppioniAlbum();
+            final existingInDoppioni = existingAnywhere
+                .where((c) => c.albumId == doppioniAlbumId)
+                .toList();
+            if (existingInDoppioni.isNotEmpty) {
+              await _dbHelper.updateCard(existingInDoppioni.first.copyWith(
+                quantity: existingInDoppioni.first.quantity + 1,
+              ));
+            } else {
+              await _dbHelper.insertCard(CardModel(
+                catalogId: catalogId,
+                name: name,
+                serialNumber: serialNumber,
+                collection: widget.collectionKey,
+                albumId: doppioniAlbumId,
+                type: card['type'] ?? card['card_type'] ?? '',
+                rarity: rarity,
+                description: card['localizedDescription'] ?? card['description'] ?? '',
+                imageUrl: card['artwork'] ?? card['imageUrl'],
+                value: (card['marketPrice'] as num?)?.toDouble() ?? 0.0,
+              ));
+            }
+            doppioniCount++;
           } else {
-            final cardModel = CardModel(
-              catalogId: catalogId,
-              name: card['localizedName'] ?? card['name'] ?? 'Unknown',
-              serialNumber: serialNumber,
-              collection: widget.collectionKey,
-              albumId: selectedAlbum.id!,
-              type: card['type'] ?? card['card_type'] ?? '',
-              rarity: rarity,
-              description: card['localizedDescription'] ?? card['description'] ?? '',
-              imageUrl: card['artwork'] ?? card['imageUrl'],
-              value: (card['marketPrice'] as num?)?.toDouble() ?? 0.0,
+            // Not yet owned → add to selected album (increment if already there)
+            final existingInAlbum = await _dbHelper.findCardInAlbum(
+              selectedAlbum.id!, catalogId, serialNumber, rarity,
             );
-            await _dbHelper.insertCard(cardModel);
-            addedCount++;
+            if (existingInAlbum != null) {
+              await _dbHelper.updateCard(
+                existingInAlbum.copyWith(quantity: existingInAlbum.quantity + 1),
+              );
+              updatedCount++;
+            } else {
+              await _dbHelper.insertCard(CardModel(
+                catalogId: catalogId,
+                name: name,
+                serialNumber: serialNumber,
+                collection: widget.collectionKey,
+                albumId: selectedAlbum.id!,
+                type: card['type'] ?? card['card_type'] ?? '',
+                rarity: rarity,
+                description: card['localizedDescription'] ?? card['description'] ?? '',
+                imageUrl: card['artwork'] ?? card['imageUrl'],
+                value: (card['marketPrice'] as num?)?.toDouble() ?? 0.0,
+              ));
+              addedCount++;
+            }
           }
         } catch (e) {
           debugPrint('Error adding card: $e');
@@ -476,9 +499,10 @@ class _CatalogPageState extends State<CatalogPage> {
         final parts = <String>[];
         if (addedCount > 0) parts.add('$addedCount aggiunte');
         if (updatedCount > 0) parts.add('$updatedCount quantità aggiornate');
+        if (doppioniCount > 0) parts.add('$doppioniCount nei Doppioni');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${parts.join(', ')} in "${selectedAlbum.name}"'),
+            content: Text(parts.isNotEmpty ? parts.join(', ') : 'Nessuna modifica'),
             backgroundColor: Colors.green,
           ),
         );
@@ -496,6 +520,17 @@ class _CatalogPageState extends State<CatalogPage> {
     } finally {
       if (mounted) setState(() => _isAdding = false);
     }
+  }
+
+  Future<int> _getOrCreateDoppioniAlbum() async {
+    final albums = await _dbHelper.getAlbumsByCollection(widget.collectionKey);
+    final existing = albums.where((a) => a.name == 'Doppioni').toList();
+    if (existing.isNotEmpty) return existing.first.id!;
+    return await _dbHelper.insertAlbum(AlbumModel(
+      name: 'Doppioni',
+      collection: widget.collectionKey,
+      maxCapacity: 999,
+    ));
   }
 
   @override

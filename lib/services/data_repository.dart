@@ -892,4 +892,33 @@ class DataRepository {
     if (kIsWeb) return [];
     return await _dbHelper.getOnepieceCatalogCards(query: query, limit: limit, offset: offset);
   }
+
+  /// Metodo unificato: instrada alla query corretta in base alla collezione.
+  /// Usare questo invece dei tre metodi separati nei widget.
+  Future<List<Map<String, dynamic>>> getCatalogCardsByCollection(
+    String collection, {
+    String? query,
+    String language = 'EN',
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    if (collection == 'yugioh') {
+      return getYugiohCatalogCards(
+        query: query,
+        language: language,
+        limit: limit,
+        offset: offset,
+      );
+    } else if (collection == 'onepiece') {
+      return getOnepieceCatalogCards(
+        query: query,
+        limit: limit,
+        offset: offset,
+      );
+    } else {
+      // Cataloghi generici: carica tutto (no paginazione)
+      if (offset > 0) return [];
+      return getCatalogCards(collection, query: query);
+    }
+  }
 }

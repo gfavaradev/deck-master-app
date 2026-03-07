@@ -30,6 +30,7 @@ class _CardListPageState extends State<CardListPage> {
   List<CardModel> _allCards = [];
   List<CardModel> _filteredCards = [];
   List<CardModel> _doppioniCards = [];
+  List<CardModel> _filteredDoppioniCards = [];
   List<AlbumModel> _availableAlbums = [];
   bool _isGridView = false;
   bool _isLoading = true;
@@ -88,16 +89,18 @@ class _CardListPageState extends State<CardListPage> {
 
   void _filterCards(String query) {
     setState(() {
-      _filteredCards = _allCards
-          .where((card) => card.name.toLowerCase().contains(query.toLowerCase()))
-          .toList();
+      final q = query.toLowerCase();
+      bool matches(CardModel card) =>
+          card.name.toLowerCase().contains(q) ||
+          card.serialNumber.toLowerCase().contains(q) ||
+          card.rarity.toLowerCase().contains(q);
+
+      _filteredCards = _allCards.where(matches).toList();
+      _filteredDoppioniCards = _doppioniCards.where(matches).toList();
 
       // Sort by serialNumber ascending (like catalog)
-      _filteredCards.sort((a, b) {
-        final serialA = a.serialNumber.toLowerCase();
-        final serialB = b.serialNumber.toLowerCase();
-        return serialA.compareTo(serialB);
-      });
+      _filteredCards.sort((a, b) => a.serialNumber.toLowerCase().compareTo(b.serialNumber.toLowerCase()));
+      _filteredDoppioniCards.sort((a, b) => a.serialNumber.toLowerCase().compareTo(b.serialNumber.toLowerCase()));
     });
   }
 
@@ -365,10 +368,11 @@ class _CardListPageState extends State<CardListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final mainValue = _filteredCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
+    // Summary always uses full lists (not filtered) so values don't change during search
     final mainCount = _filteredCards.fold(0, (sum, item) => sum + item.quantity);
-    final doppioniCount = _doppioniCards.fold(0, (sum, item) => sum + item.quantity);
-    final doppioniValue = _doppioniCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
+    final mainValue = _filteredCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
+    final doppioniCount = _filteredDoppioniCards.fold(0, (sum, item) => sum + item.quantity);
+    final doppioniValue = _filteredDoppioniCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
     final uniqueCards = mainCount;
     final duplicates = doppioniCount;
     final totalCards = mainCount + doppioniCount;
@@ -385,7 +389,7 @@ class _CardListPageState extends State<CardListPage> {
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Cerca carta...',
+                    hintText: 'Cerca per nome, seriale o rarità...',
                     prefixIcon: const Icon(Icons.search),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                   ),

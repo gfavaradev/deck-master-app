@@ -339,15 +339,11 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                   prefixIcon: Icon(Icons.search),
                 ),
                 onSubmitted: (query) async {
-                  List<Map<String, dynamic>> results;
-                  if (_isYugioh) {
-                    results = await _dbHelper.getYugiohCatalogCards(
-                      language: _preferredLanguage,
-                      query: query,
-                    );
-                  } else {
-                    results = await _dbHelper.getCatalogCards(widget.collectionKey, query: query);
-                  }
+                  final results = await _dbHelper.getCatalogCardsByCollection(
+                    widget.collectionKey,
+                    query: query,
+                    language: _preferredLanguage,
+                  );
                   if (results.isNotEmpty) {
                     final card = results.first;
                     setState(() {
@@ -355,10 +351,10 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                       nameController.text = _isYugioh
                           ? (card['localizedName'] ?? card['name'] ?? '')
                           : (card['name'] ?? '');
-                      typeController.text = card['type'] ?? '';
+                      typeController.text = card['card_type'] ?? card['type'] ?? '';
                       descController.text = _isYugioh
                           ? (card['localizedDescription'] ?? card['description'] ?? '')
-                          : (card['description'] ?? '');
+                          : (card['card_text'] ?? card['description'] ?? '');
                     });
                     final cardId = card['id'];
                     if (cardId != null) {
