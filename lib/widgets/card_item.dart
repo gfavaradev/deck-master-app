@@ -204,48 +204,23 @@ class CardGridItem extends StatelessWidget {
                 onTap: card.imageUrl != null && card.imageUrl!.isNotEmpty
                     ? () => _showFullScreenImage(context, card.imageUrl!)
                     : null,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    card.imageUrl != null && card.imageUrl!.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: card.imageUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (c, u) => Container(
-                              color: AppColors.bgMedium,
-                              child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                            ),
-                            errorWidget: (c, u, e) => Container(
-                              color: AppColors.bgMedium,
-                              child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
-                            ),
-                          )
-                        : Container(
-                            color: AppColors.bgMedium,
-                            child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
-                          ),
-                    // Quantity badge overlay
-                    Positioned(
-                      bottom: 4,
-                      right: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.purple,
-                          borderRadius: BorderRadius.circular(12),
+                child: card.imageUrl != null && card.imageUrl!.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: card.imageUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (c, u) => Container(
+                          color: AppColors.bgMedium,
+                          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                         ),
-                        child: Text(
-                          'x$totalQuantity',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        errorWidget: (c, u, e) => Container(
+                          color: AppColors.bgMedium,
+                          child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
                         ),
+                      )
+                    : Container(
+                        color: AppColors.bgMedium,
+                        child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
                       ),
-                    ),
-                  ],
-                ),
               ),
             ),
             // Card info (similar to catalog)

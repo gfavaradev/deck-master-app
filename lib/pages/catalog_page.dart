@@ -37,6 +37,8 @@ class _CatalogPageState extends State<CatalogPage> {
 
   List<AlbumModel> _availableAlbums = [];
   List<CardModel> _allOwnedCards = [];
+  // key: "catalogId-serialNumber-rarity" → total quantity owned (all albums)
+  Map<String, int> _ownedQuantityMap = {};
   String _preferredLanguage = 'EN';
   bool _hasUpdate = false;
   bool _isDownloadingUpdate = false;
@@ -182,10 +184,17 @@ class _CatalogPageState extends State<CatalogPage> {
   Future<void> _loadAlbumsAndOwned() async {
     final albums = await _dbHelper.getAlbumsByCollection(widget.collectionKey);
     final owned = await _dbHelper.getCardsWithCatalog(widget.collectionKey);
+    // key: "catalogId-serialNumber" → total quantity across all albums
+    final map = <String, int>{};
+    for (final c in owned) {
+      final key = '${c.catalogId}-${c.serialNumber}';
+      map[key] = (map[key] ?? 0) + c.quantity;
+    }
     if (mounted) {
       setState(() {
         _availableAlbums = albums;
         _allOwnedCards = owned;
+        _ownedQuantityMap = map;
       });
     }
   }
@@ -628,6 +637,9 @@ class _CatalogPageState extends State<CatalogPage> {
                                   : card['rarityCode'];
                           // Is this a foreign-language print? (found via set code search but not in user's language)
                           final bool isForeignPrint = isYugioh && card['isLocalizedPrint'] == 0;
+                          final String ownedKey =
+                              '${card['id']}-${card['localizedSetCode'] ?? card['setCode'] ?? ''}';
+                          final int ownedQty = _ownedQuantityMap[ownedKey] ?? 0;
 
                           return InkWell(
                             onTap: () {
@@ -650,7 +662,32 @@ class _CatalogPageState extends State<CatalogPage> {
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
                                       Expanded(
-                                        child: _buildCardImage(card, isYugioh),
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            _buildCardImage(card, isYugioh),
+                                            if (ownedQty > 0)
+                                              Positioned(
+                                                bottom: 4,
+                                                right: 4,
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.green.shade700,
+                                                    borderRadius: BorderRadius.circular(10),
+                                                  ),
+                                                  child: Text(
+                                                    'x$ownedQty',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                       Padding(
                                         padding: const EdgeInsets.all(4.0),
