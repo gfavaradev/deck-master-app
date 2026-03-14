@@ -2,9 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
 import '../services/sync_service.dart';
+import 'set_completion_page.dart';
 
 class StatsPage extends StatefulWidget {
-  const StatsPage({super.key});
+  final String? collectionKey;
+  final String? collectionName;
+
+  const StatsPage({super.key, this.collectionKey, this.collectionName});
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -57,9 +61,47 @@ class _StatsPageState extends State<StatsPage> {
                 children: [
                   _buildStatCard('Carte Totali', _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
                   _buildStatCard('Valore Stimato', '€${(_stats?['totalValue'] as double? ?? 0.0).toStringAsFixed(2)}', Icons.euro, Colors.green),
+                  if (widget.collectionKey != null) _buildExpansioniCard(),
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildExpansioniCard() {
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(Icons.layers, color: Colors.orange, size: 30),
+        ),
+        title: const Text(
+          'Espansioni',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          'Completamento set per ${widget.collectionName}',
+          style: const TextStyle(fontSize: 13, color: Colors.grey),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SetCompletionPage(
+              collectionKey: widget.collectionKey!,
+              collectionName: widget.collectionName!,
+            ),
+          ),
+        ),
+      ),
     );
   }
 

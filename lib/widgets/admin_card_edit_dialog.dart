@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../services/image_upload_service.dart';
 
 /// Comprehensive dialog for adding/editing catalog cards
 /// Tabs: Info Base | Traduzioni | Stats | Set per Lingua
@@ -27,7 +26,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
   String _race = 'Dragon';
   String _attribute = 'DARK';
   List<String> _linkMarkers = [];
-  int? _cardId;
+  dynamic _cardId; // int for YuGiOh, String for Pokemon
 
   // --- Stats ---
   late TextEditingController _atkController;
@@ -65,7 +64,13 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     _tabController = TabController(length: 4, vsync: this);
 
     final card = widget.initialCard ?? {};
-    _cardId = (card['id'] as num?)?.toInt() ?? _generateCustomCardId();
+    // id can be int (YuGiOh), String (Pokemon api_id), or missing (new card)
+    final rawId = card['api_id'] ?? card['id'];
+    if (rawId is String) {
+      _cardId = rawId;
+    } else {
+      _cardId = (rawId as num?)?.toInt() ?? _generateCustomCardId();
+    }
 
     // Basic info
     _nameEnController = TextEditingController(text: card['name'] ?? '');
@@ -502,26 +507,39 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                         ),
                       ),
                       const SizedBox(width: 8),
-                      uploading
-                          ? const SizedBox(
-                              width: 36,
-                              height: 36,
-                              child: Padding(
-                                padding: EdgeInsets.all(6),
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            )
-                          : IconButton(
-                              icon: const Icon(Icons.upload_file, color: Colors.orange),
-                              tooltip: 'Carica immagine su Storage',
-                              onPressed: () => _uploadSetImage(
-                                setS,
-                                imageUrlCtrl,
-                                setCodeCtrl.text.trim(),
-                                (v) => setS(() => uploading = v),
-                                (e) => setS(() => uploadError = e),
-                              ),
-                            ),
+                      if (uploading)
+                        const SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: Padding(
+                            padding: EdgeInsets.all(6),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      else ...[
+                        IconButton(
+                          icon: const Icon(Icons.upload_file, color: Colors.orange),
+                          tooltip: 'Carica dal dispositivo',
+                          onPressed: () => _uploadSetImage(
+                            setS,
+                            imageUrlCtrl,
+                            setCodeCtrl.text.trim(),
+                            (v) => setS(() => uploading = v),
+                            (e) => setS(() => uploadError = e),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.cloud_download_outlined, color: Colors.blue),
+                          tooltip: 'Carica da URL API',
+                          onPressed: () => _uploadFromApiUrl(
+                            setS,
+                            imageUrlCtrl,
+                            setCodeCtrl.text.trim(),
+                            (v) => setS(() => uploading = v),
+                            (e) => setS(() => uploadError = e),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   if (uploadError != null) ...[
@@ -567,6 +585,39 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     return result;
   }
 
+  Future<void> _uploadFromApiUrl(
+    StateSetter setState2,
+    TextEditingController imageUrlCtrl,
+    String setCode,
+    void Function(bool) setLoading,
+    void Function(String?) setError,
+  ) async {
+    final currentUrl = imageUrlCtrl.text.trim();
+    if (currentUrl.isEmpty || currentUrl.contains('firebasestorage')) {
+      setError('Inserisci prima un URL API nel campo immagine');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      final url = await ImageUploadService.uploadFromUrl(
+        imageUrl: currentUrl,
+        catalog: _catalog,
+        cardId: _cardId!,
+        setCode: setCode.isNotEmpty ? setCode : null,
+      );
+      if (url != null) {
+        setState2(() => imageUrlCtrl.text = url);
+      } else {
+        setError('Download immagine fallito');
+      }
+    } catch (e) {
+      setError('Upload fallito: $e');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   Future<void> _uploadSetImage(
     StateSetter setState2,
     TextEditingController imageUrlCtrl,
@@ -574,25 +625,15 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     void Function(bool) setLoading,
     void Function(String?) setError,
   ) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final bytes = result.files.first.bytes;
-    if (bytes == null) return;
-
     setLoading(true);
     setError(null);
     try {
-      final safeCode = setCode.replaceAll(RegExp(r'[/\s]'), '_');
-      final path = safeCode.isNotEmpty
-          ? 'catalog/yugioh/images/${_cardId}_$safeCode.jpg'
-          : 'catalog/yugioh/images/$_cardId.jpg';
-      final ref = FirebaseStorage.instance.ref(path);
-      await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-      final url = await ref.getDownloadURL();
-      setState2(() => imageUrlCtrl.text = url);
+      final url = await ImageUploadService.pickAndUpload(
+        catalog: _catalog,
+        cardId: _cardId!,
+        setCode: setCode.isNotEmpty ? setCode : null,
+      );
+      if (url != null) setState2(() => imageUrlCtrl.text = url);
     } catch (e) {
       setError('Upload fallito: $e');
     } finally {

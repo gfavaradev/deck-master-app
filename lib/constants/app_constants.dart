@@ -242,6 +242,11 @@ class DatabaseConstants {
   /// One Piece-specific tables
   static const String onepieceCards = 'onepiece_cards';
   static const String onepiecePrints = 'onepiece_prints';
+
+  /// Pokémon-specific tables
+  static const String pokemonCards = 'pokemon_cards';
+  static const String pokemonPrints = 'pokemon_prints';
+  static const String pokemonPrices = 'pokemon_prices';
 }
 
 // ============================================================

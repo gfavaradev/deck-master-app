@@ -43,6 +43,7 @@ class CardModel {
       'rarity': rarity,
       'quantity': quantity,
       'value': value,
+      'added_at': DateTime.now().toIso8601String(),
     };
   }
 

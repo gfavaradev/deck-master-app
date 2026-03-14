@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 8,
+      version: 11,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -69,6 +69,14 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_prints_card_id ON onepiece_prints(card_id)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_prints_set_id ON onepiece_prints(set_id)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_onepiece_prints_card_set_id ON onepiece_prints(card_set_id)');
+
+    // Pokemon indices
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_cards_name ON pokemon_cards(name)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_cards_set_id ON pokemon_cards(set_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_cards_api_id ON pokemon_cards(api_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_prints_card_id ON pokemon_prints(card_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_prints_set_code ON pokemon_prints(set_code)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_prices_print_id ON pokemon_prices(print_id)');
 
     // cards table indices — critical for getCardsByCollection and getAlbumsByCollection
     await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_collection ON cards(collection)');
@@ -112,6 +120,22 @@ class DatabaseHelper {
     }
     if (oldVersion < 8) {
       await _createOnepieceTables(db);
+    }
+    if (oldVersion < 9) {
+      await db.execute('ALTER TABLE cards ADD COLUMN added_at TEXT');
+    }
+    if (oldVersion < 10) {
+      await _createPokemonTables(db);
+    }
+    if (oldVersion < 11) {
+      // Ensure added_at column exists in cards table.
+      // Fresh installs at v10 were missing this column, causing insertCard to fail
+      // and Firestore sync (pullFromCloud) to silently leave the collection empty.
+      final cols = await db.rawQuery('PRAGMA table_info(cards)');
+      final hasAddedAt = cols.any((c) => c['name'] == 'added_at');
+      if (!hasAddedAt) {
+        await db.execute('ALTER TABLE cards ADD COLUMN added_at TEXT');
+      }
     }
   }
 
@@ -327,6 +351,78 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> _createPokemonTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS pokemon_cards(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        api_id TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        supertype TEXT,
+        subtype TEXT,
+        hp INTEGER,
+        types TEXT,
+        rarity TEXT,
+        set_id TEXT,
+        set_name TEXT,
+        set_series TEXT,
+        number TEXT,
+        image_url TEXT,
+        name_it TEXT,
+        name_fr TEXT,
+        name_de TEXT,
+        name_pt TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS pokemon_prints(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_id INTEGER NOT NULL,
+        set_code TEXT NOT NULL,
+        set_name TEXT,
+        rarity TEXT,
+        set_price REAL,
+        artwork TEXT,
+        set_code_it TEXT,
+        set_name_it TEXT,
+        rarity_it TEXT,
+        set_price_it REAL,
+        set_code_fr TEXT,
+        set_name_fr TEXT,
+        rarity_fr TEXT,
+        set_price_fr REAL,
+        set_code_de TEXT,
+        set_name_de TEXT,
+        rarity_de TEXT,
+        set_price_de REAL,
+        set_code_pt TEXT,
+        set_name_pt TEXT,
+        rarity_pt TEXT,
+        set_price_pt REAL,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY (card_id) REFERENCES pokemon_cards(id) ON DELETE CASCADE,
+        UNIQUE(card_id, set_code)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS pokemon_prices(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        print_id INTEGER NOT NULL,
+        language TEXT NOT NULL,
+        cardmarket_price REAL,
+        tcgplayer_price REAL,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY (print_id) REFERENCES pokemon_prints(id) ON DELETE CASCADE,
+        UNIQUE(print_id, language)
+      )
+    ''');
+  }
+
   Future _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE albums(
@@ -353,6 +449,7 @@ class DatabaseHelper {
         quantity INTEGER,
         value REAL,
         firestoreId TEXT,
+        added_at TEXT,
         FOREIGN KEY (albumId) REFERENCES albums (id)
       )
     ''');
@@ -440,6 +537,9 @@ class DatabaseHelper {
 
     // Create One Piece-specific tables
     await _createOnepieceTables(db);
+
+    // Create Pokémon-specific tables
+    await _createPokemonTables(db);
 
     // Create pending_sync table
     await db.execute('''
@@ -532,156 +632,13 @@ class DatabaseHelper {
     });
   }
 
+  // Returns all owned card instances for a collection.
+  // Used only to build _ownedQuantityMap (needs catalogId, serialNumber, quantity).
+  // All fields are already stored in the cards table at insert time.
   Future<List<CardModel>> getCardsWithCatalog(String collection) async {
-    if (collection == 'yugioh') {
-      return _getYugiohCardsWithCatalog();
-    }
-    return _getGenericCardsWithCatalog(collection);
-  }
-
-  Future<List<CardModel>> _getYugiohCardsWithCatalog() async {
     Database db = await database;
-
-    final List<Map<String, dynamic>> results = await db.rawQuery('''
-      SELECT
-        NULL as id,
-        CAST(yc.id AS TEXT) as catalogId,
-        yc.name,
-        yc.type,
-        yc.description,
-        'yugioh' as collection,
-        yc.image_url as imageUrl,
-        EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(yc.id AS TEXT)) as isOwned,
-        (SELECT COALESCE(SUM(c.quantity), 0) FROM cards c WHERE c.catalogId = CAST(yc.id AS TEXT)) as quantity,
-        0.0 as value,
-        '' as rarity,
-        '' as serialNumber,
-        -1 as albumId
-      FROM yugioh_cards yc
-    ''');
-
-    final List<Map<String, dynamic>> ownedResults = await db.rawQuery('''
-      SELECT
-        u.id,
-        u.catalogId,
-        COALESCE(u.name, yc.name) as name,
-        COALESCE(u.type, yc.type) as type,
-        COALESCE(u.description, yc.description) as description,
-        u.collection,
-        COALESCE(
-          (SELECT artwork FROM yugioh_prints
-           WHERE card_id = CAST(u.catalogId AS INTEGER)
-             AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
-               OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
-               OR set_code_pt = u.serialNumber)
-           LIMIT 1),
-          u.imageUrl
-        ) as imageUrl,
-        u.serialNumber,
-        u.albumId,
-        u.rarity,
-        u.quantity,
-        u.value
-      FROM cards u
-      LEFT JOIN yugioh_cards yc ON CAST(yc.id AS TEXT) = u.catalogId
-      WHERE u.collection = 'yugioh'
-    ''');
-
-    Map<String, CardModel> merged = {};
-
-    for (var row in results) {
-      final key = row['name'].toString().toLowerCase();
-      merged[key] = CardModel.fromMap(row);
-    }
-
-    for (var row in ownedResults) {
-      final name = row['name'].toString().toLowerCase();
-      final serial = row['serialNumber'].toString().toLowerCase();
-      final rarity = row['rarity'].toString().toLowerCase();
-      final key = "${name}_${serial}_$rarity";
-
-      if (merged.containsKey(key) && merged[key]!.id == null) {
-        merged[key] = CardModel.fromMap(row);
-      } else if (merged.containsKey(key)) {
-        final existing = merged[key]!;
-        merged[key] = existing.copyWith(
-          quantity: existing.quantity + (row['quantity'] as int),
-        );
-      } else {
-        merged[key] = CardModel.fromMap(row);
-      }
-    }
-
-    return merged.values.toList();
-  }
-
-  Future<List<CardModel>> _getGenericCardsWithCatalog(String collection) async {
-    Database db = await database;
-
-    final List<Map<String, dynamic>> results = await db.rawQuery('''
-      SELECT
-        NULL as id,
-        c.id as catalogId,
-        c.name,
-        c.type,
-        c.description,
-        c.collection,
-        c.imageUrl,
-        c.isOwned,
-        (SELECT SUM(quantity) FROM catalog_card_sets WHERE cardId = c.id) as quantity,
-        0.0 as value,
-        '' as rarity,
-        '' as serialNumber,
-        -1 as albumId
-      FROM catalog_cards c
-      WHERE c.collection = ?
-    ''', [collection]);
-
-    final List<Map<String, dynamic>> ownedResults = await db.rawQuery('''
-      SELECT
-        u.id,
-        u.catalogId,
-        COALESCE(c.name, u.name) as name,
-        COALESCE(c.type, u.type) as type,
-        COALESCE(c.description, u.description) as description,
-        COALESCE(c.collection, u.collection) as collection,
-        COALESCE(c.imageUrl, u.imageUrl) as imageUrl,
-        u.serialNumber,
-        u.albumId,
-        u.rarity,
-        u.quantity,
-        u.value
-      FROM cards u
-      LEFT JOIN catalog_cards c ON u.catalogId = c.id
-      WHERE u.collection = ?
-    ''', [collection]);
-
-    Map<String, CardModel> merged = {};
-
-    for (var row in results) {
-      final key = row['name'].toString().toLowerCase();
-      merged[key] = CardModel.fromMap(row);
-    }
-
-    for (var row in ownedResults) {
-      final name = row['name'].toString().toLowerCase();
-      final serial = row['serialNumber'].toString().toLowerCase();
-      final rarity = row['rarity'].toString().toLowerCase();
-      final key = "${name}_${serial}_$rarity";
-
-      if (merged.containsKey(key) && merged[key]!.id == null) {
-        merged[key] = CardModel.fromMap(row);
-      } else if (merged.containsKey(key)) {
-        final existing = merged[key]!;
-        merged[key] = existing.copyWith(
-          quantity: existing.quantity + (row['quantity'] as int),
-        );
-      } else {
-        merged[key] = CardModel.fromMap(row);
-      }
-    }
-
-    return merged.values.toList();
+    final maps = await db.query('cards', where: 'collection = ?', whereArgs: [collection]);
+    return maps.map((row) => CardModel.fromMap(row)).toList();
   }
 
   Future<List<CardModel>> getCardsByCollection(String collection) async {
@@ -735,6 +692,38 @@ class DatabaseHelper {
         LEFT JOIN onepiece_cards oc ON oc.id = CAST(u.catalogId AS INTEGER)
         LEFT JOIN onepiece_prints op ON op.card_id = oc.id AND op.card_set_id = u.serialNumber
         WHERE u.collection = 'onepiece'
+      ''');
+      return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
+    }
+
+    if (collection == 'pokemon') {
+      final List<Map<String, dynamic>> maps = await db.rawQuery('''
+        SELECT u.*,
+               COALESCE(u.name, pc.name) as name,
+               COALESCE(u.type, pc.supertype) as type,
+               u.collection,
+               COALESCE(
+                 (SELECT set_price FROM pokemon_prints
+                  WHERE card_id = pc.id
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1),
+                 u.value
+               ) as value,
+               COALESCE(
+                 (SELECT artwork FROM pokemon_prints
+                  WHERE card_id = pc.id
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1),
+                 pc.image_url,
+                 u.imageUrl
+               ) as imageUrl
+        FROM cards u
+        LEFT JOIN pokemon_cards pc ON pc.id = CAST(u.catalogId AS INTEGER)
+        WHERE u.collection = 'pokemon'
       ''');
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
@@ -794,6 +783,29 @@ class DatabaseHelper {
         LEFT JOIN onepiece_cards oc ON oc.id = CAST(u.catalogId AS INTEGER)
         LEFT JOIN onepiece_prints op ON op.card_id = oc.id AND op.card_set_id = u.serialNumber
         WHERE u.collection = 'onepiece' AND (oc.name = ? OR u.name = ?) AND u.serialNumber = ? AND u.rarity = ?
+      ''', [name, name, serialNumber, rarity]);
+      return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
+    }
+
+    if (collection == 'pokemon') {
+      final List<Map<String, dynamic>> maps = await db.rawQuery('''
+        SELECT u.*,
+               COALESCE(u.name, pc.name) as name,
+               COALESCE(u.type, pc.supertype) as type,
+               u.collection,
+               COALESCE(
+                 (SELECT artwork FROM pokemon_prints
+                  WHERE card_id = pc.id
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1),
+                 pc.image_url,
+                 u.imageUrl
+               ) as imageUrl
+        FROM cards u
+        LEFT JOIN pokemon_cards pc ON pc.id = CAST(u.catalogId AS INTEGER)
+        WHERE u.collection = 'pokemon' AND (pc.name = ? OR u.name = ?) AND u.serialNumber = ? AND u.rarity = ?
       ''', [name, name, serialNumber, rarity]);
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
@@ -1003,7 +1015,13 @@ class DatabaseHelper {
 
   Future<int> getCatalogCount(String collection) async {
     if (collection == 'yugioh') {
-      return getYugiohCatalogCount();
+      return getYugiohCatalogCount(); // yugioh_cards = carte uniche
+    }
+    if (collection == 'pokemon') {
+      return getPokemonCatalogCount(); // pokemon_cards = carte uniche
+    }
+    if (collection == 'onepiece') {
+      return getOnepieceCatalogCount(); // onepiece_cards = carte uniche
     }
     Database db = await database;
     final result = await db.rawQuery('SELECT COUNT(*) as count FROM catalog_cards WHERE collection = ?', [collection]);
@@ -1036,6 +1054,16 @@ class DatabaseHelper {
                LIMIT 1),
               c.value
             )
+          WHEN c.collection = 'pokemon' THEN
+            COALESCE(
+              (SELECT set_price FROM pokemon_prints
+               WHERE card_id = CAST(c.catalogId AS INTEGER)
+                 AND (set_code = c.serialNumber OR set_code_it = c.serialNumber
+                   OR set_code_fr = c.serialNumber OR set_code_de = c.serialNumber
+                   OR set_code_pt = c.serialNumber)
+               LIMIT 1),
+              c.value
+            )
           ELSE c.value
         END * c.quantity
       ) as total
@@ -1059,6 +1087,47 @@ class DatabaseHelper {
     final lang = language.toUpperCase();
     if (!_validLanguages.contains(lang) || lang == 'EN') return '';
     return '_${lang.toLowerCase()}';
+  }
+
+  /// Aggiorna il campo value di tutte le carte in collezione con i prezzi
+  /// aggiornati dal catalogo appena scaricato, per garantire coerenza tra
+  /// dispositivi diversi (il valore live dalla query può differire per via
+  /// del LIMIT 1 non deterministico).
+  Future<void> refreshCardValuesFromCatalog(String collection) async {
+    final db = await database;
+    if (collection == 'yugioh') {
+      await db.execute('''
+        UPDATE cards
+        SET value = COALESCE(
+          (SELECT p.set_price
+           FROM yugioh_prints p
+           WHERE p.card_id = CAST(cards.catalogId AS INTEGER)
+             AND (p.set_code = cards.serialNumber
+               OR p.set_code_it = cards.serialNumber
+               OR p.set_code_fr = cards.serialNumber
+               OR p.set_code_de = cards.serialNumber
+               OR p.set_code_pt = cards.serialNumber)
+           ORDER BY p.set_price DESC
+           LIMIT 1),
+          value
+        )
+        WHERE collection = 'yugioh' AND catalogId IS NOT NULL
+      ''');
+    } else if (collection == 'onepiece') {
+      await db.execute('''
+        UPDATE cards
+        SET value = COALESCE(
+          (SELECT p.market_price
+           FROM onepiece_prints p
+           WHERE p.card_id = CAST(cards.catalogId AS INTEGER)
+             AND p.card_set_id = cards.serialNumber
+           ORDER BY p.market_price DESC
+           LIMIT 1),
+          value
+        )
+        WHERE collection = 'onepiece' AND catalogId IS NOT NULL
+      ''');
+    }
   }
 
   /// Cancella tutto il catalogo Yu-Gi-Oh (carte, print, prezzi)
@@ -1326,11 +1395,12 @@ class DatabaseHelper {
         yp.artwork,
         'yugioh' AS collection,
         $isLocalizedPrint AS isLocalizedPrint,
-        EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(yc.id AS TEXT)) AS isOwned
+        EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(yc.id AS TEXT) AND collection = 'yugioh') AS isOwned
       FROM yugioh_cards yc
       INNER JOIN yugioh_prints yp ON yc.id = yp.card_id
       $whereClause
-      ORDER BY yc.name, yp.set_code
+      GROUP BY yc.id, $setCodeCol, $rarityCodeCol, COALESCE(yp.artwork, 0)
+      ORDER BY yc.name, $setCodeCol
       LIMIT ? OFFSET ?
     ''';
 
@@ -1366,6 +1436,266 @@ class DatabaseHelper {
   Future<int> getYugiohCatalogCount() async {
     Database db = await database;
     final result = await db.rawQuery('SELECT COUNT(*) as count FROM yugioh_cards');
+    return result.first['count'] as int? ?? 0;
+  }
+
+  // ============================================================
+  // Pokémon Catalog Methods
+  // ============================================================
+
+  Future<void> clearPokemonCatalog() async {
+    Database db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('pokemon_prices');
+      await txn.delete('pokemon_prints');
+      await txn.delete('pokemon_cards');
+      await txn.delete('catalog_metadata', where: 'catalog_name = ?', whereArgs: ['pokemon']);
+    });
+  }
+
+  Future<void> deletePokemonCardsByIds(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.transaction((txn) async {
+      await txn.rawDelete(
+        'DELETE FROM pokemon_prices WHERE print_id IN (SELECT id FROM pokemon_prints WHERE card_id IN ($placeholders))',
+        ids,
+      );
+      await txn.rawDelete('DELETE FROM pokemon_prints WHERE card_id IN ($placeholders)', ids);
+      await txn.rawDelete('DELETE FROM pokemon_cards WHERE id IN ($placeholders)', ids);
+    });
+  }
+
+  Future<void> insertPokemonCards(List<Map<String, dynamic>> cards, {Function(double)? onProgress}) async {
+    Database db = await database;
+    final now = DateTime.now().toIso8601String();
+
+    await db.transaction((txn) async {
+      int total = cards.length;
+      const int batchSize = 200;
+
+      for (int i = 0; i < total; i += batchSize) {
+        int end = (i + batchSize < total) ? i + batchSize : total;
+        List<Map<String, dynamic>> chunk = cards.sublist(i, end);
+
+        Batch batch = txn.batch();
+        for (var card in chunk) {
+          final cardData = Map<String, dynamic>.from(card);
+          final prints = cardData.remove('prints') as List<dynamic>?;
+
+          batch.rawInsert('''
+            INSERT OR REPLACE INTO pokemon_cards (
+              api_id, name, supertype, subtype, hp, types, rarity,
+              set_id, set_name, set_series, number, image_url,
+              name_it, name_fr, name_de, name_pt,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''', [
+            cardData['api_id'],
+            cardData['name'],
+            cardData['supertype'],
+            cardData['subtype'],
+            cardData['hp'],
+            cardData['types'],
+            cardData['rarity'],
+            cardData['set_id'],
+            cardData['set_name'],
+            cardData['set_series'],
+            cardData['number'],
+            cardData['image_url'],
+            cardData['name_it'],
+            cardData['name_fr'],
+            cardData['name_de'],
+            cardData['name_pt'],
+            now, now,
+          ]);
+
+          if (prints != null) {
+            for (var p in prints) {
+              final setCode = p['set_code'] ?? '';
+              batch.rawInsert('''
+                INSERT OR REPLACE INTO pokemon_prints (
+                  card_id, set_code, set_name, rarity, set_price, artwork,
+                  set_code_it, set_name_it, rarity_it, set_price_it,
+                  set_code_fr, set_name_fr, rarity_fr, set_price_fr,
+                  set_code_de, set_name_de, rarity_de, set_price_de,
+                  set_code_pt, set_name_pt, rarity_pt, set_price_pt,
+                  created_at, updated_at
+                ) VALUES (
+                  (SELECT id FROM pokemon_cards WHERE api_id = ?),
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+              ''', [
+                cardData['api_id'],
+                setCode, p['set_name'],
+                p['rarity'],
+                p['set_price'] is num ? p['set_price'] : double.tryParse(p['set_price']?.toString() ?? ''),
+                p['artwork'],
+                p['set_code_it'], p['set_name_it'], p['rarity_it'],
+                p['set_price_it'] is num ? p['set_price_it'] : double.tryParse(p['set_price_it']?.toString() ?? ''),
+                p['set_code_fr'], p['set_name_fr'], p['rarity_fr'],
+                p['set_price_fr'] is num ? p['set_price_fr'] : double.tryParse(p['set_price_fr']?.toString() ?? ''),
+                p['set_code_de'], p['set_name_de'], p['rarity_de'],
+                p['set_price_de'] is num ? p['set_price_de'] : double.tryParse(p['set_price_de']?.toString() ?? ''),
+                p['set_code_pt'], p['set_name_pt'], p['rarity_pt'],
+                p['set_price_pt'] is num ? p['set_price_pt'] : double.tryParse(p['set_price_pt']?.toString() ?? ''),
+                now, now,
+              ]);
+
+              // Prices per language
+              final pricesMap = p['prices'] as Map<String, dynamic>? ?? {};
+              for (var lang in _validLanguages) {
+                final langPrices = pricesMap[lang] as Map<String, dynamic>?;
+                if (langPrices == null || langPrices.isEmpty) continue;
+                batch.rawInsert('''
+                  INSERT OR REPLACE INTO pokemon_prices (
+                    print_id, language, cardmarket_price, tcgplayer_price,
+                    created_at, updated_at
+                  ) VALUES (
+                    (SELECT pp.id FROM pokemon_prints pp
+                     JOIN pokemon_cards pc ON pc.id = pp.card_id
+                     WHERE pc.api_id = ? AND pp.set_code = ?),
+                    ?, ?, ?, ?, ?
+                  )
+                ''', [
+                  cardData['api_id'], setCode,
+                  lang,
+                  langPrices['cardmarketPrice'] is num ? langPrices['cardmarketPrice'] : double.tryParse(langPrices['cardmarketPrice']?.toString() ?? ''),
+                  langPrices['tcgplayerPrice'] is num ? langPrices['tcgplayerPrice'] : double.tryParse(langPrices['tcgplayerPrice']?.toString() ?? ''),
+                  now, now,
+                ]);
+              }
+            }
+          }
+        }
+        await batch.commit(noResult: true);
+        onProgress?.call(end / total);
+      }
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getPokemonCatalogCards({
+    String? query,
+    required String language,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    Database db = await database;
+    final suffix = _langSuffix(language);
+    final hasLang = suffix.isNotEmpty;
+
+    final nameCol = hasLang ? 'COALESCE(pc.name$suffix, pc.name)' : 'pc.name';
+    final setNameCol = hasLang ? 'COALESCE(pp.set_name$suffix, pp.set_name)' : 'pp.set_name';
+    final setCodeCol = hasLang ? 'COALESCE(pp.set_code$suffix, pp.set_code)' : 'pp.set_code';
+    final rarityCol = hasLang ? 'COALESCE(pp.rarity$suffix, pp.rarity)' : 'pp.rarity';
+    final setPriceCol = hasLang ? 'COALESCE(pp.set_price$suffix, pp.set_price)' : 'pp.set_price';
+
+    final hasQuery = query != null && query.isNotEmpty;
+    String whereClause;
+    List<dynamic> whereArgs = [];
+
+    if (!hasQuery) {
+      whereClause = '';
+    } else {
+      final q = '%$query%';
+      if (hasLang) {
+        whereClause = '''WHERE (
+          $nameCol LIKE ?
+          OR pc.name LIKE ?
+          OR pp.set_code LIKE ?
+          OR pp.set_code_it LIKE ?
+          OR pp.set_code_fr LIKE ?
+          OR pp.set_code_de LIKE ?
+          OR pp.set_code_pt LIKE ?
+        )''';
+        whereArgs = [q, q, q, q, q, q, q];
+      } else {
+        whereClause = '''WHERE (
+          pc.name LIKE ?
+          OR pp.set_code LIKE ?
+          OR pp.set_code_it LIKE ?
+          OR pp.set_code_fr LIKE ?
+          OR pp.set_code_de LIKE ?
+          OR pp.set_code_pt LIKE ?
+        )''';
+        whereArgs = [q, q, q, q, q, q];
+      }
+    }
+
+    final isLocalizedPrint = hasLang ? 'CASE WHEN pp.set_name$suffix IS NOT NULL THEN 1 ELSE 0 END' : '1';
+
+    final sql = '''
+      SELECT
+        pc.id,
+        pc.api_id AS apiId,
+        pc.name,
+        $nameCol AS localizedName,
+        pc.supertype AS type,
+        pc.subtype,
+        pc.hp,
+        pc.types,
+        pc.rarity,
+        pc.set_id AS setId,
+        pc.set_name AS cardSetName,
+        pc.number,
+        pc.image_url AS imageUrl,
+        pp.id AS printId,
+        pp.set_code AS setCode,
+        $setCodeCol AS localizedSetCode,
+        pp.set_name AS setName,
+        $setNameCol AS localizedSetName,
+        pp.rarity AS setRarity,
+        $rarityCol AS localizedRarity,
+        pp.set_price AS setPrice,
+        $setPriceCol AS localizedSetPrice,
+        pp.artwork,
+        'pokemon' AS collection,
+        $isLocalizedPrint AS isLocalizedPrint,
+        EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(pc.id AS TEXT) AND collection = 'pokemon') AS isOwned
+      FROM pokemon_cards pc
+      INNER JOIN pokemon_prints pp ON pc.id = pp.card_id
+      $whereClause
+      ORDER BY pc.name, $setCodeCol
+      LIMIT ? OFFSET ?
+    ''';
+
+    return await db.rawQuery(sql, [...whereArgs, limit, offset]);
+  }
+
+  Future<List<Map<String, dynamic>>> getPokemonCardPrints(int cardId, {required String language}) async {
+    Database db = await database;
+    final suffix = _langSuffix(language);
+    final hasLang = suffix.isNotEmpty;
+
+    final setNameCol = hasLang ? 'COALESCE(set_name$suffix, set_name)' : 'set_name';
+    final setCodeCol = hasLang ? 'COALESCE(set_code$suffix, set_code)' : 'set_code';
+    final rarityCol = hasLang ? 'COALESCE(rarity$suffix, rarity)' : 'rarity';
+    final setPriceCol = hasLang ? 'COALESCE(set_price$suffix, set_price)' : 'set_price';
+
+    return await db.rawQuery('''
+      SELECT
+        id, card_id AS cardId, set_code AS setCode, set_name AS setName,
+        rarity, set_price AS setPrice, artwork,
+        $setNameCol AS localizedSetName,
+        $setCodeCol AS localizedSetCode,
+        $rarityCol AS localizedRarity,
+        $setPriceCol AS localizedSetPrice
+      FROM pokemon_prints
+      WHERE card_id = ?
+      ORDER BY set_code
+    ''', [cardId]);
+  }
+
+  Future<int> getPokemonCatalogCount() async {
+    Database db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM pokemon_cards');
+    return result.first['count'] as int? ?? 0;
+  }
+
+  Future<int> getOnepieceCatalogCount() async {
+    Database db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM onepiece_cards');
     return result.first['count'] as int? ?? 0;
   }
 
@@ -1441,6 +1771,254 @@ class DatabaseHelper {
   Future<void> removeCardFromDeck(int deckId, int cardId) async {
     Database db = await database;
     await db.delete('deck_cards', where: 'deckId = ? AND cardId = ?', whereArgs: [deckId, cardId]);
+  }
+
+  // ============================================================
+  // Set / Espansioni Methods
+  // ============================================================
+
+  /// Statistiche completamento per ogni set della collezione.
+  /// Ritorna: [{setName, setCode (OP only), totalCards, ownedCards}]
+  Future<List<Map<String, dynamic>>> getSetStats(String collection) async {
+    Database db = await database;
+    if (collection == 'yugioh') {
+      // serialNumber memorizza il codice localizzato (EN/IT/FR/DE/PT) → confronta con tutte le colonne
+      return db.rawQuery('''
+        SELECT COALESCE(p.set_name, '?') as setName,
+               COUNT(DISTINCT p.card_id) as totalCards,
+               COUNT(DISTINCT CASE WHEN c.id IS NOT NULL THEN p.card_id END) as ownedCards,
+               MAX(c.added_at) as completedAt
+        FROM yugioh_prints p
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = p.card_id
+          AND c.collection = 'yugioh'
+          AND (c.serialNumber = p.set_code
+            OR c.serialNumber = p.set_code_it
+            OR c.serialNumber = p.set_code_fr
+            OR c.serialNumber = p.set_code_de
+            OR c.serialNumber = p.set_code_pt)
+        WHERE p.set_name IS NOT NULL
+        GROUP BY p.set_name
+        ORDER BY p.set_name
+      ''');
+    } else if (collection == 'onepiece') {
+      // card_set_id non è localizzato → match diretto
+      return db.rawQuery('''
+        SELECT COALESCE(p.set_name, p.set_id, '?') as setName,
+               p.set_id as setCode,
+               COUNT(DISTINCT p.card_id) as totalCards,
+               COUNT(DISTINCT CASE WHEN c.id IS NOT NULL THEN p.card_id END) as ownedCards,
+               MAX(c.added_at) as completedAt
+        FROM onepiece_prints p
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = p.card_id
+          AND c.collection = 'onepiece'
+          AND c.serialNumber = p.card_set_id
+        WHERE p.set_id IS NOT NULL
+        GROUP BY p.set_id
+        ORDER BY p.set_name
+      ''');
+    } else if (collection == 'pokemon') {
+      return db.rawQuery('''
+        SELECT COALESCE(pc.set_name, pc.set_id, '?') as setName,
+               pc.set_id as setCode,
+               COUNT(DISTINCT pp.card_id) as totalCards,
+               COUNT(DISTINCT CASE WHEN c.id IS NOT NULL THEN pp.card_id END) as ownedCards,
+               MAX(c.added_at) as completedAt
+        FROM pokemon_prints pp
+        JOIN pokemon_cards pc ON pc.id = pp.card_id
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = pp.card_id
+          AND c.collection = 'pokemon'
+          AND (c.serialNumber = pp.set_code
+            OR c.serialNumber = pp.set_code_it
+            OR c.serialNumber = pp.set_code_fr
+            OR c.serialNumber = pp.set_code_de
+            OR c.serialNumber = pp.set_code_pt)
+        WHERE pc.set_id IS NOT NULL
+        GROUP BY pc.set_id
+        ORDER BY pc.set_name
+      ''');
+    } else {
+      return db.rawQuery('''
+        SELECT cs.setName,
+               COUNT(DISTINCT cs.cardId) as totalCards,
+               COUNT(DISTINCT CASE WHEN c.id IS NOT NULL THEN cs.cardId END) as ownedCards,
+               MAX(c.added_at) as completedAt
+        FROM catalog_card_sets cs
+        JOIN catalog_cards cc ON cc.id = cs.cardId AND cc.collection = ?
+        LEFT JOIN cards c ON c.catalogId = cs.cardId AND c.collection = ?
+        WHERE cs.setName IS NOT NULL
+        GROUP BY cs.setName
+        ORDER BY cs.setName
+      ''', [collection, collection]);
+    }
+  }
+
+  /// Dettaglio carte in un set specifico con stato di possesso.
+  /// [setIdentifier]: set_name (YGO), set_id (OP), setName (generico)
+  /// Ritorna: [{id, name, imageUrl, serialNumber, rarity, isOwned}]
+  Future<List<Map<String, dynamic>>> getSetDetail(String collection, String setIdentifier) async {
+    Database db = await database;
+    if (collection == 'yugioh') {
+      return db.rawQuery('''
+        SELECT yc.id, yc.name, yc.image_url as imageUrl,
+               p.set_code as serialNumber, p.rarity,
+               CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END as isOwned
+        FROM yugioh_prints p
+        JOIN yugioh_cards yc ON yc.id = p.card_id
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = p.card_id
+          AND c.collection = 'yugioh'
+          AND (c.serialNumber = p.set_code
+            OR c.serialNumber = p.set_code_it
+            OR c.serialNumber = p.set_code_fr
+            OR c.serialNumber = p.set_code_de
+            OR c.serialNumber = p.set_code_pt)
+        WHERE p.set_name = ?
+        ORDER BY p.set_code
+      ''', [setIdentifier]);
+    } else if (collection == 'onepiece') {
+      return db.rawQuery('''
+        SELECT oc.id, oc.name, oc.image_url as imageUrl,
+               p.card_set_id as serialNumber, p.rarity,
+               CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END as isOwned
+        FROM onepiece_prints p
+        JOIN onepiece_cards oc ON oc.id = p.card_id
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = p.card_id
+          AND c.collection = 'onepiece'
+          AND c.serialNumber = p.card_set_id
+        WHERE p.set_id = ?
+        ORDER BY p.card_set_id
+      ''', [setIdentifier]);
+    } else if (collection == 'pokemon') {
+      return db.rawQuery('''
+        SELECT pc.id, pc.name, pp.artwork as imageUrl,
+               pp.set_code as serialNumber, pp.rarity,
+               CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END as isOwned
+        FROM pokemon_prints pp
+        JOIN pokemon_cards pc ON pc.id = pp.card_id
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = pp.card_id
+          AND c.collection = 'pokemon'
+          AND (c.serialNumber = pp.set_code
+            OR c.serialNumber = pp.set_code_it
+            OR c.serialNumber = pp.set_code_fr
+            OR c.serialNumber = pp.set_code_de
+            OR c.serialNumber = pp.set_code_pt)
+        WHERE pc.set_id = ?
+        ORDER BY pp.set_code
+      ''', [setIdentifier]);
+    } else {
+      return db.rawQuery('''
+        SELECT cc.id, cc.name, cs.imageUrlSmall as imageUrl,
+               cs.setCode as serialNumber, cs.setRarity as rarity,
+               CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END as isOwned
+        FROM catalog_card_sets cs
+        JOIN catalog_cards cc ON cc.id = cs.cardId AND cc.collection = ?
+        LEFT JOIN cards c ON c.catalogId = cs.cardId AND c.collection = ?
+        WHERE cs.setName = ?
+        ORDER BY cs.setCode
+      ''', [collection, collection, setIdentifier]);
+    }
+  }
+
+  /// Controlla se il set a cui appartiene la carta appena aggiunta è ora completo al 100%.
+  /// [serialNumber]: codice carta (es. "LOB-IT001" per YGO, "OP01-001" per OP).
+  /// Ritorna {setName, setCode?, totalCards, ownedCards} se completato, null altrimenti.
+  Future<Map<String, dynamic>?> checkSetCompletion(String collection, String serialNumber) async {
+    Database db = await database;
+    List<Map<String, dynamic>> result;
+    if (collection == 'yugioh') {
+      result = await db.rawQuery('''
+        SELECT p.set_name as setName,
+               COUNT(DISTINCT p.card_id) as totalCards,
+               COUNT(DISTINCT CASE WHEN c.id IS NOT NULL THEN p.card_id END) as ownedCards
+        FROM yugioh_prints p
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = p.card_id
+          AND c.collection = 'yugioh'
+          AND (c.serialNumber = p.set_code
+            OR c.serialNumber = p.set_code_it
+            OR c.serialNumber = p.set_code_fr
+            OR c.serialNumber = p.set_code_de
+            OR c.serialNumber = p.set_code_pt)
+        WHERE p.set_name IN (
+          SELECT set_name FROM yugioh_prints
+          WHERE set_code = ? OR set_code_it = ? OR set_code_fr = ? OR set_code_de = ? OR set_code_pt = ?
+        )
+        GROUP BY p.set_name
+        HAVING ownedCards >= totalCards AND totalCards > 0
+      ''', [serialNumber, serialNumber, serialNumber, serialNumber, serialNumber]);
+    } else if (collection == 'onepiece') {
+      result = await db.rawQuery('''
+        SELECT COALESCE(p.set_name, p.set_id, '?') as setName, p.set_id as setCode,
+               COUNT(DISTINCT p.card_id) as totalCards,
+               COUNT(DISTINCT CASE WHEN c.id IS NOT NULL THEN p.card_id END) as ownedCards
+        FROM onepiece_prints p
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = p.card_id
+          AND c.collection = 'onepiece'
+          AND c.serialNumber = p.card_set_id
+        WHERE p.set_id IN (
+          SELECT set_id FROM onepiece_prints WHERE card_set_id = ?
+        )
+        GROUP BY p.set_id
+        HAVING ownedCards >= totalCards AND totalCards > 0
+      ''', [serialNumber]);
+    } else if (collection == 'pokemon') {
+      result = await db.rawQuery('''
+        SELECT COALESCE(pc.set_name, pc.set_id, '?') as setName, pc.set_id as setCode,
+               COUNT(DISTINCT pp.card_id) as totalCards,
+               COUNT(DISTINCT CASE WHEN c.id IS NOT NULL THEN pp.card_id END) as ownedCards
+        FROM pokemon_prints pp
+        JOIN pokemon_cards pc ON pc.id = pp.card_id
+        LEFT JOIN cards c ON CAST(c.catalogId AS INTEGER) = pp.card_id
+          AND c.collection = 'pokemon'
+          AND (c.serialNumber = pp.set_code
+            OR c.serialNumber = pp.set_code_it
+            OR c.serialNumber = pp.set_code_fr
+            OR c.serialNumber = pp.set_code_de
+            OR c.serialNumber = pp.set_code_pt)
+        WHERE pc.set_id IN (
+          SELECT pc2.set_id FROM pokemon_prints pp2
+          JOIN pokemon_cards pc2 ON pc2.id = pp2.card_id
+          WHERE pp2.set_code = ? OR pp2.set_code_it = ?
+            OR pp2.set_code_fr = ? OR pp2.set_code_de = ? OR pp2.set_code_pt = ?
+        )
+        GROUP BY pc.set_id
+        HAVING ownedCards >= totalCards AND totalCards > 0
+      ''', [serialNumber, serialNumber, serialNumber, serialNumber, serialNumber]);
+    } else {
+      return null;
+    }
+    return result.isEmpty ? null : Map<String, dynamic>.from(result.first);
+  }
+
+  /// Sposta tutte le carte di un set a un album diverso.
+  /// [setIdentifier]: set_name per YGO, set_id per OP.
+  Future<void> moveSetCardsToAlbum(String collection, String setIdentifier, int albumId) async {
+    Database db = await database;
+    if (collection == 'yugioh') {
+      await db.rawUpdate('''
+        UPDATE cards SET albumId = ?
+        WHERE collection = 'yugioh'
+          AND CAST(catalogId AS INTEGER) IN (
+            SELECT card_id FROM yugioh_prints WHERE set_name = ?
+          )
+      ''', [albumId, setIdentifier]);
+    } else if (collection == 'onepiece') {
+      await db.rawUpdate('''
+        UPDATE cards SET albumId = ?
+        WHERE collection = 'onepiece'
+          AND CAST(catalogId AS INTEGER) IN (
+            SELECT card_id FROM onepiece_prints WHERE set_id = ?
+          )
+      ''', [albumId, setIdentifier]);
+    } else if (collection == 'pokemon') {
+      await db.rawUpdate('''
+        UPDATE cards SET albumId = ?
+        WHERE collection = 'pokemon'
+          AND CAST(catalogId AS INTEGER) IN (
+            SELECT pp.card_id FROM pokemon_prints pp
+            JOIN pokemon_cards pc ON pc.id = pp.card_id
+            WHERE pc.set_id = ?
+          )
+      ''', [albumId, setIdentifier]);
+    }
   }
 
   // ============================================================
@@ -1702,10 +2280,11 @@ class DatabaseHelper {
         op.market_price AS marketPrice,
         op.artwork,
         'onepiece' AS collection,
-        EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(oc.id AS TEXT)) AS isOwned
+        EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(oc.id AS TEXT) AND collection = 'onepiece') AS isOwned
       FROM onepiece_cards oc
       INNER JOIN onepiece_prints op ON oc.id = op.card_id
       $whereClause
+      GROUP BY oc.id, op.card_set_id, op.rarity, COALESCE(op.artwork, 0)
       ORDER BY op.card_set_id
       LIMIT ? OFFSET ?
     ''';

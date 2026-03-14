@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <!-- Notifiche (richiesto da Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Accesso foto per profilo utente (Android 13+) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- Accesso storage per dispositivi con Android < 13 -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
 
     <application
         android:label="Deck Master"
@@ -37,6 +41,12 @@
             android:foregroundServiceType="dataSync"
             android:exported="false"
             tools:replace="android:exported" />
+
+        <!-- Disabilita il BootReceiver del plugin: autoStart=false, non serve avviarsi al boot.
+             Su Android 15 (targetSdk 35) avviare dataSync da BOOT_COMPLETED causa un crash. -->
+        <receiver
+            android:name="id.flutter.flutter_background_service.BootReceiver"
+            tools:node="remove" />
 
         <!-- Facebook SDK -->
         <meta-data

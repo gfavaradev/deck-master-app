@@ -89,7 +89,7 @@ class CardDialogs {
     required String collectionName,
     required String collectionKey,
     required List<AlbumModel> availableAlbums,
-    required Function(int albumId) onCardAdded,
+    required Function(int albumId, String serialNumber) onCardAdded,
     required Future<int> Function() getOrCreateDuplicatesAlbum,
     required List<CardModel> allCards,
     Map<String, dynamic>? initialCatalogCard,
@@ -114,7 +114,7 @@ class CardDialogs {
                       collectionKey: collectionKey,
                     ),
                   ),
-                ).then((_) => onCardAdded(availableAlbums.first.id!));
+                );
               },
               child: const Text('Gestisci Album'),
             ),
@@ -146,7 +146,7 @@ class _AddCardDialog extends StatefulWidget {
   final List<AlbumModel> availableAlbums;
   final List<CardModel> allCards;
   final Map<String, dynamic>? initialCatalogCard;
-  final Function(int albumId) onCardAdded;
+  final Function(int albumId, String serialNumber) onCardAdded;
   final Future<int> Function() getOrCreateDuplicatesAlbum;
   final int? lastUsedAlbumId;
 
@@ -180,6 +180,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
   Map<String, dynamic>? selectedCatalogCard;
   List<Map<String, dynamic>> availableSets = [];
   String? selectedSetCode; // composite key: setCode\x00rarity
+  String? _selectedArtwork; // artwork URL of the currently selected set/print
 
   /// Composite key that uniquely identifies a print (set + rarity).
   String _setKey(Map<String, dynamic> set) {
@@ -189,15 +190,17 @@ class _AddCardDialogState extends State<_AddCardDialog> {
   }
 
   bool get _isYugioh => widget.collectionKey == 'yugioh';
+  bool get _isPokemon => widget.collectionKey == 'pokemon';
+  bool get _isLocalized => _isYugioh || _isPokemon;
 
   @override
   void initState() {
     super.initState();
     final initial = widget.initialCatalogCard;
-    final displayName = _isYugioh
+    final displayName = _isLocalized
         ? (initial?['localizedName'] ?? initial?['name'] ?? '')
         : (initial?['name'] ?? '');
-    final displayDesc = _isYugioh
+    final displayDesc = _isLocalized
         ? (initial?['localizedDescription'] ?? initial?['description'] ?? '')
         : (initial?['description'] ?? '');
 
@@ -224,19 +227,20 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     if (selectedCatalogCard != null) {
       final preSelectedSetCode = selectedCatalogCard!['setCode'];
       if (preSelectedSetCode != null) {
-        serialController.text = _isYugioh
+        serialController.text = _isLocalized
             ? (selectedCatalogCard!['localizedSetCode'] ?? preSelectedSetCode)
             : preSelectedSetCode;
-        rarityController.text = _isYugioh
-            ? (selectedCatalogCard!['localizedRarity'] ?? selectedCatalogCard!['setRarity'] ?? '')
-            : (selectedCatalogCard!['setRarity'] ?? '');
-        valueController.text = _isYugioh
+        rarityController.text = _isLocalized
+            ? (selectedCatalogCard!['localizedRarityCode'] ?? selectedCatalogCard!['rarityCode'] ?? selectedCatalogCard!['localizedRarity'] ?? '')
+            : (selectedCatalogCard!['rarity'] ?? selectedCatalogCard!['setRarity'] ?? '');
+        valueController.text = _isLocalized
             ? (selectedCatalogCard!['localizedSetPrice'] ?? selectedCatalogCard!['setPrice'] ?? 0.0).toString()
             : (selectedCatalogCard!['marketPrice'] ?? 0.0).toString();
+        _selectedArtwork = selectedCatalogCard!['artwork'] as String?;
       }
       final cardId = selectedCatalogCard!['id'];
       if (cardId != null) {
-        final preSelectedRarity = _isYugioh
+        final preSelectedRarity = _isLocalized
             ? (selectedCatalogCard!['rarityCode'] ?? selectedCatalogCard!['setRarity'])
             : selectedCatalogCard!['setRarity'];
         _updateSets(cardId, preSelectedSetCode: preSelectedSetCode, preSelectedRarity: preSelectedRarity?.toString());
@@ -246,15 +250,13 @@ class _AddCardDialogState extends State<_AddCardDialog> {
 
   Future<void> _updateSets(dynamic cardId, {String? preSelectedSetCode, String? preSelectedRarity}) async {
     List<Map<String, dynamic>> sets;
+    final id = cardId is int ? cardId : int.parse(cardId.toString());
     if (_isYugioh) {
-      sets = await _dbHelper.getYugiohCardPrints(
-        cardId is int ? cardId : int.parse(cardId.toString()),
-        language: _preferredLanguage,
-      );
+      sets = await _dbHelper.getYugiohCardPrints(id, language: _preferredLanguage);
+    } else if (_isPokemon) {
+      sets = await _dbHelper.getPokemonCardPrints(id, language: _preferredLanguage);
     } else {
-      sets = await _dbHelper.getOnepieceCardPrints(
-        cardId is int ? cardId : int.parse(cardId.toString()),
-      );
+      sets = await _dbHelper.getOnepieceCardPrints(id);
     }
     if (!mounted) return;
     setState(() {
@@ -285,9 +287,10 @@ class _AddCardDialogState extends State<_AddCardDialog> {
   }
 
   void _applySet(Map<String, dynamic> set) {
-    if (_isYugioh) {
+    _selectedArtwork = set['artwork'] as String?;
+    if (_isLocalized) {
       serialController.text = set['localizedSetCode'] ?? set['setCode'] ?? '';
-      rarityController.text = set['localizedRarity'] ?? set['rarity'] ?? '';
+      rarityController.text = set['localizedRarityCode'] ?? set['rarityCode'] ?? set['localizedRarity'] ?? set['rarity'] ?? '';
       valueController.text = (set['localizedSetPrice'] ?? set['setPrice'] ?? 0.0).toString();
     } else {
       serialController.text = set['setCode'] ?? '';
@@ -348,11 +351,11 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                     final card = results.first;
                     setState(() {
                       selectedCatalogCard = card;
-                      nameController.text = _isYugioh
+                      nameController.text = _isLocalized
                           ? (card['localizedName'] ?? card['name'] ?? '')
                           : (card['name'] ?? '');
                       typeController.text = card['card_type'] ?? card['type'] ?? '';
-                      descController.text = _isYugioh
+                      descController.text = _isLocalized
                           ? (card['localizedDescription'] ?? card['description'] ?? '')
                           : (card['card_text'] ?? card['description'] ?? '');
                     });
@@ -367,7 +370,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
-                  _isYugioh
+                  _isLocalized
                       ? (selectedCatalogCard!['localizedName'] ?? selectedCatalogCard!['name'])
                       : selectedCatalogCard!['name'],
                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -383,10 +386,10 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                 decoration: const InputDecoration(labelText: 'Seleziona Set / Seriale'),
                 items: availableSets.map((set) {
                   final code = set['setCode'] ?? '';
-                  final displayCode = _isYugioh
+                  final displayCode = _isLocalized
                       ? (set['localizedSetCode'] ?? code)
                       : code;
-                  final rarity = _isYugioh
+                  final rarity = _isLocalized
                       ? (set['localizedRarity'] ?? set['rarity'] ?? '')
                       : (set['setRarity'] ?? '');
                   return DropdownMenuItem<String>(
@@ -494,6 +497,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       description: descController.text,
       quantity: quantityForMain,
       value: double.tryParse(valueController.text) ?? 0.0,
+      imageUrl: _selectedArtwork ?? selectedCatalogCard?['imageUrl'] as String?,
     );
 
     // Controlliamo se esiste già ESATTAMENTE in quell'album di destinazione (per sommare quantità)
@@ -539,6 +543,9 @@ class _AddCardDialogState extends State<_AddCardDialog> {
         ),
       );
     }
-    widget.onCardAdded(albumIdToUse);
+    // Passa sempre la scelta dell'utente (selectedAlbumId), non albumIdToUse che
+    // potrebbe essere l'album Doppioni: così il prossimo inserimento pre-seleziona
+    // l'album scelto dall'utente e non quello dei doppioni.
+    widget.onCardAdded(selectedAlbumId!, serialNumber);
   }
 }

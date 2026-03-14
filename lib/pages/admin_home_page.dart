@@ -3,6 +3,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/admin_catalog_service.dart';
 import '../services/background_download_service.dart';
+import '../services/subscription_service.dart';
+import '../models/user_model.dart';
+import '../models/subscription_model.dart';
+import '../theme/app_colors.dart';
 import 'admin_collection_page.dart';
 
 /// Body riutilizzabile con la lista dei cataloghi da gestire
@@ -225,6 +229,56 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         (r) => '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
       );
 
+  // ─── Pokémon action handlers ──────────────────────────────────────────────
+
+  Future<void> _downloadFullPokemon() => _confirmAndRun(
+        'Download Completo Pokémon',
+        'Download Catalogo Pokémon TCG',
+        'Scarica l\'intero catalogo Pokémon TCG da pokemontcg.io e '
+            'sostituisce tutti i chunk su Firestore.\n\n'
+            'Le URL immagini già su Firebase Storage vengono preservate.\n\n'
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.downloadPokemonCatalogFromAPI(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => 'Completato! ${r['totalCards']} carte caricate — '
+            'immagini su Storage: ${r['imagesOk']}'
+            '${(r['imagesFailed'] as int? ?? 0) > 0 ? ", fallite: ${r['imagesFailed']}" : ""}.',
+      );
+
+  Future<void> _migratePokemonImages() => _confirmAndRun(
+        'Migrazione Immagini Pokémon',
+        'Migrazione Immagini Pokémon',
+        'Scarica le immagini Pokémon da pokemontcg.io e le carica su Firebase Storage '
+            'con compressione JPEG.\n\n'
+            'Solo le immagini non ancora migrate vengono scaricate. '
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.migratePokemonImagesToStorage(
+          adminUid: uid,
+          onProgress: (cur, tot) =>
+              _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
+        ),
+        (r) => r['migrated'] == 0 && r['failed'] == 0
+            ? 'Tutte le immagini erano già migrate.'
+            : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
+      );
+
+  Future<void> _forceMigratePokemonImages() => _confirmAndRun(
+        'Ri-migrazione Forzata Pokémon',
+        'Ri-migrazione Forzata Immagini Pokémon',
+        'Ri-carica TUTTE le immagini Pokémon su Firebase Storage, '
+            'anche quelle già presenti.\n\n'
+            'Può richiedere molto tempo. Continuare?',
+        (uid) => _service.migratePokemonImagesToStorage(
+          adminUid: uid,
+          onProgress: (cur, tot) =>
+              _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
+          force: true,
+        ),
+        (r) => '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
+      );
+
   // ─── UI ───────────────────────────────────────────────────────────────────
 
   @override
@@ -233,12 +287,14 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: collections.length + 2, // +2 for operations cards
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemCount: collections.length + 4, // +4 for operations cards + pro card
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         if (index == 0) return _buildOperationsCard();
         if (index == 1) return _buildOnePieceOperationsCard();
-        final col = collections[index - 2];
+        if (index == 2) return _buildPokemonOperationsCard();
+        if (index == 3) return _buildProManagementCard(context);
+        final col = collections[index - 4];
         return Card(
           elevation: 2,
           child: ListTile(
@@ -458,6 +514,85 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     );
   }
 
+  Widget _buildPokemonOperationsCard() {
+    return Card(
+      elevation: 2,
+      color: Colors.red.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.catching_pokemon, color: Colors.red),
+                SizedBox(width: 8),
+                Text(
+                  'Operazioni Catalogo',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Pokémon TCG — Gestione dati Firestore',
+              style: TextStyle(color: Colors.black45, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _opButton(
+                  icon: Icons.download_for_offline,
+                  label: 'Download Completo',
+                  color: Colors.red.shade700,
+                  onTap: _downloadFullPokemon,
+                  tooltip: 'Scarica tutto il catalogo da pokemontcg.io',
+                ),
+                _opButton(
+                  icon: Icons.cloud_upload,
+                  label: 'Migra Immagini',
+                  color: Colors.orange.shade800,
+                  onTap: kIsWeb ? null : _migratePokemonImages,
+                  tooltip: kIsWeb
+                      ? 'Non disponibile su Web (CORS)'
+                      : 'Carica immagini su Firebase Storage',
+                ),
+                _opButton(
+                  icon: Icons.refresh,
+                  label: 'Ri-migra Tutto',
+                  color: Colors.deepOrange.shade700,
+                  onTap: kIsWeb ? null : _forceMigratePokemonImages,
+                  tooltip: kIsWeb
+                      ? 'Non disponibile su Web (CORS)'
+                      : 'Forza ri-migrazione di tutte le immagini',
+                ),
+              ],
+            ),
+            if (kIsWeb) ...[
+              const SizedBox(height: 8),
+              const Row(
+                children: [
+                  Icon(Icons.info_outline, size: 12, color: Colors.black38),
+                  SizedBox(width: 4),
+                  Text(
+                    '"Migra Immagini" non disponibile su Web (CORS).',
+                    style: TextStyle(fontSize: 11, color: Colors.black38),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _opButton({
     required IconData icon,
     required String label,
@@ -483,6 +618,60 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     );
   }
 
+  Widget _buildProManagementCard(BuildContext context) {
+    return Card(
+      elevation: 2,
+      color: AppColors.bgMedium,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppColors.gold.withValues(alpha: 0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.workspace_premium, color: AppColors.gold),
+                SizedBox(width: 8),
+                Text(
+                  'Gestione Pro & Donazioni',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: AppColors.gold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Attiva/disattiva Pro manualmente e registra donazioni',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminProPage()),
+                ),
+                icon: const Icon(Icons.manage_accounts, size: 16),
+                label: const Text('Gestisci Utenti Pro'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gold,
+                  foregroundColor: Colors.black,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   IconData _iconFor(String iconName) {
     switch (iconName) {
       case 'catching_pokemon':
@@ -494,6 +683,308 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
       default:
         return Icons.style;
     }
+  }
+}
+
+// ── Admin Pro Page ─────────────────────────────────────────────────────────
+
+class AdminProPage extends StatefulWidget {
+  const AdminProPage({super.key});
+  @override
+  State<AdminProPage> createState() => _AdminProPageState();
+}
+
+class _AdminProPageState extends State<AdminProPage> {
+  final SubscriptionService _service = SubscriptionService();
+  final _emailController = TextEditingController();
+  final _donationController = TextEditingController();
+
+  List<UserModel> _users = [];
+  List<UserModel> _filtered = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _donationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final all = await _service.getAllUsers();
+      if (!mounted) return;
+      setState(() {
+        _users = all;
+        _filtered = all;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Errore caricamento utenti: $e')),
+      );
+    }
+  }
+
+  void _filter(String query) {
+    final q = query.toLowerCase();
+    setState(() {
+      _filtered = _users
+          .where((u) =>
+              u.email.toLowerCase().contains(q) ||
+              (u.displayName?.toLowerCase().contains(q) ?? false))
+          .toList();
+    });
+  }
+
+  Future<void> _togglePro(UserModel user) async {
+    try {
+      if (user.isPro) {
+        await _service.deactivateProManually(user.uid);
+      } else {
+        await _service.activateProManually(user.uid);
+      }
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(user.isPro
+              ? 'Pro disattivato per ${user.displayName ?? user.email}'
+              : 'Pro attivato per ${user.displayName ?? user.email}'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
+    }
+  }
+
+  Future<void> _recordDonation(UserModel user) async {
+    _donationController.clear();
+    final confirmed = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgMedium,
+        title: Text(
+          'Registra Donazione — ${user.displayName ?? user.email}',
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Totale attuale: €${user.totalDonated.toStringAsFixed(2)}'
+              ' (${user.donationTier.label.isEmpty ? "Nessun tier" : user.donationTier.label})',
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _donationController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                labelText: 'Importo (€)',
+                labelStyle: TextStyle(color: AppColors.textSecondary),
+                prefixText: '€ ',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annulla', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.gold, foregroundColor: Colors.black),
+            onPressed: () {
+              final val = double.tryParse(_donationController.text.replaceAll(',', '.'));
+              Navigator.pop(ctx, val);
+            },
+            child: const Text('Registra'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == null || confirmed <= 0 || !mounted) return;
+
+    try {
+      final newTier = await _service.recordDonation(user.uid, confirmed);
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Donazione €${confirmed.toStringAsFixed(2)} registrata.'
+            '${newTier != user.donationTier ? " Nuovo tier: ${newTier.label}" : ""}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.bgDark,
+      appBar: AppBar(
+        title: const Text('Gestione Pro & Donazioni'),
+        backgroundColor: AppColors.bgMedium,
+        foregroundColor: AppColors.textPrimary,
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: TextField(
+              controller: _emailController,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Cerca per email o nickname...',
+                hintStyle: const TextStyle(color: AppColors.textHint),
+                prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+                filled: true,
+                fillColor: AppColors.bgMedium,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onChanged: _filter,
+            ),
+          ),
+          if (_loading)
+            const Expanded(child: Center(child: CircularProgressIndicator(color: AppColors.gold)))
+          else
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _load,
+                color: AppColors.gold,
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: _filtered.length,
+                  itemBuilder: (_, i) => _UserProTile(
+                    user: _filtered[i],
+                    onTogglePro: () => _togglePro(_filtered[i]),
+                    onDonation: () => _recordDonation(_filtered[i]),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UserProTile extends StatelessWidget {
+  final UserModel user;
+  final VoidCallback onTogglePro;
+  final VoidCallback onDonation;
+  const _UserProTile({required this.user, required this.onTogglePro, required this.onDonation});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: AppColors.bgMedium,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: AppColors.bgLight,
+              backgroundImage: user.photoUrl != null ? NetworkImage(user.photoUrl!) : null,
+              child: user.photoUrl == null
+                  ? const Icon(Icons.person, color: AppColors.textSecondary)
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.displayName ?? user.email,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Text(
+                    user.email,
+                    style: const TextStyle(color: AppColors.textHint, fontSize: 11),
+                  ),
+                  Row(
+                    children: [
+                      if (user.isPro)
+                        Container(
+                          margin: const EdgeInsets.only(top: 3, right: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.gold,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'PRO',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      if (user.donationTier != DonationTier.none)
+                        Text(
+                          '${user.donationTier.symbol} ${user.donationTier.label} · €${user.totalDonated.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: user.donationTier.color,
+                            fontSize: 11,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              children: [
+                IconButton(
+                  tooltip: user.isPro ? 'Disattiva Pro' : 'Attiva Pro',
+                  onPressed: onTogglePro,
+                  icon: Icon(
+                    user.isPro ? Icons.workspace_premium : Icons.workspace_premium_outlined,
+                    color: user.isPro ? AppColors.gold : AppColors.textHint,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Registra donazione',
+                  onPressed: onDonation,
+                  icon: const Icon(Icons.favorite_outline, color: Color(0xFFFF6B35)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

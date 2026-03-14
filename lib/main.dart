@@ -19,8 +19,8 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Inizializza App Check (elimina warning "No AppCheckProvider installed")
-  await FirebaseAppCheck.instance.activate(
+  // AppCheck non blocca l'avvio — si attiva in background
+  FirebaseAppCheck.instance.activate(
     androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
     appleProvider: AppleProvider.debug,
   );
@@ -30,11 +30,11 @@ void main() async {
     persistenceEnabled: false,
   );
 
-  // Inizializza il servizio per i download in background (solo Android/iOS)
-  await BackgroundDownloadService.initialize();
-
-  // Inizializza Firebase Cloud Messaging
-  await NotificationService().initialize();
+  // Avvia in background — non bloccano runApp
+  Future.wait([
+    BackgroundDownloadService.initialize(),
+    NotificationService().initialize(),
+  ]);
 
   runApp(const MyApp());
 }

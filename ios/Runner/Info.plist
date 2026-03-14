@@ -41,6 +41,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Deck Master usa la tua libreria foto per aggiornare l'immagine del profilo.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Deck Master può salvare immagini nella tua libreria foto.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

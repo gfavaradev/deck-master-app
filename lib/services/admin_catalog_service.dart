@@ -23,24 +23,40 @@ class AdminCatalogService {
   // ============================================================
 
   /// Uploads a card image to Firebase Storage if not already there.
+  /// [catalog] determines the storage path (e.g. 'yugioh', 'pokemon', 'onepiece').
+  /// [cardId] can be an int (YuGiOh) or String (Pokémon api_id).
   /// Returns the Firebase Storage download URL, or null on failure.
-  Future<String?> _uploadCardImageIfNeeded(int cardId, String? sourceUrl) async {
+  Future<String?> _uploadCardImageIfNeeded(String catalog, dynamic cardId, String? sourceUrl) async {
     if (sourceUrl == null || sourceUrl.isEmpty) return null;
-    final ref = _storage.ref('catalog/yugioh/images/$cardId.jpg');
+    final safeId = cardId.toString().replaceAll(RegExp(r'[/\s]'), '_');
+    final ref = _storage.ref('catalog/$catalog/images/$safeId.jpg');
     try {
       return await ref.getDownloadURL(); // already uploaded
     } catch (_) {
       // Not in storage yet — download from source and upload
       try {
-        final response = await http.get(Uri.parse(sourceUrl));
+        // Try the primary URL; if 404 fall back to high.png variant
+        String fetchUrl = sourceUrl;
+        debugPrint('[IMG] Scaricando: $fetchUrl');
+        var response = await http.get(Uri.parse(fetchUrl));
+        if (response.statusCode == 404 && fetchUrl.endsWith('/high.webp')) {
+          fetchUrl = fetchUrl.replaceFirst('/high.webp', '/high.png');
+          debugPrint('[IMG] Fallback PNG: $fetchUrl');
+          response = await http.get(Uri.parse(fetchUrl));
+        }
+        debugPrint('[IMG] HTTP ${response.statusCode} — ${response.bodyBytes.length} bytes');
         if (response.statusCode != 200) return null;
+        final compressed = await _compressCardImage(response.bodyBytes);
+        debugPrint('[IMG] Compressa: ${compressed.length} bytes — uploading su Storage...');
         await ref.putData(
-          await _compressCardImage(response.bodyBytes),
+          compressed,
           SettableMetadata(contentType: 'image/jpeg'),
         );
-        return await ref.getDownloadURL();
+        final url = await ref.getDownloadURL();
+        debugPrint('[IMG] OK: $url');
+        return url;
       } catch (e) {
-        debugPrint('Image upload failed for card $cardId: $e');
+        debugPrint('[IMG] ERRORE card $cardId ($catalog): $e');
         return null;
       }
     }
@@ -51,11 +67,12 @@ class AdminCatalogService {
   /// - stores the Storage URL inside each EN set as `image_url`
   /// - removes the top-level `image_url` (ygoprodeck URL)
   Future<Map<String, dynamic>> _processCardForStorage(Map<String, dynamic> card) async {
-    final cardId = card['id'];
+    final catalog = card['catalog'] as String? ?? 'yugioh';
+    final cardId = card['id'] ?? card['api_id'];
     if (cardId == null) return card;
 
     final sourceUrl = card['image_url'] as String?;
-    final storageUrl = await _uploadCardImageIfNeeded(cardId as int, sourceUrl);
+    final storageUrl = await _uploadCardImageIfNeeded(catalog, cardId, sourceUrl);
 
     final updatedCard = Map<String, dynamic>.from(card);
 
@@ -630,7 +647,7 @@ class AdminCatalogService {
     final sortedChunkIds = chunkMap.keys.toList()..sort();
 
     // 2. Collect cards that need migration
-    final toMigrate = <({String chunkId, int cardIndex, int cardId, String sourceUrl})>[];
+    final toMigrate = <({String chunkId, int cardIndex, dynamic cardId, String sourceUrl})>[];
     for (final chunkId in sortedChunkIds) {
       final cards = chunkMap[chunkId]!;
       for (int i = 0; i < cards.length; i++) {
@@ -643,7 +660,7 @@ class AdminCatalogService {
           toMigrate.add((
             chunkId: chunkId,
             cardIndex: i,
-            cardId: card['id'] as int,
+            cardId: card['id'] ?? card['api_id'],
             sourceUrl: sourceUrl!,
           ));
         }
@@ -662,7 +679,7 @@ class AdminCatalogService {
       final item = toMigrate[i];
       onProgress(i + 1, toMigrate.length);
 
-      final storageUrl = await _uploadCardImageIfNeeded(item.cardId, item.sourceUrl);
+      final storageUrl = await _uploadCardImageIfNeeded(catalog, item.cardId, item.sourceUrl);
       if (storageUrl != null) {
         final card = chunkMap[item.chunkId]![item.cardIndex];
         final updatedCard = Map<String, dynamic>.from(card);
@@ -1586,6 +1603,361 @@ class AdminCatalogService {
     }, SetOptions(merge: true));
 
     return {'migrated': migrated, 'failed': failed, 'chunksUpdated': affectedChunkIds.length};
+  }
+
+  // ============================================================
+  // TCGDex API — Pokémon Catalog Population
+  // ============================================================
+  //
+  // TCGDex is a free, open-source API with no API key required.
+  // Base: https://api.tcgdex.net/v2
+  // GET /en/sets          → list of all sets
+  // GET /en/sets/{setId}  → full set with cards array (id, localId, name, image)
+  // Images: {card.image}.png  (e.g. https://assets.tcgdex.net/en/swsh/swsh1/1.png)
+
+  static const String _tcgdexBase = 'https://api.tcgdex.net/v2';
+  // SharedPreferences key to persist download progress between app restarts
+  static const String _pokemonProgressKey = 'pokemon_download_progress_v2';
+
+  /// Simple GET with retry+backoff for TCGDex (no API key needed).
+  Future<dynamic> _tcgdexGet(String url) async {
+    const backoffs = [5, 15, 30, 60];
+    const maxAttempts = 5;
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final response = await http
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 60));
+
+        if (response.statusCode == 200) {
+          return json.decode(response.body);
+        }
+
+        if (attempt == maxAttempts) {
+          throw Exception('TCGDex errore permanente: HTTP ${response.statusCode} — $url');
+        }
+        final wait = backoffs[attempt - 1];
+        debugPrint('TCGDex HTTP ${response.statusCode}, tentativo $attempt/$maxAttempts, attendo ${wait}s...');
+        await Future.delayed(Duration(seconds: wait));
+      } catch (e) {
+        if (attempt == maxAttempts) rethrow;
+        final wait = backoffs[attempt - 1];
+        debugPrint('TCGDex errore ($e), tentativo $attempt/$maxAttempts, attendo ${wait}s...');
+        await Future.delayed(Duration(seconds: wait));
+      }
+    }
+    throw Exception('TCGDex: tutti i tentativi falliti per $url');
+  }
+
+  /// Fetches the list of all Pokémon sets from TCGDex.
+  Future<List<Map<String, dynamic>>> _fetchTcgdexSets() async {
+    final data = await _tcgdexGet('$_tcgdexBase/en/sets');
+    if (data is! List) return [];
+    return data.map((s) => Map<String, dynamic>.from(s as Map)).toList();
+  }
+
+  /// Fetches full set data (including cards array) for a single set from TCGDex.
+  /// Returns a map with 'set' (set info) and 'cards' (list of card briefs).
+  Future<({Map<String, dynamic> setInfo, List<Map<String, dynamic>> cards})>
+      _fetchTcgdexSetData(String setId) async {
+    final data = await _tcgdexGet('$_tcgdexBase/en/sets/$setId');
+    if (data is! Map) return (setInfo: <String, dynamic>{}, cards: <Map<String, dynamic>>[]);
+    final setInfo = Map<String, dynamic>.from(data);
+    final cardList = (setInfo['cards'] as List<dynamic>? ?? [])
+        .map((c) => Map<String, dynamic>.from(c as Map))
+        .toList();
+    return (setInfo: setInfo, cards: cardList);
+  }
+
+  /// Saves the download progress (completed set IDs + downloaded card count) to SharedPreferences.
+  Future<void> _savePokemonProgress(Set<String> completedSetIds, int cardCount) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pokemonProgressKey, json.encode({
+      'completedSets': completedSetIds.toList(),
+      'cardCount': cardCount,
+    }));
+  }
+
+  /// Loads previously saved progress. Returns null if no progress saved.
+  Future<({Set<String> completedSetIds, int cardCount})?> _loadPokemonProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_pokemonProgressKey);
+    if (raw == null) return null;
+    try {
+      final map = json.decode(raw) as Map<String, dynamic>;
+      return (
+        completedSetIds: Set<String>.from(map['completedSets'] as List),
+        cardCount: map['cardCount'] as int? ?? 0,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Clears saved progress.
+  Future<void> _clearPokemonProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pokemonProgressKey);
+  }
+
+  /// Fetches ALL Pokémon cards from TCGDex, set by set, with resume support.
+  /// Each set requires only ONE request (returns set info + cards together).
+  Future<List<Map<String, dynamic>>> _fetchAllPokemonCards(
+      Function(String, double?) onProgress) async {
+    onProgress('Recupero lista espansioni da TCGDex...', null);
+    final sets = await _fetchTcgdexSets();
+    final total = sets.length;
+    final allCards = <Map<String, dynamic>>[];
+
+    // Load previous progress (if any)
+    final savedProgress = await _loadPokemonProgress();
+    final completedSetIds = savedProgress?.completedSetIds ?? <String>{};
+    final skippedCount = completedSetIds.length;
+
+    if (skippedCount > 0) {
+      debugPrint('Pokémon: riprendendo da $skippedCount set già completati, skip...');
+      onProgress('Riprendo download: $skippedCount/$total set già completati...', skippedCount / total);
+    }
+
+    for (int i = 0; i < sets.length; i++) {
+      final setId = sets[i]['id'] as String? ?? '';
+      final setName = sets[i]['name'] as String? ?? setId;
+
+      if (setId.isEmpty || completedSetIds.contains(setId)) continue;
+
+      onProgress(
+        'Set ${i + 1}/$total — $setName (${allCards.length + (savedProgress?.cardCount ?? 0)} carte)...',
+        (i + 1) / total,
+      );
+
+      // Small pause between sets to be polite to the server
+      if (allCards.isNotEmpty) await Future.delayed(const Duration(milliseconds: 500));
+
+      final result = await _fetchTcgdexSetData(setId);
+      final serieId = (result.setInfo['serie'] as Map?)?['id']?.toString() ?? '';
+
+      for (final card in result.cards) {
+        allCards.add(_transformTcgdexCard(card, result.setInfo, serieId));
+      }
+      completedSetIds.add(setId);
+
+      // Persist progress after every set so we can resume on failure
+      await _savePokemonProgress(
+          completedSetIds, allCards.length + (savedProgress?.cardCount ?? 0));
+    }
+    return allCards;
+  }
+
+  /// Transforms a raw TCGDex card brief + set info into the Firestore storage format.
+  Map<String, dynamic> _transformTcgdexCard(
+      Map<String, dynamic> card,
+      Map<String, dynamic> setInfo,
+      String serieId) {
+    final localId = card['localId']?.toString() ?? card['id']?.toString() ?? '';
+    final setId = setInfo['id']?.toString() ?? '';
+    // Compose a unique api_id matching the TCGDex card ID format: "{setId}-{localId}"
+    final apiId = card['id']?.toString() ?? '$setId-$localId';
+
+    // TCGDex image URL pattern: {image}/high.webp
+    // 'image' field is the base URL without quality/extension suffix
+    final imageBase = card['image']?.toString();
+    final imageUrl = imageBase != null ? '$imageBase/high.webp' : null;
+
+    final setName = setInfo['name']?.toString();
+    final serieName = (setInfo['serie'] as Map?)?['name']?.toString();
+
+    return {
+      'api_id': apiId,
+      'name': card['name']?.toString() ?? '',
+      'supertype': null,   // not available in brief — can be filled via migration
+      'subtype': null,
+      'hp': null,
+      'types': null,
+      'rarity': null,      // not in brief listing
+      'set_id': setId,
+      'set_name': setName,
+      'set_series': serieName,
+      'number': localId,
+      // image_url = source URL (will be migrated to Firebase Storage)
+      if (imageUrl != null) 'image_url': imageUrl,
+      'prints': [
+        {
+          'set_code': apiId,
+          'set_name': setName,
+          'rarity': null,
+          'set_price': null,
+          if (imageUrl != null) 'artwork': imageUrl,
+        }
+      ],
+    };
+  }
+
+  /// Downloads the **full** Pokémon catalog from TCGDex, uploads every image to
+  /// Firebase Storage (compressing to ~80 KB JPEG), then saves metadata to Firestore.
+  /// Images already present in Storage are skipped (getDownloadURL check).
+  Future<Map<String, dynamic>> downloadPokemonCatalogFromAPI({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    // Cancella eventuale progresso parziale salvato da run precedenti
+    await _clearPokemonProgress();
+
+    // 1. Fetch + transform all cards from TCGDex
+    final cards = await _fetchAllPokemonCards(onProgress);
+    if (cards.isEmpty) throw Exception('Nessuna carta ricevuta da TCGDex');
+
+    final total = cards.length;
+    onProgress('$total carte ricevute. Caricando immagini su Firebase Storage (0/$total)...', 0);
+
+    // 2. Upload each image to Firebase Storage (skip if already there)
+    int done = 0, failed = 0;
+    final processedCards = <Map<String, dynamic>>[];
+
+    for (int i = 0; i < total; i++) {
+      final card = Map<String, dynamic>.from(cards[i]);
+      final apiId = card['api_id'] as String?;
+      final sourceUrl = card['image_url'] as String?;
+
+      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
+        final storageUrl = await _uploadCardImageIfNeeded('pokemon', apiId, sourceUrl);
+        if (storageUrl != null) {
+          done++;
+          card.remove('image_url');
+          card['imageUrl'] = storageUrl;
+          final prints = (card['prints'] as List<dynamic>?)
+              ?.map((p) => Map<String, dynamic>.from(p as Map)..['artwork'] = storageUrl)
+              .toList();
+          if (prints != null) card['prints'] = prints;
+        } else {
+          failed++;
+        }
+      }
+
+      processedCards.add(card);
+
+      if (i % 100 == 0 || i == total - 1) {
+        onProgress(
+          'Immagini: ${i + 1}/$total — ok: $done, fallite: $failed',
+          (i + 1) / total,
+        );
+      }
+    }
+
+    onProgress('Immagini completate. Salvataggio catalogo su Firestore...', null);
+
+    // 3. Upload chunks to Firestore
+    await _uploadCatalogChunks(
+      catalogCollection: 'pokemon_catalog',
+      cards: processedCards,
+      adminUid: adminUid,
+      isIncremental: false,
+      onProgress: (cur, tot) =>
+          onProgress('Caricando chunk $cur di $tot...', cur / tot),
+    );
+
+    await _clearPokemonProgress();
+
+    return {
+      'totalCards': processedCards.length,
+      'imagesOk': done,
+      'imagesFailed': failed,
+    };
+  }
+
+  /// Migrates Pokémon card images to Firebase Storage,
+  /// updating `imageUrl` on the card and `artwork` on each print.
+  Future<Map<String, dynamic>> migratePokemonImagesToStorage({
+    required String adminUid,
+    required Function(int current, int total) onProgress,
+    bool force = false,
+  }) async {
+    const catalogCollection = 'pokemon_catalog';
+    final chunkMap = await _downloadChunksMap(catalogCollection, onProgress);
+    if (chunkMap.isEmpty) return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+
+    final sortedChunkIds = chunkMap.keys.toList()..sort();
+
+    final toMigrate = <({String chunkId, int cardIndex, String apiId, String sourceUrl})>[];
+    for (final chunkId in sortedChunkIds) {
+      final cards = chunkMap[chunkId]!;
+      for (int i = 0; i < cards.length; i++) {
+        final card = cards[i];
+        final sourceUrl = (card['image_url'] ?? card['imageUrl']) as String?;
+        final storageUrl = card['imageUrl'] as String?;
+        final apiId = card['api_id'] as String? ?? '';
+        final needsMigration = sourceUrl != null &&
+            sourceUrl.isNotEmpty &&
+            (force || storageUrl == null || !storageUrl.contains('firebasestorage'));
+        if (needsMigration && apiId.isNotEmpty) {
+          toMigrate.add((
+            chunkId: chunkId,
+            cardIndex: i,
+            apiId: apiId,
+            sourceUrl: sourceUrl,
+          ));
+        }
+      }
+    }
+
+    if (toMigrate.isEmpty) return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+
+    int migrated = 0, failed = 0;
+    final affectedChunkIds = <String>{};
+
+    for (int i = 0; i < toMigrate.length; i++) {
+      final item = toMigrate[i];
+      onProgress(i + 1, toMigrate.length);
+      try {
+        final storageUrl = await _uploadCardImageIfNeeded('pokemon', item.apiId, item.sourceUrl);
+        if (storageUrl != null) {
+          final card = Map<String, dynamic>.from(chunkMap[item.chunkId]![item.cardIndex]);
+          card.remove('image_url');
+          card['imageUrl'] = storageUrl;
+          // Update artwork in each print
+          final prints = (card['prints'] as List<dynamic>?)
+              ?.map((p) {
+                final pm = Map<String, dynamic>.from(p as Map);
+                pm['artwork'] = storageUrl;
+                return pm;
+              })
+              .toList();
+          if (prints != null) card['prints'] = prints;
+          chunkMap[item.chunkId]![item.cardIndex] = card;
+          affectedChunkIds.add(item.chunkId);
+          migrated++;
+        } else {
+          failed++;
+        }
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    for (final chunkId in affectedChunkIds) {
+      await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .set({'cards': chunkMap[chunkId]!});
+    }
+
+    final metadataDoc =
+        await _firestore.collection(catalogCollection).doc('metadata').get();
+    final currentVersion =
+        metadataDoc.exists ? (metadataDoc.data()?['version'] as int? ?? 0) : 0;
+    await _firestore.collection(catalogCollection).doc('metadata').set({
+      'lastUpdated': FieldValue.serverTimestamp(),
+      'version': currentVersion + 1,
+      'updatedBy': adminUid,
+    }, SetOptions(merge: true));
+
+    return {
+      'migrated': migrated,
+      'failed': failed,
+      'chunksUpdated': affectedChunkIds.length,
+    };
   }
 
   // ============================================================

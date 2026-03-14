@@ -131,7 +131,7 @@ class UserService {
     if (photoUrl != null) updates['photoUrl'] = photoUrl;
 
     if (updates.isNotEmpty) {
-      await _usersCollection.doc(uid).update(updates);
+      await _usersCollection.doc(uid).set(updates, SetOptions(merge: true));
     }
   }
 

@@ -1,3 +1,5 @@
+import 'subscription_model.dart';
+
 /// User model with role-based access control
 class UserModel {
   final String uid;
@@ -9,6 +11,16 @@ class UserModel {
   final DateTime? lastLoginAt;
   final bool isActive;
 
+  // ── Pro subscription ──────────────────────────────────────────────────────
+  final bool isPro;
+  final String? proSource;     // 'iap' | 'manual'
+  final DateTime? proExpiresAt; // null = nessuna scadenza (manual)
+
+  // ── Donazioni ─────────────────────────────────────────────────────────────
+  final double totalDonated;
+  final DonationTier donationTier;
+  final String? wallOfFameNickname; // solo per secretRare
+
   UserModel({
     required this.uid,
     required this.email,
@@ -18,6 +30,12 @@ class UserModel {
     required this.createdAt,
     this.lastLoginAt,
     this.isActive = true,
+    this.isPro = false,
+    this.proSource,
+    this.proExpiresAt,
+    this.totalDonated = 0.0,
+    this.donationTier = DonationTier.none,
+    this.wallOfFameNickname,
   });
 
   /// Check if user is administrator
@@ -25,6 +43,14 @@ class UserModel {
 
   /// Check if user is regular user
   bool get isUser => role == UserRole.user;
+
+  /// Pro attivo (admin ha sempre accesso Pro)
+  bool get hasProAccess {
+    if (isAdmin) return true;
+    if (!isPro) return false;
+    if (proExpiresAt == null) return true;
+    return proExpiresAt!.isAfter(DateTime.now());
+  }
 
   /// Convert to Firestore document
   Map<String, dynamic> toFirestore() {
@@ -37,6 +63,12 @@ class UserModel {
       'createdAt': createdAt.toIso8601String(),
       'lastLoginAt': lastLoginAt?.toIso8601String(),
       'isActive': isActive,
+      'isPro': isPro,
+      'proSource': proSource,
+      'proExpiresAt': proExpiresAt?.toIso8601String(),
+      'totalDonated': totalDonated,
+      'donationTier': donationTier.name,
+      'wallOfFameNickname': wallOfFameNickname,
     };
   }
 
@@ -56,10 +88,17 @@ class UserModel {
           ? DateTime.parse(data['lastLoginAt'] as String)
           : null,
       isActive: data['isActive'] as bool? ?? true,
+      isPro: data['isPro'] as bool? ?? false,
+      proSource: data['proSource'] as String?,
+      proExpiresAt: data['proExpiresAt'] != null
+          ? DateTime.tryParse(data['proExpiresAt'] as String)
+          : null,
+      totalDonated: (data['totalDonated'] as num?)?.toDouble() ?? 0.0,
+      donationTier: DonationTier.fromString(data['donationTier'] as String?),
+      wallOfFameNickname: data['wallOfFameNickname'] as String?,
     );
   }
 
-  /// Copy with updated fields
   UserModel copyWith({
     String? uid,
     String? email,
@@ -69,6 +108,12 @@ class UserModel {
     DateTime? createdAt,
     DateTime? lastLoginAt,
     bool? isActive,
+    bool? isPro,
+    String? proSource,
+    DateTime? proExpiresAt,
+    double? totalDonated,
+    DonationTier? donationTier,
+    String? wallOfFameNickname,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -79,6 +124,12 @@ class UserModel {
       createdAt: createdAt ?? this.createdAt,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
       isActive: isActive ?? this.isActive,
+      isPro: isPro ?? this.isPro,
+      proSource: proSource ?? this.proSource,
+      proExpiresAt: proExpiresAt ?? this.proExpiresAt,
+      totalDonated: totalDonated ?? this.totalDonated,
+      donationTier: donationTier ?? this.donationTier,
+      wallOfFameNickname: wallOfFameNickname ?? this.wallOfFameNickname,
     );
   }
 }

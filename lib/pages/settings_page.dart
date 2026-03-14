@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
+import '../services/subscription_service.dart';
+import '../models/user_model.dart';
 import '../theme/app_colors.dart';
-import 'login_page.dart';
 import 'main_layout.dart';
 import 'profile_page.dart';
+import 'pro_page.dart';
+import 'donations_page.dart';
 import 'admin_users_page.dart';
 import 'admin_home_page.dart';
 
@@ -21,12 +25,14 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final AuthService _authService = AuthService();
   final DataRepository _repo = DataRepository();
+  final SubscriptionService _subService = SubscriptionService();
   final User? _user = FirebaseAuth.instance.currentUser;
   bool _isOffline = false;
   bool _isSigningIn = false;
   bool _isDownloading = false;
 
   bool _isAdmin = false;
+  UserModel? _userModel;
   bool _notificationsEnabled = false;
   bool _notifAppUpdates = true;
   bool _notifCatalogUpdates = true;
@@ -47,6 +53,12 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadLanguagePreference();
     _checkAdminStatus();
     _loadNotificationPreference();
+    _loadUserModel();
+  }
+
+  Future<void> _loadUserModel() async {
+    final user = await _subService.getCurrentUserModel();
+    if (mounted) setState(() => _userModel = user);
   }
 
   Future<void> _loadNotificationPreference() async {
@@ -146,6 +158,8 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           _buildUserSection(),
           const Divider(),
+          _buildProSection(),
+          const Divider(),
           if (_isAdmin) ...[
             _buildAdminSection(),
             const Divider(),
@@ -157,36 +171,24 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildGeneralSection(),
           const Divider(),
           ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout', style: TextStyle(color: Colors.red)),
-            onTap: () async {
-              await _authService.signOut();
-              if (!context.mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const LoginPage()),
-                (route) => false,
-              );
-            },
-          ),
-          ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),
             title: const Text('Elimina Account', style: TextStyle(color: Colors.red)),
-            subtitle: const Text('Cancella account e tutti i dati associati'),
-            onTap: _isOffline ? null : _confirmDeleteAccount,
+            subtitle: const Text('Invia una richiesta di eliminazione account'),
+            onTap: _isOffline ? null : _requestAccountDeletion,
           ),
         ],
       ),
     );
   }
 
-  Future<void> _confirmDeleteAccount() async {
+  Future<void> _requestAccountDeletion() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Elimina Account'),
         content: const Text(
-          'Sei sicuro? Questa azione è irreversibile.\n\n'
-          'Il tuo account e tutti i dati (deck, album, carte) verranno eliminati definitivamente.',
+          'Verrà aperta la tua app email con una richiesta precompilata.\n\n'
+          'Il tuo account verrà eliminato entro 48 ore dalla ricezione della richiesta.',
         ),
         actions: [
           TextButton(
@@ -196,7 +198,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Elimina'),
+            child: const Text('Continua'),
           ),
         ],
       ),
@@ -204,20 +206,17 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (confirmed != true || !mounted) return;
 
-    try {
-      await _authService.deleteAccount();
+    final email = _user?.email ?? '';
+    final subject = Uri.encodeComponent('Richiesta eliminazione account DeckMaster');
+    final body = Uri.encodeComponent(
+      'Salve,\n\nRichiedo l\'eliminazione del mio account DeckMaster.\n\nEmail account: $email\n\nGrazie.',
+    );
+    final uri = Uri.parse('mailto:support@deckmaster.app?subject=$subject&body=$body');
+
+    if (!await launchUrl(uri)) {
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-        (route) => false,
-      );
-    } on Exception catch (e) {
-      if (!mounted) return;
-      final msg = e.toString().contains('requires-recent-login')
-          ? 'Per sicurezza, esegui prima il logout e accedi di nuovo, poi riprova.'
-          : 'Errore durante l\'eliminazione: $e';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 5)),
+        const SnackBar(content: Text('Impossibile aprire l\'app email. Contattaci manualmente.')),
       );
     }
   }
@@ -616,6 +615,61 @@ class _SettingsPageState extends State<SettingsPage> {
           }).toList(),
         ),
       ),
+    );
+  }
+
+  Widget _buildProSection() {
+    final hasPro = _userModel?.hasProAccess ?? false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text(
+            'Piano',
+            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.workspace_premium, color: AppColors.gold),
+          title: Text(hasPro ? 'Deck Master Pro' : 'Passa a Pro'),
+          subtitle: Text(
+            hasPro ? 'Abbonamento attivo — grazie!' : 'Sblocca il Deck Builder e altre funzioni',
+          ),
+          trailing: hasPro
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.gold,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'PRO',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                )
+              : const Icon(Icons.chevron_right),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ProPage()),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.favorite_outline, color: Color(0xFFFF6B35)),
+          title: const Text('Supporta il Progetto'),
+          subtitle: const Text('Donazioni e badge esclusivi'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const DonationsPage()),
+          ),
+        ),
+      ],
     );
   }
 

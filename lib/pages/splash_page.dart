@@ -8,6 +8,8 @@ import 'login_page.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
 
+enum _Phase { loading, greeting }
+
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
 
@@ -15,17 +17,44 @@ class SplashPage extends StatefulWidget {
   State<SplashPage> createState() => _SplashPageState();
 }
 
-class _SplashPageState extends State<SplashPage> {
+class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateMixin {
   final DataRepository _repo = DataRepository();
+
+  _Phase _phase = _Phase.loading;
   String _statusMessage = '';
   double? _downloadProgress;
+  String _greetingName = '';
+  bool _isFirstLogin = false;
+  bool _navigating = false;
+  String? _updatedVersion;
+
+  late AnimationController _greetingController;
+  late Animation<double> _greetingFade;
 
   static const String _lastVersionKey = 'app_last_version';
+
+  static const _returningMessages = [
+    'Le tue carte ti stavano aspettando.',
+    'Il tuo mazzo è pronto per l\'azione.',
+    'La collezione chiama, il collezionista risponde.',
+    'Ogni carta ha una storia. Qual è la tua di oggi?',
+  ];
 
   @override
   void initState() {
     super.initState();
+    _greetingController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _greetingFade = CurvedAnimation(parent: _greetingController, curve: Curves.easeOut);
     _checkAuth();
+  }
+
+  @override
+  void dispose() {
+    _greetingController.dispose();
+    super.dispose();
   }
 
   Future<String?> _checkAppVersion() async {
@@ -45,121 +74,218 @@ class _SplashPageState extends State<SplashPage> {
     return null;
   }
 
-  Future<void> _ensureCatalogDownloaded() async {
-    if (kIsWeb) return;
-    try {
-      final collections = await _repo.getCollections();
-      final yugiohUnlocked = collections.any((c) => c.key == 'yugioh' && c.isUnlocked);
-      if (!yugiohUnlocked) return;
+  Future<void> _checkAuth() async {
+    final User? user = FirebaseAuth.instance.currentUser;
 
-      final check = await _repo.checkCatalogUpdates();
-      final needsDownload = check['needsUpdate'] == true || check['isFirstDownload'] == true;
-      if (!needsDownload) return;
+    if (user != null) {
+      // Sync parte subito in parallelo con il greeting — non blocca la UI
+      // ma aspettiamo che finisca prima di navigare (max 2s extra dopo il greeting)
+      final syncFuture = _repo.syncOnLogin()
+          .timeout(const Duration(seconds: 6))
+          .catchError((_) {});
+      _checkAppVersion().then((v) { if (mounted) _updatedVersion = v; });
 
-      setState(() => _statusMessage = check['canDoIncremental'] == true
-          ? 'Aggiornamento in corso...'
-          : 'Download catalogo in corso...');
+      // Solo SharedPreferences — velocissimo (~10ms)
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'first_login_done_${user.uid}';
+      final hasLoggedInBefore = prefs.getBool(key) ?? false;
+      await prefs.setBool(key, true);
 
-      await _repo.downloadYugiohCatalog(
-        updateInfo: check,
-        onProgress: (current, total) {
-          if (mounted) {
-            setState(() {
-              _downloadProgress = total > 0 ? current / total : null;
-              _statusMessage = 'Scaricando... $current/$total';
-            });
-          }
-        },
-        onSaveProgress: (progress) {
-          if (mounted) {
-            setState(() {
-              _downloadProgress = progress;
-              _statusMessage = 'Salvataggio... ${(progress * 100).toInt()}%';
-            });
-          }
-        },
-      );
+      final rawName = user.displayName ?? user.email?.split('@').first ?? 'Collezionista';
+      final name = rawName.split(' ').first;
+
+      if (!mounted) return;
 
       setState(() {
+        _phase = _Phase.greeting;
+        _greetingName = name;
+        _isFirstLogin = !hasLoggedInBefore;
+        _statusMessage = '';
         _downloadProgress = null;
-        _statusMessage = 'Catalogo aggiornato';
       });
-    } catch (e) {
-      debugPrint('Catalog ensure error: $e');
+      _greetingController.forward();
+
+      // Aspetta il greeting (1.8s) + max 2s in più per il sync
+      await Future.delayed(const Duration(milliseconds: 1800));
+      await syncFuture.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
+      _navigateToMain();
+    } else {
+      // Aspetta il primo frame prima di navigare — evita di chiamare
+      // Navigator.of(context) dentro initState prima del primo build
+      await Future.delayed(Duration.zero);
+      if (!mounted) return;
+      _navigateToLogin();
     }
   }
 
-  Future<void> _checkAuth() async {
-    // currentUser is synchronous and uses the locally cached auth state —
-    // no network call needed, works offline immediately after Firebase.initializeApp().
-    final User? user = FirebaseAuth.instance.currentUser;
-    final String? updatedVersion = await _checkAppVersion();
-
-    if (!mounted) return;
-
-    if (user != null) {
-      // Try to sync, but never block navigation if offline/slow network.
-      setState(() => _statusMessage = 'Sincronizzazione...');
-      try {
-        await _repo.syncOnLogin().timeout(const Duration(seconds: 8));
-      } catch (e) {
-        debugPrint('Sync on login skipped (offline?): $e');
-      }
-
-      // Check catalog updates only if reachable; skip silently if offline.
-      try {
-        await _ensureCatalogDownloaded().timeout(const Duration(seconds: 10));
-      } catch (e) {
-        debugPrint('Catalog check skipped (offline?): $e');
-      }
-
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => MainLayout(updateNotification: updatedVersion),
+  void _navigateToMain() {
+    if (_navigating || !mounted) return;
+    _navigating = true;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 500),
+        pageBuilder: (_, _, _) => MainLayout(updateNotification: _updatedVersion),
+        transitionsBuilder: (_, anim, _, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          child: child,
         ),
-      );
-    } else {
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-      );
-    }
+      ),
+    );
+  }
+
+  void _navigateToLogin() {
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (_, _, _) => const LoginPage(),
+        transitionsBuilder: (_, anim, _, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          child: child,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      body: GestureDetector(
+        onTap: _phase == _Phase.greeting ? _navigateToMain : null,
+        behavior: HitTestBehavior.opaque,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Image.asset('assets/icon/dm_logo_no_white.png', height: 180),
-            const SizedBox(height: 20),
-            const Text(
-              'Deck Master',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-            ),
-            const SizedBox(height: 10),
-            if (_downloadProgress != null)
-              SizedBox(
-                width: 200,
-                child: LinearProgressIndicator(
-                  value: _downloadProgress,
-                  color: AppColors.gold,
-                  backgroundColor: Colors.white24,
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [AppColors.bgDark, Color(0xFF121526), AppColors.bgMedium],
+                  stops: [0.0, 0.55, 1.0],
                 ),
-              )
-            else
-              const CircularProgressIndicator(color: AppColors.gold),
-            if (_statusMessage.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(_statusMessage, style: const TextStyle(color: AppColors.textHint)),
-            ],
+              ),
+            ),
+            SafeArea(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 500),
+                transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+                child: _phase == _Phase.loading ? _buildLoading() : _buildGreeting(),
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoading() {
+    return Center(
+      key: const ValueKey('loading'),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Image.asset('assets/icon/dm_logo_no_white.png', height: 180),
+          const SizedBox(height: 20),
+          const Text(
+            'Deck Master',
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+          ),
+          const SizedBox(height: 10),
+          if (_downloadProgress != null)
+            SizedBox(
+              width: 200,
+              child: LinearProgressIndicator(
+                value: _downloadProgress,
+                color: AppColors.gold,
+                backgroundColor: Colors.white24,
+              ),
+            )
+          else
+            const CircularProgressIndicator(color: AppColors.gold),
+          if (_statusMessage.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(_statusMessage, style: const TextStyle(color: AppColors.textHint)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGreeting() {
+    final subtitle = _isFirstLogin
+        ? 'La tua avventura da collezionista inizia ora. 🎴'
+        : _returningMessages[DateTime.now().millisecond % _returningMessages.length];
+
+    return Center(
+      key: const ValueKey('greeting'),
+      child: FadeTransition(
+        opacity: _greetingFade,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.bgMedium,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.gold.withValues(alpha: 0.5),
+                      blurRadius: 40,
+                      spreadRadius: 6,
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.style, size: 54, color: AppColors.gold),
+              ),
+              const SizedBox(height: 36),
+              Text(
+                _isFirstLogin ? 'Benvenuto,' : 'Bentornato,',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w300,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 6),
+              ShaderMask(
+                shaderCallback: (bounds) => const LinearGradient(
+                  colors: [AppColors.gold, Color(0xFFFFE88A)],
+                ).createShader(bounds),
+                child: Text(
+                  _greetingName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 42,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(height: 1, width: 80, color: AppColors.gold.withValues(alpha: 0.4)),
+              const SizedBox(height: 24),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 16, height: 1.6),
+              ),
+              const SizedBox(height: 64),
+              const Text(
+                'Tocca per continuare',
+                style: TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 0.5),
+              ),
+            ],
+          ),
         ),
       ),
     );

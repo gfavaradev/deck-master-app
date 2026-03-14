@@ -343,6 +343,9 @@ class DataRepository {
         debugPrint('Warning: failed to save catalog metadata: $e');
       }
     }
+
+    // Step 4: aggiorna i valori delle carte in collezione con i prezzi del nuovo catalogo.
+    await _dbHelper.refreshCardValuesFromCatalog('yugioh');
   }
 
   // ============================================================
@@ -610,9 +613,25 @@ class DataRepository {
     return await _dbHelper.getOnepieceCardPrints(cardId);
   }
 
+  Future<List<Map<String, dynamic>>> getPokemonCardPrints(int cardId, {required String language}) async {
+    return await _dbHelper.getPokemonCardPrints(cardId, language: language);
+  }
+
   Future<List<Map<String, dynamic>>> getCardSets(String cardId) async {
     return await _dbHelper.getCardSets(cardId);
   }
+
+  Future<List<Map<String, dynamic>>> getSetStats(String collection) =>
+      _dbHelper.getSetStats(collection);
+
+  Future<List<Map<String, dynamic>>> getSetDetail(String collection, String setIdentifier) =>
+      _dbHelper.getSetDetail(collection, setIdentifier);
+
+  Future<Map<String, dynamic>?> checkSetCompletion(String collection, String serialNumber) =>
+      _dbHelper.checkSetCompletion(collection, serialNumber);
+
+  Future<void> moveSetCardsToAlbum(String collection, String setIdentifier, int albumId) =>
+      _dbHelper.moveSetCardsToAlbum(collection, setIdentifier, albumId);
 
   Future<int> getCatalogCount(String collection) async {
     return await _dbHelper.getCatalogCount(collection);
@@ -882,6 +901,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
+    await _dbHelper.refreshCardValuesFromCatalog('onepiece');
   }
 
   Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
@@ -891,6 +911,150 @@ class DataRepository {
   }) async {
     if (kIsWeb) return [];
     return await _dbHelper.getOnepieceCatalogCards(query: query, limit: limit, offset: offset);
+  }
+
+  // ============================================================
+  // Pokémon Catalog (from Firestore)
+  // ============================================================
+
+  Future<Map<String, dynamic>> checkPokemonCatalogUpdates() async {
+    if (kIsWeb) return {'needsUpdate': false, 'totalCards': 0};
+    try {
+      final remoteMetadata = await _firestoreService.getCatalogMetadata('pokemon');
+      if (remoteMetadata == null) {
+        return {'needsUpdate': false, 'error': 'Remote metadata not found'};
+      }
+      final remoteVersion = remoteMetadata['version'] as int? ?? 0;
+      final remoteTotalCards = remoteMetadata['totalCards'] as int? ?? 0;
+      final localMetadata = await _dbHelper.getCatalogMetadata('pokemon');
+      if (localMetadata == null) {
+        return {
+          'needsUpdate': true,
+          'isFirstDownload': true,
+          'remoteVersion': remoteVersion,
+          'totalCards': remoteTotalCards,
+        };
+      }
+      final localVersion = localMetadata['version'] as int? ?? 0;
+      final localTotalCards = localMetadata['total_cards'] as int? ?? 0;
+      if (remoteVersion > localVersion) {
+        final versionDiff = remoteVersion - localVersion;
+        final modifiedChunks = remoteMetadata['modifiedChunks'] as List<dynamic>? ?? [];
+        final canDoIncremental = versionDiff == 1 && modifiedChunks.isNotEmpty;
+        return {
+          'needsUpdate': true,
+          'isFirstDownload': false,
+          'localVersion': localVersion,
+          'remoteVersion': remoteVersion,
+          'localTotalCards': localTotalCards,
+          'totalCards': remoteTotalCards,
+          'canDoIncremental': canDoIncremental,
+          'modifiedChunks': canDoIncremental ? modifiedChunks : [],
+          'deletedCards': canDoIncremental
+              ? (remoteMetadata['deletedCards'] as List<dynamic>? ?? [])
+              : [],
+        };
+      }
+      return {
+        'needsUpdate': false,
+        'localVersion': localVersion,
+        'totalCards': localTotalCards,
+        'lastUpdated': localMetadata['last_updated'],
+      };
+    } catch (e) {
+      return {'needsUpdate': false, 'error': e.toString()};
+    }
+  }
+
+  Future<void> downloadPokemonCatalog({
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+    Map<String, dynamic>? updateInfo,
+  }) async {
+    if (kIsWeb) return;
+    if (updateInfo?['canDoIncremental'] == true) {
+      final modifiedChunks = (updateInfo!['modifiedChunks'] as List<dynamic>).cast<String>();
+      final deletedCards = updateInfo['deletedCards'] as List<dynamic>? ?? [];
+      final remoteMetadata = await _firestoreService.getCatalogMetadata('pokemon');
+      final modifiedCards = await _firestoreService.fetchCatalogChunks(
+        CatalogConstants.pokemon, modifiedChunks, onProgress: onProgress,
+      );
+      final deletedIds = deletedCards.whereType<num>().map((e) => e.toInt()).toList();
+      if (deletedIds.isNotEmpty) await _dbHelper.deletePokemonCardsByIds(deletedIds);
+      if (modifiedCards.isNotEmpty) {
+        await _dbHelper.insertPokemonCards(modifiedCards, onProgress: onSaveProgress);
+      }
+      if (remoteMetadata != null) {
+        await _dbHelper.saveCatalogMetadata(
+          catalogName: 'pokemon',
+          version: remoteMetadata['version'] as int? ?? 1,
+          totalCards: remoteMetadata['totalCards'] as int? ?? 0,
+          totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+          lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+        );
+      }
+      return;
+    }
+
+    final remoteMetadata = await _firestoreService.getCatalogMetadata('pokemon');
+    final cards = await _firestoreService.fetchCatalog(
+      CatalogConstants.pokemon,
+      onProgress: onProgress,
+    );
+    if (cards.isEmpty) return;
+
+    await _dbHelper.insertPokemonCards(cards, onProgress: onSaveProgress);
+
+    if (remoteMetadata != null) {
+      await _dbHelper.saveCatalogMetadata(
+        catalogName: 'pokemon',
+        version: remoteMetadata['version'] as int? ?? 1,
+        totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+        totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+        lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  Future<void> redownloadPokemonCatalog({
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+  }) async {
+    if (kIsWeb) return;
+    final remoteMetadata = await _firestoreService.getCatalogMetadata('pokemon');
+    final cards = await _firestoreService.fetchCatalog(
+      CatalogConstants.pokemon,
+      onProgress: onProgress,
+    );
+    if (cards.isEmpty) return;
+
+    await _dbHelper.clearPokemonCatalog();
+    await _dbHelper.insertPokemonCards(cards, onProgress: onSaveProgress);
+
+    if (remoteMetadata != null) {
+      await _dbHelper.saveCatalogMetadata(
+        catalogName: 'pokemon',
+        version: remoteMetadata['version'] as int? ?? 1,
+        totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+        totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+        lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getPokemonCatalogCards({
+    String? query,
+    required String language,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    if (kIsWeb) return [];
+    return await _dbHelper.getPokemonCatalogCards(
+      query: query,
+      language: language,
+      limit: limit,
+      offset: offset,
+    );
   }
 
   /// Metodo unificato: instrada alla query corretta in base alla collezione.
@@ -912,6 +1076,13 @@ class DataRepository {
     } else if (collection == 'onepiece') {
       return getOnepieceCatalogCards(
         query: query,
+        limit: limit,
+        offset: offset,
+      );
+    } else if (collection == 'pokemon') {
+      return getPokemonCatalogCards(
+        query: query,
+        language: language,
         limit: limit,
         offset: offset,
       );

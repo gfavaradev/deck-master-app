@@ -18,10 +18,12 @@ dependencies {
   // Import the Firebase BoM
   implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
 
-
-  // TODO: Add the dependencies for Firebase products you want to use
   // When using the BoM, don't specify versions in Firebase dependencies
   implementation("com.google.firebase:firebase-analytics")
+
+  // Edge-to-edge e Theme.AppCompat richiesti da Android 15 (targetSdk 35)
+  implementation("androidx.core:core-ktx:1.16.0")
+  implementation("androidx.appcompat:appcompat:1.7.0")
 
   coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

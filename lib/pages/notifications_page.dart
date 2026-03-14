@@ -52,7 +52,7 @@ class _NotifEntry {
         type: j['type'] as String,
         detectedAt: j['detectedAt'] as String,
         isRead: j['isRead'] as bool? ?? false,
-        data: Map<String, dynamic>.from(j['data'] as Map),
+        data: j['data'] is Map ? Map<String, dynamic>.from(j['data'] as Map) : {},
       );
 }
 
@@ -240,13 +240,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final prefs = await SharedPreferences.getInstance();
 
     // Rileva nuove notifiche e aggiunge allo storico
-    var history = await _detectAndPersistNewNotifs(prefs);
+    final history = await _detectAndPersistNewNotifs(prefs);
 
-    // Marca tutto come letto
-    history = history.map((e) => e.isRead ? e : e.markRead()).toList();
-    await _saveHistory(prefs, history);
+    // Salva subito la versione con tutto marcato come letto (per il badge in MainLayout)
+    final markedHistory = history.map((e) => e.isRead ? e : e.markRead()).toList();
+    await _saveHistory(prefs, markedHistory);
 
     if (mounted) {
+      // Mostra la lista con lo stato originale (isRead=false = badge "NUOVA" visibile)
       setState(() {
         _history = history;
         _loading = false;

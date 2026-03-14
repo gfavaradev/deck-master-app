@@ -11,10 +11,8 @@ class SupportPage extends StatelessWidget {
       required String subject,
       required String body,
     }) async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: 'g.favara.dev@gmail.com',
-      queryParameters: {'subject': subject, 'body': body},
+    final uri = Uri.parse(
+      'mailto:g.favara.dev@gmail.com?subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(body)}',
     );
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -108,7 +106,7 @@ class SupportPage extends StatelessWidget {
               context,
               subject: 'Carte Mancanti - Deck Master',
               body:
-                  'Ciao,\n\nVorrei segnalare le seguenti carte mancanti/errate:\n\nGioco: [Yu-Gi-Oh! / One Piece / ...]\nCarta: [Nome carta]\nSet: [Nome set / Codice]\nMotivo: [Mancante / Dati errati / Immagine sbagliata]\n\n---\nAccount: $userEmail',
+                  'Ciao,\n\nVorrei segnalare le seguenti carte mancanti/errate:\n\nCollezione: [Yu-Gi-Oh! / One Piece / ...]\nCarta: [Nome carta]\nSet: [Numero Codice]\nMotivo: [Mancante / Dati errati / Immagine sbagliata]\n\n---\nAccount: $userEmail',
             ),
           ),
           const SizedBox(height: 8),
@@ -129,36 +127,126 @@ class SupportPage extends StatelessWidget {
 
           const SizedBox(height: 32),
 
-          // Contact info
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.bgLight,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.textHint.withValues(alpha: 0.2)),
+          // ── Donate section ──────────────────────────────────────
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'SUPPORTA IL PROGETTO',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.gold,
+                letterSpacing: 1.0,
+              ),
             ),
-            child: Row(
-              children: [
-                Icon(Icons.email_outlined, color: AppColors.textSecondary, size: 20),
-                const SizedBox(width: 12),
-                Column(
+          ),
+
+          _DonateCard(),
+
+        ],
+      ),
+    );
+  }
+}
+
+class _DonateCard extends StatelessWidget {
+  static const String _donationUrl = 'https://paypal.me/clashkiller97';
+
+  Future<void> _openDonation(BuildContext context) async {
+    final uri = Uri.parse(_donationUrl);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Impossibile aprire il link')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFFF6B35).withValues(alpha: 0.15),
+            const Color(0xFFFFB347).withValues(alpha: 0.10),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFFF6B35).withValues(alpha: 0.35),
+          width: 1.5,
+        ),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6B35).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.coffee, color: Color(0xFFFF6B35), size: 28),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Email di supporto',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                    ),
-                    const Text(
-                      'g.favara.dev@gmail.com',
+                      'Offrimi un caffe!',
                       style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                         color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Deck Master è gratuita e sviluppata nel tempo libero. Se ti piace, puoi supportarmi con una piccola donazione.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        height: 1.4,
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => _openDonation(context),
+              icon: const Icon(Icons.favorite, size: 16),
+              label: const Text('Supporta il progetto'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFF6B35),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Completamente facoltativo — grazie di cuore!',
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.textHint,
+              fontStyle: FontStyle.italic,
             ),
           ),
         ],

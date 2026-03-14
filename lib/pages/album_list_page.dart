@@ -150,18 +150,17 @@ class _AlbumListPageState extends State<AlbumListPage> {
           ? const Center(child: Text('Nessun album creato.'))
           : ListView.builder(
               itemCount: _albums.length,
-              itemBuilder: (context, index) {
+              itemBuilder: (_, index) {
                 final album = _albums[index];
                 return ListTile(
                   leading: const Icon(Icons.book),
                   onTap: () {
-                    Navigator.push(
-                      context,
+                    Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) => Scaffold(
+                        builder: (ctx) => Scaffold(
                           appBar: AppBar(
                             title: Text(album.name),
-                            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+                            backgroundColor: Theme.of(ctx).colorScheme.inversePrimary,
                           ),
                           body: CardListPage(
                             collectionName: widget.collectionName,

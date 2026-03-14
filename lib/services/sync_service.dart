@@ -2,11 +2,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'auth_service.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
+import '../models/collection_model.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -18,6 +20,20 @@ class SyncService {
   final AuthService _authService = AuthService();
 
   bool _isSyncing = false;
+  DateTime? _lastSyncTime;
+  static const _syncCooldown = Duration(minutes: 30);
+  static const _hasRemoteDataPrefix = 'sync_has_remote_';
+
+  // Cache locale: una volta che sappiamo che il remoto ha dati, rimane vero per sempre
+  Future<bool> _getCachedHasRemote(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('$_hasRemoteDataPrefix$uid') ?? false;
+  }
+
+  Future<void> _setCachedHasRemote(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('$_hasRemoteDataPrefix$uid', true);
+  }
 
   // ============================================================
   // Real-Time Listeners
@@ -261,21 +277,28 @@ class SyncService {
     if (userId == null) return;
 
     try {
-      // Clear existing user data before pulling (also resets collections lock state)
       await _dbHelper.clearUserData();
 
-      // Pull collections (after clear, so we unlock only this user's collections)
-      final remoteCollections = await _firestoreService.getCollections(userId);
-      for (var col in remoteCollections) {
-        if (col.isUnlocked) {
-          await _dbHelper.unlockCollection(col.key);
-        }
+      // ── Ottimizzazione: fetch albums + cards + decks in parallelo ─────────
+      final results = await Future.wait([
+        _firestoreService.getCollections(userId),
+        _firestoreService.getAlbums(userId),
+        _firestoreService.getCards(userId),
+        _firestoreService.getDecks(userId),
+      ]);
+
+      final remoteCollections = results[0] as List<CollectionModel>;
+      final remoteAlbums      = results[1] as List<Map<String, dynamic>>;
+      final remoteCards       = results[2] as List<Map<String, dynamic>>;
+      final remoteDecks       = results[3] as List<Map<String, dynamic>>;
+
+      // Collections
+      for (final col in remoteCollections) {
+        if (col.isUnlocked) await _dbHelper.unlockCollection(col.key);
       }
 
-      // Pull albums
-      final remoteAlbums = await _firestoreService.getAlbums(userId);
+      // Albums (devono essere inseriti prima delle carte per avere la mappa id)
       final Map<String, int> firestoreToLocalAlbumId = {};
-
       for (var albumData in remoteAlbums) {
         final album = AlbumModel(
           name: albumData['name'],
@@ -288,8 +311,7 @@ class SyncService {
         firestoreToLocalAlbumId[firestoreId] = localId;
       }
 
-      // Pull cards
-      final remoteCards = await _firestoreService.getCards(userId);
+      // Cards
       for (var cardData in remoteCards) {
         // Map albumFirestoreId back to local albumId
         int albumId = cardData['albumId'] ?? -1;
@@ -315,8 +337,7 @@ class SyncService {
         await _dbHelper.updateFirestoreId('cards', localId, cardData['firestoreId']);
       }
 
-      // Pull decks
-      final remoteDecks = await _firestoreService.getDecks(userId);
+      // Decks (già fetchati in parallelo)
       for (var deckData in remoteDecks) {
         final localDeckId = await _dbHelper.insertDeck(
           deckData['name'],
@@ -344,6 +365,9 @@ class SyncService {
       debugPrint('Pull from cloud completed successfully');
     } catch (e) {
       debugPrint('Error during pull from cloud: $e');
+      // Clear any partial data so the next login retriggers a fresh pull
+      // instead of landing in a state where albums exist but cards don't.
+      try { await _dbHelper.clearUserData(); } catch (_) {}
       rethrow;
     }
   }
@@ -353,39 +377,58 @@ class SyncService {
   // ============================================================
 
   Future<void> syncOnLogin() async {
-    if (kIsWeb) return; // Web has no SQLite: DataRepository handles Firestore reads directly
+    if (kIsWeb) return;
     if (_isSyncing) return;
+
+    if (_lastSyncTime != null &&
+        DateTime.now().difference(_lastSyncTime!) < _syncCooldown) {
+      debugPrint('Sync skipped — last sync was ${DateTime.now().difference(_lastSyncTime!).inMinutes}min ago');
+      return;
+    }
+
     _isSyncing = true;
 
     try {
       final userId = _userId;
       if (userId == null) return;
 
-      // ALWAYS sync collections first (lightweight and critical for UI state)
-      await _syncCollections(userId);
+      // ── Ottimizzazione: tutte le letture partono in parallelo ─────────────
+      // 1. _syncCollections  → Firestore read (collections)
+      // 2. hasUserData       → Firestore read (skip se già cachato)
+      // 3. getAllAlbums       → SQLite read
+      // 4. getAllCards        → SQLite read
+      final cachedHasRemote = await _getCachedHasRemote(userId);
 
-      final hasRemoteData = await _firestoreService.hasUserData(userId);
-      final localAlbums = await _dbHelper.getAllAlbums();
-      final localCards = await _dbHelper.getAllCards();
+      final syncCollsFuture  = _syncCollections(userId);
+      final hasRemoteFuture  = cachedHasRemote
+          ? Future.value(true)
+          : _firestoreService.hasUserData(userId);
+      final albumsFuture     = _dbHelper.getAllAlbums();
+      final cardsFuture      = _dbHelper.getAllCards();
+
+      // Attendi tutti in parallelo
+      await syncCollsFuture;
+      final hasRemoteData = await hasRemoteFuture;
+      final localAlbums   = await albumsFuture;
+      final localCards    = await cardsFuture;
+
+      if (hasRemoteData) await _setCachedHasRemote(userId);
 
       final hasLocalData = localAlbums.isNotEmpty || localCards.isNotEmpty;
 
       if (hasRemoteData && !hasLocalData) {
-        // New device or fresh install: pull from cloud
         await pullFromCloud();
       } else if (hasLocalData && !hasRemoteData) {
-        // First time login with existing local data: push to cloud
         await initialUpload();
       } else if (hasRemoteData && hasLocalData) {
-        // Both exist: flush pending queue then pull updates
         await flushPendingQueue();
       }
-      // If neither has data, nothing to do
+
+      _lastSyncTime = DateTime.now();
     } catch (e) {
       debugPrint('Error during sync on login: $e');
     } finally {
       _isSyncing = false;
-      startListening();
     }
   }
 

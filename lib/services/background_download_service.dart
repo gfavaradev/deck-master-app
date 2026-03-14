@@ -75,6 +75,11 @@ class BackgroundDownloadService {
     );
 
     _initialized = true;
+
+    // Ferma eventuali residui di sessioni precedenti (download interrotto con app chiusa)
+    if (await _service.isRunning()) {
+      _service.invoke('stop');
+    }
   }
 
   /// Avvia il Foreground Service prima di iniziare un download.

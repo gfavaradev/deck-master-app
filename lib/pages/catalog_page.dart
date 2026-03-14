@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import '../services/sync_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/card_dialogs.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
@@ -43,8 +44,8 @@ class _CatalogPageState extends State<CatalogPage> {
   bool _hasUpdate = false;
   bool _isDownloadingUpdate = false;
   double? _downloadProgress;
+  DateTime? _downloadStartTime;
   int? _lastUsedAlbumId;
-
   // Multi-selection state
   bool _isSelectionMode = false;
   Set<String> _selectedCardIds = {}; // Use card IDs instead of indices
@@ -113,10 +114,15 @@ class _CatalogPageState extends State<CatalogPage> {
       final updateInfo = widget.collectionKey == 'onepiece'
           ? await _dbHelper.checkOnepieceCatalogUpdates()
           : await _dbHelper.checkCatalogUpdates();
-      if (mounted) {
-        setState(() {
-          _hasUpdate = updateInfo['needsUpdate'] == true;
-        });
+      if (!mounted) return;
+
+      final isFirst = updateInfo['isFirstDownload'] == true;
+      if (isFirst) {
+        // Nessun catalogo locale: avvia il download automaticamente in background
+        _downloadUpdate();
+      } else if (updateInfo['needsUpdate'] == true) {
+        // Aggiornamento disponibile: mostra il banner "Aggiorna"
+        setState(() => _hasUpdate = true);
       }
     } catch (_) {}
   }
@@ -126,6 +132,7 @@ class _CatalogPageState extends State<CatalogPage> {
     setState(() {
       _isDownloadingUpdate = true;
       _downloadProgress = null;
+      _downloadStartTime = DateTime.now();
     });
 
     try {
@@ -235,13 +242,29 @@ class _CatalogPageState extends State<CatalogPage> {
     }
   }
 
+  /// Rileva la lingua dal codice seriale digitato (es. "LOB-EN001" → "EN", "SDAZ-IT042" → "IT").
+  /// Ritorna null se il pattern non è riconosciuto, così il chiamante usa _preferredLanguage.
+  String? _detectLanguageFromQuery(String query) {
+    final match = RegExp(r'^[A-Z0-9]+-([A-Z]{2})\d', caseSensitive: false)
+        .firstMatch(query.trim());
+    if (match == null) return null;
+    final code = match.group(1)!.toUpperCase();
+    const valid = {'EN', 'IT', 'FR', 'DE', 'PT'};
+    return valid.contains(code) ? code : null;
+  }
+
   /// Load a single page of cards
   Future<void> _loadPage() async {
     try {
+      final detectedLang = widget.collectionKey == 'yugioh'
+          ? _detectLanguageFromQuery(_lastQuery)
+          : null;
+      final effectiveLanguage = detectedLang ?? _preferredLanguage;
+
       final cards = await _dbHelper.getCatalogCardsByCollection(
         widget.collectionKey,
         query: _lastQuery,
-        language: _preferredLanguage,
+        language: effectiveLanguage,
         limit: _pageSize,
         offset: _currentOffset,
       );
@@ -254,13 +277,12 @@ class _CatalogPageState extends State<CatalogPage> {
         setState(() {
           _catalogCards.addAll(cards);
           _currentOffset += cards.length;
-        });
-
-        // Sort by localized setCode ascending (YSKR-IT001, YSKR-IT002, etc.)
-        _catalogCards.sort((a, b) {
-          final setCodeA = (a['localizedSetCode'] ?? a['setCode'] ?? '').toString();
-          final setCodeB = (b['localizedSetCode'] ?? b['setCode'] ?? '').toString();
-          return setCodeA.compareTo(setCodeB); // Ascending order
+          // Sort by localized setCode ascending (YSKR-IT001, YSKR-IT002, etc.)
+          _catalogCards.sort((a, b) {
+            final setCodeA = (a['localizedSetCode'] ?? a['setCode'] ?? '').toString();
+            final setCodeB = (b['localizedSetCode'] ?? b['setCode'] ?? '').toString();
+            return setCodeA.compareTo(setCodeB);
+          });
         });
       }
     } catch (e) {
@@ -278,9 +300,10 @@ class _CatalogPageState extends State<CatalogPage> {
 
   String _getCardKey(Map<String, dynamic> card) {
     final id = card['id']?.toString() ?? '';
-    final setCode = card['setCode']?.toString() ?? '';
-    final rarityCode = card['rarityCode']?.toString() ?? card['rarity']?.toString() ?? '';
-    return '$id-$setCode-$rarityCode';
+    final setCode = (card['localizedSetCode'] ?? card['setCode'])?.toString() ?? '';
+    final rarityCode = (card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'])?.toString() ?? '';
+    final artwork = card['artwork']?.toString() ?? '0';
+    return '$id-$setCode-$rarityCode-$artwork';
   }
 
   void _toggleSelection(Map<String, dynamic> card) {
@@ -462,7 +485,7 @@ class _CatalogPageState extends State<CatalogPage> {
                 rarity: rarity,
                 description: card['localizedDescription'] ?? card['description'] ?? '',
                 imageUrl: card['artwork'] ?? card['imageUrl'],
-                value: (card['marketPrice'] as num?)?.toDouble() ?? 0.0,
+                value: ((card['localizedSetPrice'] ?? card['setPrice'] ?? card['marketPrice']) as num?)?.toDouble() ?? 0.0,
               ));
             }
             doppioniCount++;
@@ -487,7 +510,7 @@ class _CatalogPageState extends State<CatalogPage> {
                 rarity: rarity,
                 description: card['localizedDescription'] ?? card['description'] ?? '',
                 imageUrl: card['artwork'] ?? card['imageUrl'],
-                value: (card['marketPrice'] as num?)?.toDouble() ?? 0.0,
+                value: ((card['localizedSetPrice'] ?? card['setPrice'] ?? card['marketPrice']) as num?)?.toDouble() ?? 0.0,
               ));
               addedCount++;
             }
@@ -538,7 +561,7 @@ class _CatalogPageState extends State<CatalogPage> {
     return await _dbHelper.insertAlbum(AlbumModel(
       name: 'Doppioni',
       collection: widget.collectionKey,
-      maxCapacity: 999,
+      maxCapacity: 1000,
     ));
   }
 
@@ -573,26 +596,6 @@ class _CatalogPageState extends State<CatalogPage> {
               onChanged: _onSearchChanged,
             ),
           ),
-          // Card count indicator
-          if (!_isLoading && _catalogCards.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Text(
-                    '${_catalogCards.length} carte caricate',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  if (!_hasMoreCards && _catalogCards.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    const Text(
-                      '• Fine catalogo',
-                      style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ],
-              ),
-            ),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -635,6 +638,11 @@ class _CatalogPageState extends State<CatalogPage> {
                               : isOnePiece
                                   ? card['rarity']
                                   : card['rarityCode'];
+                          final displayRarityFull = isYugioh
+                              ? (card['localizedRarity'] ?? card['setRarity'] ?? displayRarityCode)
+                              : isOnePiece
+                                  ? card['rarity']
+                                  : (card['localizedRarity'] ?? card['setRarity'] ?? card['rarity'] ?? displayRarityCode);
                           // Is this a foreign-language print? (found via set code search but not in user's language)
                           final bool isForeignPrint = isYugioh && card['isLocalizedPrint'] == 0;
                           final String ownedKey =
@@ -705,7 +713,7 @@ class _CatalogPageState extends State<CatalogPage> {
                                                   style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.orange),
                                                 ),
                                               ),
-                                            if (displaySetCode != null && displayRarityCode != null && displayRarityCode.toString().isNotEmpty)
+                                            if (displaySetCode != null && displayRarityFull != null && displayRarityFull.toString().isNotEmpty)
                                               RichText(
                                                 text: TextSpan(
                                                   children: [
@@ -714,8 +722,8 @@ class _CatalogPageState extends State<CatalogPage> {
                                                       style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue),
                                                     ),
                                                     TextSpan(
-                                                      text: displayRarityCode,
-                                                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: _getRarityColor(displayRarityCode)),
+                                                      text: displayRarityFull.toString(),
+                                                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: _getRarityColor(displayRarityCode?.toString())),
                                                     ),
                                                   ],
                                                 ),
@@ -725,10 +733,10 @@ class _CatalogPageState extends State<CatalogPage> {
                                                 displaySetCode,
                                                 style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue),
                                               )
-                                            else if (displayRarityCode != null && displayRarityCode.toString().isNotEmpty)
+                                            else if (displayRarityFull != null && displayRarityFull.toString().isNotEmpty)
                                               Text(
-                                                displayRarityCode,
-                                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: _getRarityColor(displayRarityCode)),
+                                                displayRarityFull.toString(),
+                                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: _getRarityColor(displayRarityCode?.toString())),
                                               ),
                                             SizedBox(
                                               height: 16,
@@ -814,11 +822,11 @@ class _CatalogPageState extends State<CatalogPage> {
     return CachedNetworkImage(
       imageUrl: imageUrl,
       fit: BoxFit.cover,
-      placeholder: (_, __) => Container(
+      placeholder: (_, _) => Container(
         color: Colors.grey.withValues(alpha: 0.08),
         child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
       ),
-      errorWidget: (_, __, ___) => Container(
+      errorWidget: (_, _, _) => Container(
         color: Colors.grey.withValues(alpha: 0.08),
         child: Center(
           child: Icon(Icons.style, size: 36, color: isOwned ? Colors.green : Colors.grey),
@@ -947,6 +955,73 @@ class _CatalogPageState extends State<CatalogPage> {
     return 'EN';
   }
 
+  void _showSetCompletedDialog(Map<String, dynamic> completion, int currentAlbumId) {
+    final setName = completion['setName'] as String? ?? '';
+    final setIdentifier = (completion['setCode'] as String?) ?? setName;
+    final total = completion['totalCards'] as int? ?? 0;
+    int? selectedAlbumId;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.emoji_events, color: Colors.amber),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Set completato!', style: const TextStyle(fontSize: 18))),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '"$setName" è completo ($total / $total carte).',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text('Vuoi spostare tutte le carte di questo set in un album diverso?'),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                initialValue: selectedAlbumId,
+                decoration: const InputDecoration(labelText: 'Sposta in album', isDense: true),
+                hint: const Text('Mantieni album corrente'),
+                items: _availableAlbums.map((album) {
+                  return DropdownMenuItem<int>(
+                    value: album.id,
+                    child: Text('${album.name} (${album.currentCount}/${album.maxCapacity})'),
+                  );
+                }).toList(),
+                onChanged: (val) => setDialogState(() => selectedAlbumId = val),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Chiudi'),
+            ),
+            if (selectedAlbumId != null)
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await _dbHelper.moveSetCardsToAlbum(widget.collectionKey, setIdentifier, selectedAlbumId!);
+                  await _loadAlbumsAndOwned();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Carte di "$setName" spostate!')),
+                    );
+                  }
+                },
+                child: const Text('Sposta'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showAddDialog(Map<String, dynamic> catalogCard) {
     CardDialogs.showAddCard(
       context: context,
@@ -956,15 +1031,21 @@ class _CatalogPageState extends State<CatalogPage> {
       allCards: _allOwnedCards,
       lastUsedAlbumId: _lastUsedAlbumId,
       initialCatalogCard: catalogCard.isEmpty ? null : catalogCard,
-      onCardAdded: (int usedAlbumId) {
+      onCardAdded: (int usedAlbumId, String serialNumber) async {
         SharedPreferences.getInstance().then((prefs) {
           prefs.setInt('last_album_id_${widget.collectionKey}', usedAlbumId);
         });
         setState(() => _lastUsedAlbumId = usedAlbumId);
-        _loadAlbumsAndOwned();
+        await _loadAlbumsAndOwned();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(catalogCard.isEmpty ? 'Carta aggiunta!' : '${catalogCard['localizedName'] ?? catalogCard['name']} aggiunta!')),
         );
+        // Controlla se il set è stato completato al 100%
+        final completion = await _dbHelper.checkSetCompletion(widget.collectionKey, serialNumber);
+        if (completion != null && mounted) {
+          _showSetCompletedDialog(completion, usedAlbumId);
+        }
       },
       getOrCreateDuplicatesAlbum: () async {
         final albums = await _dbHelper.getAlbumsByCollection(widget.collectionKey);
@@ -1023,29 +1104,30 @@ class _CatalogPageState extends State<CatalogPage> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: Colors.orange.shade100,
+      decoration: BoxDecoration(
+        color: AppColors.bgMedium,
+        border: Border(bottom: BorderSide(color: AppColors.gold.withValues(alpha: 0.3))),
+      ),
       child: Row(
         children: [
-          const Icon(Icons.system_update, color: Colors.orange, size: 28),
+          const Icon(Icons.system_update, color: AppColors.gold, size: 24),
           const SizedBox(width: 12),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Aggiornamento disponibile',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 15,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                SizedBox(height: 2),
                 Text(
-                  'Il catalogo è stato aggiornato dall\'amministratore',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade700,
-                  ),
+                  'Il catalogo è stato aggiornato',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
               ],
             ),
@@ -1053,12 +1135,11 @@ class _CatalogPageState extends State<CatalogPage> {
           const SizedBox(width: 8),
           ElevatedButton.icon(
             onPressed: _downloadUpdate,
-            icon: const Icon(Icons.download, size: 18),
-            label: const Text('Aggiorna'),
+            icon: const Icon(Icons.download, size: 16, color: Colors.black),
+            label: const Text('Aggiorna', style: TextStyle(color: Colors.black)),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              backgroundColor: AppColors.gold,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             ),
           ),
         ],
@@ -1068,42 +1149,61 @@ class _CatalogPageState extends State<CatalogPage> {
 
   /// Build download progress indicator
   Widget _buildDownloadProgress() {
+    String? timeLabel;
+    if (_downloadProgress != null && _downloadProgress! > 0.02 && _downloadStartTime != null) {
+      final elapsed = DateTime.now().difference(_downloadStartTime!).inSeconds;
+      final totalEstSec = (elapsed / _downloadProgress!).round();
+      final remaining = totalEstSec - elapsed;
+      if (remaining > 0) {
+        timeLabel = remaining < 60
+            ? '~$remaining sec rimanenti'
+            : '~${(remaining / 60).ceil()} min rimanenti';
+      }
+    }
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      color: Colors.blue.shade50,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.bgMedium,
+        border: Border(bottom: BorderSide(color: AppColors.gold.withValues(alpha: 0.2))),
+      ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
+              const Expanded(
                 child: Text(
-                  'Scaricando aggiornamenti...',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade800,
-                  ),
+                  'Download catalogo in corso...',
+                  style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
                 ),
               ),
               if (_downloadProgress != null)
                 Text(
                   '${(_downloadProgress! * 100).toInt()}%',
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.bold,
+                    color: AppColors.gold,
                   ),
                 ),
             ],
           ),
-          if (_downloadProgress != null) ...[
-            const SizedBox(height: 8),
-            LinearProgressIndicator(value: _downloadProgress),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: _downloadProgress,
+            backgroundColor: AppColors.bgLight,
+            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.gold),
+            minHeight: 3,
+            borderRadius: BorderRadius.circular(2),
+          ),
+          if (timeLabel != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              timeLabel,
+              style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+            ),
           ],
         ],
       ),

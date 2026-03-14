@@ -8,6 +8,8 @@ import '../widgets/card_item.dart';
 import '../widgets/collection_summary.dart';
 import '../widgets/card_dialogs.dart';
 import '../theme/app_colors.dart';
+import 'support_page.dart';
+import '../services/language_service.dart';
 
 class CardListPage extends StatefulWidget {
   final String collectionName;
@@ -37,12 +39,20 @@ class _CardListPageState extends State<CardListPage> {
   final TextEditingController _searchController = TextEditingController();
   StreamSubscription<String>? _syncSub;
 
+  List<Map<String, dynamic>> _catalogSuggestions = [];
+  bool _catalogSearching = false;
+  int? _lastUsedAlbumId;
+  String _preferredLanguage = 'EN';
+
   @override
   void initState() {
     super.initState();
     _refreshCards();
     _syncSub = SyncService().onRemoteChange.listen((_) {
       if (mounted) _refreshCards();
+    });
+    LanguageService.getPreferredLanguage().then((lang) {
+      if (mounted) setState(() => _preferredLanguage = lang);
     });
   }
 
@@ -66,7 +76,7 @@ class _CardListPageState extends State<CardListPage> {
 
     List<CardModel> processedCards = data;
 
-    final doppioniIds = albums.where((a) => a.name == 'Doppioni').map((a) => a.id).toSet();
+    final doppioniIds = albums.where((a) => a.name == 'Doppioni' && a.id != null).map((a) => a.id!).toSet();
 
     if (widget.albumId != null) {
       // Se siamo in un album specifico, mostriamo solo le carte di quell'album
@@ -83,25 +93,65 @@ class _CardListPageState extends State<CardListPage> {
       _doppioniCards = data.where((c) => doppioniIds.contains(c.albumId)).toList();
       _availableAlbums = albums;
       _isLoading = false;
-      _filterCards(_searchController.text);
+      _applyFilter(_searchController.text);
     });
   }
 
+  // Pure computation — does NOT call setState. Callers must wrap in setState.
+  void _applyFilter(String query) {
+    final q = query.toLowerCase();
+    bool matches(CardModel card) =>
+        card.name.toLowerCase().contains(q) ||
+        card.serialNumber.toLowerCase().contains(q) ||
+        card.rarity.toLowerCase().contains(q);
+
+    _filteredCards = _allCards.where(matches).toList();
+    _filteredDoppioniCards = _doppioniCards.where(matches).toList();
+
+    _filteredCards.sort((a, b) => a.serialNumber.toLowerCase().compareTo(b.serialNumber.toLowerCase()));
+    _filteredDoppioniCards.sort((a, b) => a.serialNumber.toLowerCase().compareTo(b.serialNumber.toLowerCase()));
+  }
+
   void _filterCards(String query) {
+    _applyFilter(query);
+    final hasQuery = query.trim().isNotEmpty;
+    final hasLocalResults = _filteredCards.isNotEmpty;
     setState(() {
-      final q = query.toLowerCase();
-      bool matches(CardModel card) =>
-          card.name.toLowerCase().contains(q) ||
-          card.serialNumber.toLowerCase().contains(q) ||
-          card.rarity.toLowerCase().contains(q);
-
-      _filteredCards = _allCards.where(matches).toList();
-      _filteredDoppioniCards = _doppioniCards.where(matches).toList();
-
-      // Sort by serialNumber ascending (like catalog)
-      _filteredCards.sort((a, b) => a.serialNumber.toLowerCase().compareTo(b.serialNumber.toLowerCase()));
-      _filteredDoppioniCards.sort((a, b) => a.serialNumber.toLowerCase().compareTo(b.serialNumber.toLowerCase()));
+      _catalogSuggestions = [];
+      _catalogSearching = hasQuery && !hasLocalResults;
     });
+    if (hasQuery && !hasLocalResults) _searchCatalog(query.trim());
+  }
+
+  Future<void> _searchCatalog(String query) async {
+    final results = await _repo.getCatalogCardsByCollection(
+      widget.collectionKey,
+      query: query,
+      language: _preferredLanguage,
+      limit: 30,
+    );
+    if (!mounted) return;
+    setState(() {
+      _catalogSuggestions = results;
+      _catalogSearching = false;
+    });
+  }
+
+  void _showAddFromCatalog(Map<String, dynamic> catalogCard) {
+    CardDialogs.showAddCard(
+      context: context,
+      collectionName: widget.collectionName,
+      collectionKey: widget.collectionKey,
+      availableAlbums: _availableAlbums,
+      allCards: _allCards,
+      lastUsedAlbumId: _lastUsedAlbumId,
+      initialCatalogCard: catalogCard,
+      onCardAdded: (int usedAlbumId, String _) {
+        setState(() => _lastUsedAlbumId = usedAlbumId);
+        _refreshCards();
+      },
+      getOrCreateDuplicatesAlbum: _getOrCreateDuplicatesAlbum,
+    );
   }
 
   Future<void> _updateQuantity(CardModel card, int delta) async {
@@ -368,11 +418,15 @@ class _CardListPageState extends State<CardListPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Summary always uses full lists (not filtered) so values don't change during search
     final mainCount = _filteredCards.fold(0, (sum, item) => sum + item.quantity);
     final mainValue = _filteredCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
-    final doppioniCount = _filteredDoppioniCards.fold(0, (sum, item) => sum + item.quantity);
-    final doppioniValue = _filteredDoppioniCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
+    // In album view doppioni belong to a different album — exclude them from summary
+    final doppioniCount = widget.albumId != null
+        ? 0
+        : _filteredDoppioniCards.fold(0, (sum, item) => sum + item.quantity);
+    final doppioniValue = widget.albumId != null
+        ? 0.0
+        : _filteredDoppioniCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
     final uniqueCards = mainCount;
     final duplicates = doppioniCount;
     final totalCards = mainCount + doppioniCount;
@@ -430,22 +484,7 @@ class _CardListPageState extends State<CardListPage> {
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _filteredCards.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.inbox, size: 64, color: AppColors.textHint),
-                          const SizedBox(height: 16),
-                          Text(
-                            widget.albumId != null
-                              ? 'Nessuna carta in questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
-                              : 'Nessuna carta trovata.\nUsa il Catalogo per aggiungere carte.',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: AppColors.textHint),
-                          ),
-                        ],
-                      ),
-                    )
+                  ? _buildEmptyState()
                   : _isGridView ? _buildGrid() : _buildList(),
         ),
       ],
@@ -468,6 +507,120 @@ class _CardListPageState extends State<CardListPage> {
           onTap: _showDetails,
         );
       },
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final hasQuery = _searchController.text.trim().isNotEmpty;
+
+    // Nessuna ricerca attiva
+    if (!hasQuery) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.inbox, size: 64, color: AppColors.textHint),
+            const SizedBox(height: 16),
+            Text(
+              widget.albumId != null
+                  ? 'Nessuna carta in questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
+                  : 'Nessuna carta trovata.\nUsa il Catalogo per aggiungere carte.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textHint),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Ricerca in corso nel catalogo
+    if (_catalogSearching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // Risultati trovati nel catalogo
+    if (_catalogSuggestions.isNotEmpty) {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                const Icon(Icons.search, size: 16, color: AppColors.textSecondary),
+                const SizedBox(width: 6),
+                Text(
+                  'Non in collezione — trovata nel catalogo',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _catalogSuggestions.length,
+              itemBuilder: (_, i) {
+                final card = _catalogSuggestions[i];
+                final name = (card['localizedName'] ?? card['name'] ?? '—') as String;
+                final setCode = (card['localizedSetCode'] ?? card['setCode'] ?? card['serialNumber'] ?? '') as String;
+                return ListTile(
+                  leading: const Icon(Icons.style_outlined, color: AppColors.textSecondary),
+                  title: Text(name, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                  subtitle: setCode.isNotEmpty ? Text(setCode, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)) : null,
+                  trailing: ElevatedButton.icon(
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Aggiungi'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      textStyle: const TextStyle(fontSize: 13),
+                    ),
+                    onPressed: () => _showAddFromCatalog(card),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Carta non trovata nemmeno nel catalogo
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.search_off, size: 64, color: AppColors.textHint),
+            const SizedBox(height: 16),
+            const Text(
+              'Carta non disponibile nel catalogo',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Questa carta non è ancora presente nel nostro catalogo. Puoi segnalarcela e la aggiungeremo il prima possibile.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.support_agent),
+              label: const Text('Segnala carta mancante'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: Colors.black87,
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SupportPage()),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

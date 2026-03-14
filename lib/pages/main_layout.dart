@@ -13,6 +13,7 @@ import 'login_page.dart';
 import 'profile_page.dart';
 import 'admin_home_page.dart';
 import '../services/auth_service.dart';
+import '../services/data_repository.dart';
 import 'notifications_page.dart';
 
 /// Layout principale con barra di navigazione persistente
@@ -34,18 +35,20 @@ class MainLayout extends StatefulWidget {
   State<MainLayout> createState() => _MainLayoutState();
 }
 
-class _MainLayoutState extends State<MainLayout> {
+class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   late int _currentIndex;
   String? _currentCollectionKey;
   String? _currentCollectionName;
   bool _isAdmin = false;
   bool _hasUnreadNotifications = false;
   final AuthService _authService = AuthService();
+  final DataRepository _repo = DataRepository();
   User? _currentUser;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentIndex = widget.initialIndex;
     _currentCollectionKey = widget.collectionKey;
     _currentCollectionName = widget.collectionName;
@@ -65,6 +68,21 @@ class _MainLayoutState extends State<MainLayout> {
           );
         }
       });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // App va in background o viene chiusa: flush delle modifiche locali pendenti
+      _repo.fullSync().catchError((_) {});
     }
   }
 
@@ -213,7 +231,12 @@ class _MainLayoutState extends State<MainLayout> {
             tooltip: 'Statistiche',
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => const StatsPage()),
+              MaterialPageRoute(
+                builder: (context) => StatsPage(
+                  collectionKey: _currentCollectionKey,
+                  collectionName: _currentCollectionName,
+                ),
+              ),
             ),
           ),
           PopupMenuButton<String>(
@@ -300,6 +323,163 @@ class _MainLayoutState extends State<MainLayout> {
               onTap: _onNavTap,
             )
           : null,
+    );
+  }
+}
+
+// ─── Welcome overlay ─────────────────────────────────────────────────────────
+
+class _WelcomeOverlay extends StatefulWidget {
+  final String name;
+  final bool isFirstLogin;
+
+  const _WelcomeOverlay({required this.name, required this.isFirstLogin});
+
+  @override
+  State<_WelcomeOverlay> createState() => _WelcomeOverlayState();
+}
+
+class _WelcomeOverlayState extends State<_WelcomeOverlay> {
+  static const _returningMessages = [
+    'Le tue carte ti stavano aspettando. 🃏',
+    'Il tuo mazzo è pronto per l\'azione. ⚔️',
+    'La collezione chiama, il collezionista risponde. 🎴',
+    'Ogni carta ha una storia. Qual è la tua di oggi? ✨',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) Navigator.of(context).pop();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isFirst = widget.isFirstLogin;
+    final subtitle = isFirst
+        ? 'La tua avventura da collezionista inizia ora. 🎴'
+        : _returningMessages[DateTime.now().millisecond % _returningMessages.length];
+
+    return GestureDetector(
+      onTap: () => Navigator.of(context).pop(),
+      behavior: HitTestBehavior.opaque,
+      child: Scaffold(
+        backgroundColor: AppColors.bgDark,
+        body: Stack(
+          children: [
+            // Gradient background
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [AppColors.bgDark, Color(0xFF121526), AppColors.bgMedium],
+                  stops: [0.0, 0.55, 1.0],
+                ),
+              ),
+            ),
+            // Gold glow top-center
+            Positioned(
+              top: -60,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  width: 300,
+                  height: 300,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        AppColors.gold.withValues(alpha: 0.18),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Content
+            SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 36),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Card icon with glow
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.bgMedium,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.gold.withValues(alpha: 0.5),
+                              blurRadius: 40,
+                              spreadRadius: 6,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.style, size: 54, color: AppColors.gold),
+                      ),
+                      const SizedBox(height: 36),
+                      Text(
+                        isFirst ? 'Benvenuto,' : 'Bentornato,',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w300,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      ShaderMask(
+                        shaderCallback: (bounds) => const LinearGradient(
+                          colors: [AppColors.gold, Color(0xFFFFE88A)],
+                        ).createShader(bounds),
+                        child: Text(
+                          widget.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 42,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Container(
+                        height: 1,
+                        width: 80,
+                        color: AppColors.gold.withValues(alpha: 0.4),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        subtitle,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 16,
+                          height: 1.6,
+                        ),
+                      ),
+                      const SizedBox(height: 64),
+                      const Text(
+                        'Tocca per continuare',
+                        style: TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 0.5),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
