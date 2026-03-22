@@ -43,6 +43,7 @@ class LanguageConstants {
   static const String french = 'fr';
   static const String german = 'de';
   static const String portuguese = 'pt';
+  static const String spanish = 'sp';
 
   static const List<String> allLanguages = [
     english,
@@ -50,6 +51,7 @@ class LanguageConstants {
     french,
     german,
     portuguese,
+    spanish,
   ];
 
   static const Map<String, String> languageNames = {
@@ -58,6 +60,7 @@ class LanguageConstants {
     french: 'Français',
     german: 'Deutsch',
     portuguese: 'Português',
+    spanish: 'Español',
   };
 
   /// Get field name for a language (e.g., 'name_it', 'description_fr')

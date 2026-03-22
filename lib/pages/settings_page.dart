@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/export_service.dart';
 import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
@@ -8,7 +9,9 @@ import '../services/language_service.dart';
 import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../theme/app_colors.dart';
+import '../widgets/user_avatar_widget.dart';
 import 'main_layout.dart';
+import 'login_page.dart';
 import 'profile_page.dart';
 import 'pro_page.dart';
 import 'donations_page.dart';
@@ -29,7 +32,6 @@ class _SettingsPageState extends State<SettingsPage> {
   final User? _user = FirebaseAuth.instance.currentUser;
   bool _isOffline = false;
   bool _isSigningIn = false;
-  bool _isDownloading = false;
 
   bool _isAdmin = false;
   UserModel? _userModel;
@@ -38,13 +40,10 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _notifCatalogUpdates = true;
   final NotificationService _notifService = NotificationService();
   String _selectedLanguage = 'EN';
-  String _downloadStatus = '';
-  double? _downloadProgress;
 
-  // One Piece download state
-  bool _isDownloadingOP = false;
-  String _downloadStatusOP = '';
-  double? _downloadProgressOP;
+  bool _isExporting = false;
+  bool _isResetting = false;
+  String _resetStatus = '';
 
   @override
   void initState() {
@@ -166,29 +165,31 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
           _buildCatalogSection(),
           const Divider(),
-          _buildOnePieceCatalogSection(),
+          _buildExportSection(),
+          const Divider(),
+          _buildSyncSection(),
           const Divider(),
           _buildGeneralSection(),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),
             title: const Text('Elimina Account', style: TextStyle(color: Colors.red)),
-            subtitle: const Text('Invia una richiesta di eliminazione account'),
-            onTap: _isOffline ? null : _requestAccountDeletion,
+            subtitle: const Text('Elimina definitivamente il tuo account'),
+            onTap: _isOffline ? null : _deleteAccount,
           ),
         ],
       ),
     );
   }
 
-  Future<void> _requestAccountDeletion() async {
+  Future<void> _deleteAccount() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Elimina Account'),
         content: const Text(
-          'Verrà aperta la tua app email con una richiesta precompilata.\n\n'
-          'Il tuo account verrà eliminato entro 48 ore dalla ricezione della richiesta.',
+          'Questa azione è irreversibile.\n\n'
+          'Il tuo account e tutti i dati associati verranno eliminati definitivamente.',
         ),
         actions: [
           TextButton(
@@ -198,7 +199,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Continua'),
+            child: const Text('Elimina'),
           ),
         ],
       ),
@@ -206,132 +207,168 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (confirmed != true || !mounted) return;
 
-    final email = _user?.email ?? '';
-    final subject = Uri.encodeComponent('Richiesta eliminazione account DeckMaster');
-    final body = Uri.encodeComponent(
-      'Salve,\n\nRichiedo l\'eliminazione del mio account DeckMaster.\n\nEmail account: $email\n\nGrazie.',
-    );
-    final uri = Uri.parse('mailto:support@deckmaster.app?subject=$subject&body=$body');
-
-    if (!await launchUrl(uri)) {
+    try {
+      final uid = _user?.uid;
+      if (uid != null) {
+        await FirebaseFirestore.instance.collection('users').doc(uid).delete().catchError((_) {});
+      }
+      await _user?.delete();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Impossibile aprire l\'app email. Contattaci manualmente.')),
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (route) => false,
       );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'requires-recent-login') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Per sicurezza, esci e accedi di nuovo prima di eliminare l\'account.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: ${e.message}')));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
     }
   }
 
-  Widget _buildOnePieceCatalogSection() {
+  Future<void> _exportData(String format) async {
+    setState(() => _isExporting = true);
+    try {
+      final result = await ExportService().exportToClipboard(format);
+      if (!mounted) return;
+      if (result.requiresPro) {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${result.cardCount} carte esportate come ${result.format} (negli appunti)')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore esportazione: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  Future<void> _resetAndResync() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ripristina Sincronizzazione'),
+        content: const Text(
+          'Questa operazione deduplicerà le carte/album/deck presenti due volte, '
+          'ripulirà il cloud e ricaricherà i dati corretti.\n\n'
+          'Procedi solo se vedi elementi duplicati.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ripristina'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() {
+      _isResetting = true;
+      _resetStatus = 'Avvio...';
+    });
+
+    try {
+      await _repo.resetAndResync(
+        onStatus: (msg) {
+          if (mounted) setState(() => _resetStatus = msg);
+        },
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sincronizzazione ripristinata con successo!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Errore: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() { _isResetting = false; _resetStatus = ''; });
+    }
+  }
+
+  Widget _buildExportSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Text('Catalogo One Piece TCG', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+          child: Text('Esporta Collezione', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
         ),
         ListTile(
-          leading: _isDownloadingOP
+          leading: _isExporting
               ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.sailing),
-          title: Text(_isDownloadingOP ? _downloadStatusOP : 'Aggiorna Catalogo'),
-          subtitle: _isDownloadingOP
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(value: _downloadProgressOP),
-                    const SizedBox(height: 4),
-                    Text(
-                      _downloadProgressOP != null
-                        ? '${(_downloadProgressOP! * 100).toInt()}%'
-                        : 'In corso...',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                )
-              : const Text('Scarica/Aggiorna tutte le carte One Piece'),
-          enabled: !_isDownloadingOP,
-          onTap: _downloadOnePieceCatalog,
+              : const Icon(Icons.table_chart_outlined),
+          title: const Text('Esporta come CSV'),
+          subtitle: const Text('Copia negli appunti — richiede Pro'),
+          enabled: !_isExporting,
+          onTap: () => _exportData('csv'),
+        ),
+        ListTile(
+          leading: _isExporting
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.data_object),
+          title: const Text('Esporta come JSON'),
+          subtitle: const Text('Copia negli appunti — richiede Pro'),
+          enabled: !_isExporting,
+          onTap: () => _exportData('json'),
         ),
       ],
     );
   }
 
-  Future<void> _downloadOnePieceCatalog() async {
-    if (!mounted) return;
-    setState(() {
-      _isDownloadingOP = true;
-      _downloadStatusOP = 'Controllo aggiornamenti...';
-      _downloadProgressOP = null;
-    });
-
-    try {
-      final updateInfo = await _repo.checkOnepieceCatalogUpdates();
-
-      if (updateInfo['error'] != null) {
-        if (mounted) {
-          setState(() { _isDownloadingOP = false; _downloadStatusOP = ''; _downloadProgressOP = null; });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Errore controllo aggiornamenti: ${updateInfo['error']}')),
-          );
-        }
-        return;
-      }
-
-      if (!(updateInfo['needsUpdate'] as bool)) {
-        if (mounted) {
-          setState(() { _isDownloadingOP = false; _downloadStatusOP = ''; _downloadProgressOP = null; });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Catalogo One Piece già aggiornato!'), duration: Duration(seconds: 2)),
-          );
-        }
-        return;
-      }
-
-      final isIncremental = updateInfo['canDoIncremental'] == true;
-      setState(() {
-        _downloadStatusOP = isIncremental
-            ? 'Aggiornamento incrementale...'
-            : 'Scaricando da Firestore...';
-      });
-
-      await _repo.downloadOnepieceCatalog(
-        updateInfo: updateInfo,
-        onProgress: (current, total) {
-          if (mounted) {
-            setState(() {
-              _downloadProgressOP = current / total;
-              _downloadStatusOP = isIncremental
-                  ? 'Aggiornando chunk $current di $total'
-                  : 'Scaricando chunk $current di $total';
-            });
-          }
-        },
-        onSaveProgress: (progress) {
-          if (mounted) {
-            setState(() {
-              _downloadProgressOP = progress;
-              _downloadStatusOP = 'Salvando nel database...';
-            });
-          }
-        },
-      );
-
-      if (mounted) {
-        setState(() { _isDownloadingOP = false; _downloadStatusOP = ''; _downloadProgressOP = null; });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Catalogo One Piece aggiornato!')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() { _isDownloadingOP = false; _downloadStatusOP = ''; _downloadProgressOP = null; });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
-      }
-    }
+  Widget _buildSyncSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text(
+            'Sincronizzazione',
+            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+          ),
+        ),
+        ListTile(
+          leading: _isResetting
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.sync_problem_outlined, color: Colors.orange),
+          title: const Text('Ripristina Sincronizzazione'),
+          subtitle: Text(
+            _isResetting ? _resetStatus : 'Risolve elementi duplicati nel cloud',
+          ),
+          enabled: !_isResetting && !_isOffline,
+          onTap: _resetAndResync,
+        ),
+      ],
+    );
   }
-
 
   Widget _buildGeneralSection() {
     return Column(
@@ -344,26 +381,6 @@ class _SettingsPageState extends State<SettingsPage> {
             style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary),
           ),
         ),
-        ListTile(
-          leading: const Icon(Icons.sync),
-          title: const Text('Sincronizza Dati'),
-          subtitle: const Text('Sincronizza dati con il cloud'),
-          onTap: () async {
-            try {
-              await _repo.fullSync();
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Sincronizzazione completata!')),
-              );
-            } catch (e) {
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Errore sync: $e')),
-              );
-            }
-          },
-        ),
-        const Divider(indent: 16, endIndent: 16),
         SwitchListTile(
           secondary: const Icon(Icons.notifications_outlined),
           title: const Text('Notifiche Push'),
@@ -412,32 +429,6 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Text('Catalogo Yu-Gi-Oh!', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
         ),
         ListTile(
-          leading: _isDownloading
-              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.download),
-          title: Text(_isDownloading ? _downloadStatus : 'Aggiorna Catalogo'),
-          subtitle: _isDownloading
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(value: _downloadProgress),
-                    const SizedBox(height: 4),
-                    Text(
-                      _downloadProgress != null
-                        ? '${(_downloadProgress! * 100).toInt()}%'
-                        : 'In corso...',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                )
-              : const Text('Scarica/Aggiorna tutte le carte in tutte le lingue'),
-          enabled: !_isDownloading,
-          onTap: _downloadCatalog,
-        ),
-        const Divider(indent: 16, endIndent: 16),
-        ListTile(
           leading: const Icon(Icons.translate),
           title: const Text('Lingua Catalogo'),
           subtitle: Text(LanguageService.languageLabels[_selectedLanguage] ?? _selectedLanguage),
@@ -447,149 +438,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Future<void> _downloadCatalog() async {
-    if (!mounted) return;
-
-    setState(() {
-      _isDownloading = true;
-      _downloadStatus = 'Controllo aggiornamenti...';
-      _downloadProgress = null;
-    });
-
-    try {
-      // 1. Check if update is needed
-      final updateInfo = await _repo.checkCatalogUpdates();
-
-      if (updateInfo['error'] != null) {
-        if (mounted) {
-          setState(() {
-            _isDownloading = false;
-            _downloadStatus = '';
-            _downloadProgress = null;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Errore controllo aggiornamenti: ${updateInfo['error']}')),
-          );
-        }
-        return;
-      }
-
-      final needsUpdate = updateInfo['needsUpdate'] as bool;
-
-      // 2. If no update needed, show message and return
-      if (!needsUpdate) {
-        final totalCards = updateInfo['totalCards'] as int?;
-
-        if (mounted) {
-          setState(() {
-            _isDownloading = false;
-            _downloadStatus = '';
-            _downloadProgress = null;
-          });
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Catalogo già aggiornato! ${totalCards != null ? "($totalCards carte)" : ""}'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-        return;
-      }
-
-      // 3. Update needed - perform download
-      final isFirstDownload = updateInfo['isFirstDownload'] as bool? ?? false;
-      final remoteVersion = updateInfo['remoteVersion'] as int?;
-      final totalCards = updateInfo['totalCards'] as int?;
-
-      if (mounted) {
-        await _performDownload(
-          isFirstDownload: isFirstDownload,
-          remoteVersion: remoteVersion,
-          totalCards: totalCards,
-          updateInfo: updateInfo,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-          _downloadStatus = '';
-          _downloadProgress = null;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _performDownload({
-    required bool isFirstDownload,
-    int? remoteVersion,
-    int? totalCards,
-    Map<String, dynamic>? updateInfo,
-  }) async {
-    try {
-      final isIncremental = updateInfo?['canDoIncremental'] == true;
-      setState(() {
-        _downloadStatus = isIncremental
-            ? 'Aggiornamento incrementale...'
-            : 'Scaricando da Firestore...';
-        _downloadProgress = null;
-      });
-
-      await _repo.downloadYugiohCatalog(
-        updateInfo: updateInfo,
-        onProgress: (current, total) {
-          if (mounted) {
-            setState(() {
-              _downloadProgress = current / total;
-              _downloadStatus = isIncremental
-                  ? 'Aggiornando chunk $current di $total'
-                  : 'Scaricando chunk $current di $total';
-            });
-          }
-        },
-        onSaveProgress: (progress) {
-          if (mounted) {
-            setState(() {
-              _downloadProgress = progress;
-              _downloadStatus = 'Salvando nel database...';
-            });
-          }
-        },
-      );
-
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-          _downloadStatus = '';
-          _downloadProgress = null;
-        });
-
-        final message = isFirstDownload
-          ? 'Catalogo scaricato con successo! ${totalCards != null ? "($totalCards carte)" : ""}'
-          : 'Catalogo aggiornato alla versione $remoteVersion!';
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-          _downloadStatus = '';
-          _downloadProgress = null;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore: $e')),
-        );
-      }
-      rethrow;
-    }
-  }
 
   void _showLanguagePicker() {
     showDialog(
@@ -756,10 +604,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     return ListTile(
-      leading: CircleAvatar(
-        backgroundImage: _user.photoURL != null ? NetworkImage(_user.photoURL!) : null,
-        child: _user.photoURL == null ? const Icon(Icons.person) : null,
-      ),
+      leading: UserAvatarWidget(radius: 22, photoUrl: _user.photoURL),
       title: Text(_user.displayName ?? 'Utente'),
       subtitle: Text(_user.email ?? ''),
       trailing: const Icon(Icons.chevron_right),

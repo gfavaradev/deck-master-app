@@ -35,6 +35,8 @@ void main() async {
     BackgroundDownloadService.initialize(),
     NotificationService().initialize(),
   ]);
+  // Mostra reminder catalogo se era stato posticipato nella sessione precedente
+  NotificationService().checkAndShowPendingCatalogReminder();
 
   runApp(const MyApp());
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_colors.dart';
@@ -14,6 +15,10 @@ import 'profile_page.dart';
 import 'admin_home_page.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
+import '../services/notification_service.dart';
+import '../services/sync_service.dart';
+import '../services/xp_service.dart';
+import '../widgets/user_avatar_widget.dart';
 import 'notifications_page.dart';
 
 /// Layout principale con barra di navigazione persistente
@@ -44,6 +49,16 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   final AuthService _authService = AuthService();
   final DataRepository _repo = DataRepository();
   User? _currentUser;
+  StreamSubscription<int>? _levelUpSub;
+  int _avatarVersion = 0;
+
+  // Catalog update state
+  bool _hasPendingCatalogUpdate = false;
+  bool _isCatalogDownloading = false;
+  double? _catalogDownloadProgress;
+  List<Map<String, dynamic>> _pendingUpdates = [];
+  String? _currentDownloadingName;
+  int _currentDownloadingIndex = 0;
 
   @override
   void initState() {
@@ -55,6 +70,18 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _currentUser = FirebaseAuth.instance.currentUser;
     _checkAdmin();
     _checkUnreadNotifications();
+    XpService().syncFromFirestore();
+    _levelUpSub = XpService().onLevelUp.listen(_onLevelUp);
+    SyncService().startListening();
+    // Backfill XP for cards added before the XP system existed (one-time, idempotent)
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) _repo.backfillXpFromExistingCards().catchError((_) {});
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _checkPendingCatalogNavigation();
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted && !_isAdmin) _checkCatalogUpdate();
+    });
 
     if (widget.updateNotification != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -73,16 +100,67 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _levelUpSub?.cancel();
+    SyncService().stopListening();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
+  void _onLevelUp(int newLevel) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.emoji_events, color: Colors.black),
+            const SizedBox(width: 10),
+            Text(
+              'Sei salito al livello $newLevel! 🎉',
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFF9A825),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // paused   = app in background (iOS: hidden, Android: onPause)
+    // detached = engine staccato (app swipata via / terminata)
+    // hidden   = app non visibile (iOS specifico)
     if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
-      // App va in background o viene chiusa: flush delle modifiche locali pendenti
-      _repo.fullSync().catchError((_) {});
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _flushOnBackground();
+    }
+  }
+
+  static const _collectionNames = {
+    'yugioh': 'Yu-Gi-Oh!',
+    'pokemon': 'Pokémon',
+    'onepiece': 'One Piece TCG',
+  };
+
+  Future<void> _checkPendingCatalogNavigation() async {
+    final collectionKey = await NotificationService().getPendingCatalogNavigation();
+    if (collectionKey == null || !mounted) return;
+    await NotificationService().clearPendingCatalogNavigation();
+    final name = _collectionNames[collectionKey] ?? collectionKey;
+    setState(() {
+      _currentCollectionKey = collectionKey;
+      _currentCollectionName = name;
+      _currentIndex = 2; // CatalogPage tab
+    });
+  }
+
+  Future<void> _flushOnBackground() async {
+    try {
+      await _repo.fullSync();
+    } catch (_) {
+      // Sync best-effort: se fallisce viene ritentata all'apertura successiva
     }
   }
 
@@ -138,6 +216,184 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         _hasUnreadNotifications = hasUnread;
       });
     }
+  }
+
+  Future<void> _checkCatalogUpdate() async {
+    try {
+      final updates = await _repo.checkAllUnlockedCatalogUpdates();
+      if (!mounted || updates.isEmpty) return;
+      setState(() => _pendingUpdates = updates);
+      _showCatalogUpdateDialog(updates);
+    } catch (_) {}
+  }
+
+  String _estimateUpdatesSize(List<Map<String, dynamic>> updates) {
+    double totalMb = 0;
+    for (final info in updates) {
+      if (info['canDoIncremental'] == true) {
+        final chunks = (info['modifiedChunks'] as List?)?.length ?? 1;
+        totalMb += (chunks * 0.3).clamp(0.1, 999.0);
+      } else {
+        final totalCards = info['totalCards'] as int? ?? 0;
+        totalMb += (totalCards * 3 / 1024).clamp(1.0, 999.0);
+      }
+    }
+    return '~${totalMb.toStringAsFixed(0)} MB';
+  }
+
+  void _showCatalogUpdateDialog(List<Map<String, dynamic>> updates) {
+    final sizeStr = _estimateUpdatesSize(updates);
+    final firstNames = updates
+        .where((u) => u['isFirstDownload'] == true)
+        .map((u) => u['collectionName'] as String? ?? u['collectionKey'] as String)
+        .toList();
+    final updateNames = updates
+        .where((u) => u['isFirstDownload'] != true)
+        .map((u) => u['collectionName'] as String? ?? u['collectionKey'] as String)
+        .toList();
+    final lines = <String>[];
+    if (firstNames.isNotEmpty) lines.add('Nuovi cataloghi: ${firstNames.join(', ')}');
+    if (updateNames.isNotEmpty) lines.add('Aggiornamenti: ${updateNames.join(', ')}');
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Catalogo'),
+        content: Text('${lines.join('\n')}\nDimensione stimata: $sizeStr\n\nVuoi scaricarlo adesso?'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(() => _hasPendingCatalogUpdate = true);
+            },
+            child: const Text('Più tardi'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _startCatalogDownload();
+            },
+            child: const Text('Subito'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startCatalogDownload() async {
+    final updates = List<Map<String, dynamic>>.from(_pendingUpdates);
+    if (updates.isEmpty) return;
+    setState(() {
+      _isCatalogDownloading = true;
+      _hasPendingCatalogUpdate = false;
+      _catalogDownloadProgress = null;
+    });
+    final total = updates.length;
+    int successCount = 0;
+    for (int i = 0; i < updates.length; i++) {
+      final info = updates[i];
+      final key = info['collectionKey'] as String;
+      if (mounted) {
+        setState(() {
+          _currentDownloadingName = info['collectionName'] as String? ?? key;
+          _currentDownloadingIndex = i + 1;
+        });
+      }
+      try {
+        await _repo.downloadCollectionCatalog(
+          key,
+          updateInfo: info,
+          onProgress: (current, colTotal) {
+            if (mounted) {
+              setState(() => _catalogDownloadProgress = (i + current / colTotal) / total);
+            }
+          },
+          onSaveProgress: (progress) {
+            if (mounted) {
+              setState(() => _catalogDownloadProgress = (i + progress) / total);
+            }
+          },
+        );
+        successCount++;
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Errore aggiornamento ${info['collectionName'] ?? key}: $e')),
+          );
+        }
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _isCatalogDownloading = false;
+        _catalogDownloadProgress = null;
+        _currentDownloadingName = null;
+        _currentDownloadingIndex = 0;
+        _pendingUpdates = [];
+      });
+      if (successCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Catalogo aggiornato con successo!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showDownloadDetails() {
+    final progress = _catalogDownloadProgress;
+    final total = _pendingUpdates.isNotEmpty ? _pendingUpdates.length : _currentDownloadingIndex;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.download_rounded, color: Colors.blue, size: 22),
+            SizedBox(width: 8),
+            Text('Download in corso'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_currentDownloadingName != null) ...[
+              Text(
+                _currentDownloadingIndex > 0 && total > 1
+                    ? 'Collezione $_currentDownloadingIndex di $total: $_currentDownloadingName'
+                    : 'Collezione: $_currentDownloadingName',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+            ],
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 8,
+                backgroundColor: Colors.grey.shade200,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              progress != null
+                  ? '${(progress * 100).toInt()}% completato'
+                  : 'Avvio download...',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Chiudi'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -226,6 +482,61 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 ),
             ],
           ),
+          if (_isCatalogDownloading)
+            GestureDetector(
+              onTap: _showDownloadDetails,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        value: _catalogDownloadProgress,
+                        strokeWidth: 3,
+                        color: Colors.white,
+                        backgroundColor: Colors.white24,
+                      ),
+                      Text(
+                        _catalogDownloadProgress != null
+                            ? '${(_catalogDownloadProgress! * 100).toInt()}%'
+                            : '···',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else if (_hasPendingCatalogUpdate)
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.cloud_download_outlined),
+                  tooltip: 'Aggiornamento catalogo disponibile — tocca per installare',
+                  onPressed: () => _showCatalogUpdateDialog(_pendingUpdates),
+                ),
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.orange,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Statistiche',
@@ -243,7 +554,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             tooltip: 'Menu utente',
             onSelected: (value) {
               if (value == 'profile') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()))
+                    .then((_) { if (mounted) setState(() => _avatarVersion++); });
               } else if (value == 'settings') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
               } else if (value == 'support') {
@@ -290,15 +602,11 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             ],
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: CircleAvatar(
+              child: UserAvatarWidget(
+                key: ValueKey(_avatarVersion),
                 radius: 18,
-                backgroundImage: _currentUser?.photoURL != null
-                    ? NetworkImage(_currentUser!.photoURL!)
-                    : null,
-                backgroundColor: AppColors.bgLight,
-                child: _currentUser?.photoURL == null
-                    ? const Icon(Icons.person, size: 20, color: AppColors.textSecondary)
-                    : null,
+                showLevelBadge: true,
+                photoUrl: _currentUser?.photoURL,
               ),
             ),
           ),

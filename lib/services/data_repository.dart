@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'sync_service.dart';
 import 'auth_service.dart';
+import 'xp_service.dart';
 import '../constants/app_constants.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
@@ -468,6 +470,10 @@ class DataRepository {
     return await _dbHelper.getCardsByCollection(collection);
   }
 
+  Future<Map<String, double>> getCollectionCompletions() async {
+    return await _dbHelper.getCollectionCompletions();
+  }
+
   Future<List<CardModel>> getCardsWithCatalog(String collection) async {
     return await _dbHelper.getCardsWithCatalog(collection);
   }
@@ -483,6 +489,251 @@ class DataRepository {
   Future<CardModel?> findCardInAlbum(int albumId, String? catalogId, String serialNumber, String rarity) async {
     if (kIsWeb) return null;
     return await _dbHelper.findCardInAlbum(albumId, catalogId, serialNumber, rarity);
+  }
+
+  // ============================================================
+  // Card Business Logic
+  // ============================================================
+
+  /// Returns the ID of the "Doppioni" album for a collection, creating it if needed.
+  Future<int> getOrCreateDoppioniAlbum(String collectionKey) async {
+    final albums = await getAlbumsByCollection(collectionKey);
+    final existing = albums.where((a) => a.name == 'Doppioni').toList();
+    if (existing.isNotEmpty) return existing.first.id!;
+    return await insertAlbum(AlbumModel(
+      name: 'Doppioni',
+      collection: collectionKey,
+      maxCapacity: 1000,
+    ));
+  }
+
+  /// Deletes a card. If [allRelated] is true, deletes all cards in the collection
+  /// with the same serialNumber + rarity + catalogId (cross-album).
+  /// Returns the list of deleted cards (for undo).
+  Future<List<CardModel>> deleteCardWithRelated(
+    CardModel card,
+    String collectionKey, {
+    bool allRelated = false,
+  }) async {
+    if (allRelated) {
+      final allCards = await getCardsByCollection(collectionKey);
+      final toDelete = allCards.where((c) =>
+        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
+        c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
+        (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
+      ).toList();
+      for (final c in toDelete) {
+        await deleteCard(c.id!);
+      }
+      return toDelete;
+    } else {
+      await deleteCard(card.id!);
+      return [card];
+    }
+  }
+
+  /// Adjusts a card's quantity by [delta] with doppioni routing:
+  /// - [+] on non-doppioni card with qty >= 1 → increment/create in Doppioni
+  /// - [-] on non-doppioni card → drain Doppioni first (general view), floor at 1 (album view)
+  Future<void> adjustCardQuantity(
+    CardModel card,
+    int delta, {
+    required String collectionKey,
+    bool isAlbumView = false,
+  }) async {
+    if (delta > 0) {
+      XpService().awardXp(XpService.xpForRarity(card.rarity)).catchError((_) {});
+    }
+
+    final albums = await getAlbumsByCollection(collectionKey);
+    final album = albums.firstWhere(
+      (a) => a.id == card.albumId,
+      orElse: () => AlbumModel(name: '', collection: collectionKey, maxCapacity: 0),
+    );
+    final isDoppioni = album.name == 'Doppioni';
+
+    if (delta < 0 && !isDoppioni) {
+      if (!isAlbumView) {
+        final allCards = await getCardsByCollection(collectionKey);
+        final doppioniIds = albums.where((a) => a.name == 'Doppioni').map((a) => a.id!).toSet();
+        final doppioniMatch = allCards.where((c) =>
+          doppioniIds.contains(c.albumId) &&
+          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
+          c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
+          (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
+        ).toList();
+        if (doppioniMatch.isNotEmpty) {
+          final d = doppioniMatch.first;
+          if (d.quantity - 1 <= 0) {
+            await deleteCard(d.id!);
+          } else {
+            await updateCard(d.copyWith(quantity: d.quantity - 1));
+          }
+        }
+        return; // floor main at 1, do nothing if no doppioni
+      } else {
+        if (card.quantity + delta < 1) return;
+      }
+    }
+
+    if (delta > 0 && !isDoppioni && card.quantity >= 1) {
+      final doppioniAlbumId = await getOrCreateDoppioniAlbum(collectionKey);
+      final allCards = await getCardsByCollection(collectionKey);
+      final existingInDoppioni = allCards.where((c) =>
+        c.albumId == doppioniAlbumId &&
+        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
+        c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
+        (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
+      ).toList();
+      if (existingInDoppioni.isNotEmpty) {
+        await updateCard(existingInDoppioni.first.copyWith(
+          quantity: existingInDoppioni.first.quantity + delta,
+        ));
+      } else {
+        await insertCard(card.copyWith(
+          resetId: true,
+          albumId: doppioniAlbumId,
+          quantity: delta,
+        ));
+      }
+      return;
+    }
+
+    final newQty = card.quantity + delta;
+    if (newQty <= 0) {
+      await deleteCard(card.id!);
+    } else {
+      await updateCard(card.copyWith(quantity: newQty));
+    }
+  }
+
+  /// Adds a list of catalog cards to [album], routing duplicates to Doppioni.
+  /// Returns {'added': int, 'updated': int, 'doppioni': int}.
+  Future<Map<String, int>> addCatalogCardsToAlbum(
+    List<Map<String, dynamic>> catalogCards,
+    AlbumModel album,
+    String collectionKey, {
+    void Function(int done, int total)? onProgress,
+  }) async {
+    int added = 0, updated = 0, doppioni = 0;
+    int? doppioniAlbumId;
+
+    for (int i = 0; i < catalogCards.length; i++) {
+      final card = catalogCards[i];
+      try {
+        final catalogId = card['id']?.toString();
+        final name = card['localizedName'] ?? card['name'] ?? 'Unknown';
+        final serialNumber = card['localizedSetCode'] ?? card['setCode'] ?? '';
+        final rarity = card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'] ?? '';
+        final value = ((card['localizedSetPrice'] ?? card['setPrice'] ?? card['marketPrice']) as num?)?.toDouble() ?? 0.0;
+
+        final existingAnywhere = await findOwnedInstances(collectionKey, name, serialNumber, rarity);
+
+        if (existingAnywhere.isNotEmpty) {
+          doppioniAlbumId ??= await getOrCreateDoppioniAlbum(collectionKey);
+          final existingInDoppioni = existingAnywhere.where((c) => c.albumId == doppioniAlbumId).toList();
+          if (existingInDoppioni.isNotEmpty) {
+            await updateCard(existingInDoppioni.first.copyWith(quantity: existingInDoppioni.first.quantity + 1));
+          } else {
+            await insertCard(CardModel(
+              catalogId: catalogId,
+              name: name,
+              serialNumber: serialNumber,
+              collection: collectionKey,
+              albumId: doppioniAlbumId,
+              type: card['type'] ?? card['card_type'] ?? '',
+              rarity: rarity,
+              description: card['localizedDescription'] ?? card['description'] ?? '',
+              imageUrl: card['artwork'] ?? card['imageUrl'],
+              value: value,
+            ));
+          }
+          doppioni++;
+          XpService().awardXp(XpService.xpForRarity(rarity)).catchError((_) {});
+        } else {
+          final existingInAlbum = await findCardInAlbum(album.id!, catalogId, serialNumber, rarity);
+          if (existingInAlbum != null) {
+            await updateCard(existingInAlbum.copyWith(quantity: existingInAlbum.quantity + 1));
+            updated++;
+          } else {
+            await insertCard(CardModel(
+              catalogId: catalogId,
+              name: name,
+              serialNumber: serialNumber,
+              collection: collectionKey,
+              albumId: album.id!,
+              type: card['type'] ?? card['card_type'] ?? '',
+              rarity: rarity,
+              description: card['localizedDescription'] ?? card['description'] ?? '',
+              imageUrl: card['artwork'] ?? card['imageUrl'],
+              value: value,
+            ));
+            added++;
+          }
+          XpService().awardXp(XpService.xpForRarity(rarity)).catchError((_) {});
+        }
+      } catch (e) {
+        debugPrint('Error adding card: $e');
+      }
+      onProgress?.call(i + 1, catalogCards.length);
+    }
+    return {'added': added, 'updated': updated, 'doppioni': doppioni};
+  }
+
+  /// Generic catalog update check, routes by [collectionKey].
+  Future<Map<String, dynamic>> checkCollectionCatalogUpdates(String collectionKey) async {
+    switch (collectionKey) {
+      case 'onepiece': return checkOnepieceCatalogUpdates();
+      case 'pokemon': return checkPokemonCatalogUpdates();
+      default: return checkCatalogUpdates(); // yugioh
+    }
+  }
+
+  /// Checks all unlocked supported collections for catalog updates.
+  /// Returns a list of update-info maps, each with 'collectionKey' and 'collectionName' added.
+  Future<List<Map<String, dynamic>>> checkAllUnlockedCatalogUpdates() async {
+    const supported = {'yugioh', 'pokemon', 'onepiece'};
+    final collections = await getCollections();
+    final unlocked = collections.where((c) => c.isUnlocked && supported.contains(c.key)).toList();
+    final List<Map<String, dynamic>> results = [];
+    for (final col in unlocked) {
+      try {
+        final info = await checkCollectionCatalogUpdates(col.key);
+        if (info['needsUpdate'] == true) {
+          results.add({...info, 'collectionKey': col.key, 'collectionName': col.name});
+        }
+      } catch (_) {}
+    }
+    return results;
+  }
+
+  /// Generic catalog download, routes by [collectionKey].
+  Future<void> downloadCollectionCatalog(
+    String collectionKey, {
+    Map<String, dynamic>? updateInfo,
+    void Function(int, int)? onProgress,
+    void Function(double)? onSaveProgress,
+  }) async {
+    switch (collectionKey) {
+      case 'onepiece':
+        await redownloadOnepieceCatalog(
+          onProgress: onProgress,
+          onSaveProgress: onSaveProgress,
+        );
+        break;
+      case 'pokemon':
+        await redownloadPokemonCatalog(
+          onProgress: onProgress,
+          onSaveProgress: onSaveProgress,
+        );
+        break;
+      default:
+        await downloadYugiohCatalog(
+          updateInfo: updateInfo,
+          onProgress: onProgress,
+          onSaveProgress: onSaveProgress,
+        );
+    }
   }
 
   // ============================================================
@@ -645,6 +896,21 @@ class DataRepository {
   // Stats (read from SQLite)
   // ============================================================
 
+  Future<List<Map<String, dynamic>>> getStatsPerCollection() async {
+    if (kIsWeb) return [];
+    return await _dbHelper.getStatsPerCollection();
+  }
+
+  Future<List<Map<String, dynamic>>> getStatsPerRarity() async {
+    if (kIsWeb) return [];
+    return await _dbHelper.getStatsPerRarity();
+  }
+
+  Future<List<Map<String, dynamic>>> getAllCardsForExport() async {
+    if (kIsWeb) return [];
+    return await _dbHelper.getAllCardsForExport();
+  }
+
   Future<Map<String, dynamic>> getGlobalStats() async {
     if (kIsWeb) {
       // On web there is no local SQLite cache; return zeroed stats.
@@ -743,7 +1009,32 @@ class DataRepository {
   }
 
   Future<void> fullSync() async {
+    // Push any local pending changes first, then restore the full cloud state.
     await _syncService.flushPendingQueue();
+    await _syncService.pullFromCloud();
+  }
+
+  /// Deduplicate local data, wipe Firestore, re-upload clean state.
+  /// Use when the user sees doubled cards/albums/decks.
+  Future<void> resetAndResync({void Function(String)? onStatus}) async {
+    await _syncService.resetAndResync(onStatus: onStatus);
+  }
+
+  /// Backfill XP from all existing cards (one-time, idempotent via SharedPreferences flag).
+  /// Necessary for users who had cards before the XP system was introduced.
+  Future<void> backfillXpFromExistingCards() async {
+    const backfillKey = 'xp_backfill_done_v1';
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(backfillKey) == true) return;
+
+    final allCards = await _dbHelper.getAllCards();
+    int totalXp = 0;
+    for (final card in allCards) {
+      totalXp += XpService.xpForRarity(card.rarity) * card.quantity;
+    }
+
+    await XpService().setXpIfHigher(totalXp);
+    await prefs.setBool(backfillKey, true);
   }
 
   Future<void> insertYugiohCards(List<Map<String, dynamic>> cards, {Function(double)? onProgress}) async {
@@ -1014,6 +1305,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
+    await _dbHelper.refreshCardValuesFromCatalog('pokemon');
   }
 
   Future<void> redownloadPokemonCatalog({
@@ -1040,6 +1332,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
+    await _dbHelper.refreshCardValuesFromCatalog('pokemon');
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCatalogCards({

@@ -40,6 +40,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     {'code': 'fr', 'label': 'Francese'},
     {'code': 'de', 'label': 'Tedesco'},
     {'code': 'pt', 'label': 'Portoghese'},
+    {'code': 'sp', 'label': 'Spagnolo'},
   ];
 
   late Map<String, TextEditingController> _transNameControllers;
@@ -47,13 +48,14 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
   late TextEditingController _descEnController;
 
   // --- Sets per language ---
-  static const List<String> _setLanguages = ['en', 'it', 'fr', 'de', 'pt'];
+  static const List<String> _setLanguages = ['en', 'it', 'fr', 'de', 'pt', 'sp'];
   static const Map<String, String> _setLanguageLabels = {
     'en': 'Inglese',
     'it': 'Italiano',
     'fr': 'Francese',
     'de': 'Tedesco',
     'pt': 'Portoghese',
+    'sp': 'Spagnolo',
   };
 
   late Map<String, List<Map<String, dynamic>>> _setsByLanguage;
@@ -358,76 +360,186 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
   // ─── Tab: Set per Lingua ─────────────────────────────────────────────────────
 
   Widget _buildSetsTab() {
-    return ListView(
-      padding: const EdgeInsets.all(8),
-      children: _setLanguages.map((lang) {
-        final sets = _setsByLanguage[lang]!;
-        final label = _setLanguageLabels[lang]!;
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ExpansionTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.orange.shade50,
-              radius: 16,
-              child: Text(lang.toUpperCase(),
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.orange)),
-            ),
-            title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text('${sets.length} set', style: const TextStyle(fontSize: 12)),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline, color: Colors.orange),
-                  tooltip: 'Aggiungi set',
-                  onPressed: () => _addSet(lang),
+    final hasEnSets = _setsByLanguage['en']?.isNotEmpty ?? false;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'EN è la lingua base. Usa "Genera da EN" per creare i codici localizzati.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
                 ),
-                const Icon(Icons.expand_more),
-              ],
-            ),
-            children: sets.isEmpty
-                ? [const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('Nessun set per questa lingua.', style: TextStyle(color: Colors.grey)))]
-                : sets.asMap().entries.map((entry) {
-                    final i = entry.key;
-                    final s = entry.value;
-                    return ListTile(
-                      dense: true,
-                      leading: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: Colors.orange,
-                        child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 11)),
-                      ),
-                      title: Text(s['set_name'] ?? '—', style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${s['set_code'] ?? ''} • ${s['rarity'] ?? ''} • €${(s['set_price'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
-                              style: const TextStyle(fontSize: 11),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if ((s['image_url'] as String?)?.isNotEmpty == true)
-                            const Padding(
-                              padding: EdgeInsets.only(left: 4),
-                              child: Icon(Icons.image, size: 14, color: Colors.green),
-                            ),
-                        ],
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(icon: const Icon(Icons.edit, size: 18), onPressed: () => _editSet(lang, i)),
-                          IconButton(icon: const Icon(Icons.delete, size: 18, color: Colors.red), onPressed: () => _removeSet(lang, i)),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: hasEnSets ? _generateSetsFromEn : null,
+                icon: const Icon(Icons.auto_fix_high, size: 15),
+                label: const Text('Genera da EN'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  textStyle: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
           ),
-        );
-      }).toList(),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            children: _setLanguages.map((lang) {
+              final sets = _setsByLanguage[lang]!;
+              final label = _setLanguageLabels[lang]!;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ExpansionTile(
+                  initiallyExpanded: sets.isNotEmpty,
+                  leading: CircleAvatar(
+                    backgroundColor: sets.isNotEmpty ? Colors.orange.shade100 : Colors.grey.shade100,
+                    radius: 16,
+                    child: Text(lang.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: sets.isNotEmpty ? Colors.orange.shade800 : Colors.grey,
+                        )),
+                  ),
+                  title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    sets.isEmpty ? 'Nessun set' : '${sets.length} set',
+                    style: TextStyle(fontSize: 12, color: sets.isNotEmpty ? Colors.orange.shade700 : Colors.grey),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.add_circle_outline, color: Colors.orange),
+                    tooltip: 'Aggiungi set',
+                    onPressed: () => _addSet(lang),
+                  ),
+                  children: sets.isEmpty
+                      ? [const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Nessun set per questa lingua.', style: TextStyle(color: Colors.grey)))]
+                      : sets.asMap().entries.map((entry) {
+                          final i = entry.key;
+                          final s = entry.value;
+                          return ListTile(
+                            dense: true,
+                            leading: CircleAvatar(
+                              radius: 14,
+                              backgroundColor: Colors.orange,
+                              child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                            ),
+                            title: Text(s['set_name'] ?? '—', style: const TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${s['set_code'] ?? ''} • ${s['rarity'] ?? ''} • €${(s['set_price'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                                    style: const TextStyle(fontSize: 11),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if ((s['image_url'] as String?)?.isNotEmpty == true)
+                                  const Padding(
+                                    padding: EdgeInsets.only(left: 4),
+                                    child: Icon(Icons.image, size: 14, color: Colors.green),
+                                  ),
+                              ],
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(icon: const Icon(Icons.edit, size: 18), onPressed: () => _editSet(lang, i)),
+                                IconButton(icon: const Icon(Icons.delete, size: 18, color: Colors.red), onPressed: () => _removeSet(lang, i)),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Converts an EN set code to the target language code.
+  /// e.g. LOB-EN001 → LOB-IT001 (for 'it')
+  static String? _localizedSetCode(String enCode, String targetLang) {
+    final match = RegExp(r'^([A-Z0-9]+)-(EN|E)(.+)$').firstMatch(enCode.toUpperCase());
+    if (match == null) return null;
+    final isShort = match.group(2) == 'E';
+    final prefix = match.group(1)!;
+    final suffix = match.group(3)!;
+    final langCode = switch (targetLang) {
+      'it' => isShort ? 'I' : 'IT',
+      'fr' => isShort ? 'F' : 'FR',
+      'de' => isShort ? 'D' : 'DE',
+      'pt' => isShort ? 'P' : 'PT',
+      'sp' => isShort ? 'S' : 'SP',
+      _ => null,
+    };
+    if (langCode == null) return null;
+    return '$prefix-$langCode$suffix';
+  }
+
+  /// Auto-generates IT/FR/DE/PT sets from existing EN sets.
+  void _generateSetsFromEn() {
+    final enSets = List<Map<String, dynamic>>.from(_setsByLanguage['en'] ?? []);
+    if (enSets.isEmpty) return;
+
+    setState(() {
+      for (final lang in ['it', 'fr', 'de', 'pt', 'sp']) {
+        // Build index of existing sets for this language (by set_code, uppercased)
+        final existing = <String, Map<String, dynamic>>{};
+        for (final s in (_setsByLanguage[lang] ?? [])) {
+          final code = (s['set_code']?.toString() ?? '').toUpperCase();
+          if (code.isNotEmpty) existing.putIfAbsent(code, () => s);
+        }
+
+        final newList = <Map<String, dynamic>>[];
+        for (final enSet in enSets) {
+          final enCode = enSet['set_code']?.toString() ?? '';
+          final localCode = _localizedSetCode(enCode, lang) ?? enCode;
+          final localUpper = localCode.toUpperCase();
+          final enUpper = enCode.toUpperCase();
+          // Prefer matching by target code, fallback to EN code (handles first run)
+          final found = existing[localUpper] ?? existing[enUpper];
+          if (found != null) {
+            // Fix the set_code if it still has the EN code
+            final foundCode = (found['set_code']?.toString() ?? '').toUpperCase();
+            if (foundCode != localUpper) {
+              newList.add(Map<String, dynamic>.from(found)
+                ..['set_code'] = localCode);
+            } else {
+              newList.add(found);
+            }
+          } else {
+            // Create new entry from EN template
+            newList.add({
+              'set_code': localCode,
+              'set_name': enSet['set_name'] ?? '',
+              'rarity': enSet['rarity'] ?? '',
+              'set_price': enSet['set_price'],
+              if ((enSet['image_url'] as String?)?.isNotEmpty == true)
+                'image_url': enSet['image_url'],
+            });
+          }
+        }
+        _setsByLanguage[lang] = newList;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Set generati per IT, FR, DE, PT, SP da EN'),
+        duration: Duration(seconds: 2),
+        backgroundColor: Colors.orange,
+      ),
     );
   }
 
@@ -673,7 +785,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: DropdownButtonFormField<String>(
-        value: safeValue,
+        initialValue: safeValue,
         decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true),
         items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
         onChanged: onChanged,

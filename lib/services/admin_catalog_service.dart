@@ -432,6 +432,13 @@ class AdminCatalogService {
 
         case ChangeType.add:
           final processedCard = await _processCardForStorage(change.cardData);
+          if (sortedChunkIds.isEmpty) {
+            const newChunkId = 'chunk_001';
+            chunkMap[newChunkId] = [processedCard];
+            sortedChunkIds.add(newChunkId);
+            affectedChunkIds.add(newChunkId);
+            break;
+          }
           final lastChunkId = sortedChunkIds.last;
           final lastChunk = chunkMap[lastChunkId]!;
           if (lastChunk.length < _chunkSize) {
@@ -638,6 +645,17 @@ class AdminCatalogService {
   }) async {
     final catalogCollection = '${catalog}_catalog';
 
+    // 0. Delete all existing images in Storage for this catalog
+    try {
+      final folder = _storage.ref('catalog/$catalog/images');
+      final listResult = await folder.listAll();
+      for (final item in listResult.items) {
+        try { await item.delete(); } catch (_) {}
+      }
+    } catch (_) {
+      // Cartella non ancora esistente — procedi normalmente
+    }
+
     // 1. Download all chunks
     final chunkMap = await _downloadChunksMap(catalogCollection, onProgress);
     if (chunkMap.isEmpty) {
@@ -646,22 +664,28 @@ class AdminCatalogService {
 
     final sortedChunkIds = chunkMap.keys.toList()..sort();
 
-    // 2. Collect cards that need migration
+    // 2. Collect ALL cards — ricostruisce la URL sorgente anche se image_url è già stato rimosso
     final toMigrate = <({String chunkId, int cardIndex, dynamic cardId, String sourceUrl})>[];
     for (final chunkId in sortedChunkIds) {
       final cards = chunkMap[chunkId]!;
       for (int i = 0; i < cards.length; i++) {
         final card = cards[i];
-        final sourceUrl = card['image_url'] as String?;
-        final storageUrl = card['imageUrl'] as String?;
-        final needsMigration =
-            (sourceUrl?.isNotEmpty ?? false) && (storageUrl?.isEmpty ?? true);
-        if (needsMigration) {
+        final cardId = card['id'] ?? card['api_id'];
+
+        // 1. URL originale API ancora presente (non ancora migrata)
+        String? sourceUrl = card['image_url'] as String?;
+
+        // 2. Per YuGiOh: ricostruisce da ID numerico
+        if ((sourceUrl == null || sourceUrl.isEmpty) && catalog == 'yugioh' && card['id'] != null) {
+          sourceUrl = 'https://images.ygoprodeck.com/images/cards/${card['id']}.jpg';
+        }
+
+        if (sourceUrl != null && sourceUrl.isNotEmpty && cardId != null) {
           toMigrate.add((
             chunkId: chunkId,
             cardIndex: i,
-            cardId: card['id'] ?? card['api_id'],
-            sourceUrl: sourceUrl!,
+            cardId: cardId,
+            sourceUrl: sourceUrl,
           ));
         }
       }
@@ -1017,7 +1041,7 @@ class AdminCatalogService {
       // (image belongs to each individual set/print, not just at card level)
       final cardImages = card['card_images'] as List<dynamic>?;
       final imageUrl = cardImages != null && cardImages.isNotEmpty
-          ? (cardImages[0] as Map)['image_url_small'] as String?
+          ? (cardImages[0] as Map)['image_url'] as String?
           : null;
 
       final setsByLang = <String, List<Map<String, dynamic>>>{
@@ -1038,8 +1062,6 @@ class AdminCatalogService {
           });
         }
       }
-      _generateMissingSetsFromEn(setsByLang);
-
       final setsMap = <String, dynamic>{};
       for (final entry in setsByLang.entries) {
         if (entry.value.isNotEmpty) setsMap[entry.key] = entry.value;

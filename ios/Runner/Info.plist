@@ -41,6 +41,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Deck Master usa la fotocamera per scansionare barcode delle carte e riconoscerle automaticamente.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Deck Master usa la tua libreria foto per aggiornare l'immagine del profilo.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

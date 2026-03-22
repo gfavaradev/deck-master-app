@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 11,
+      version: 13,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -137,6 +137,51 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE cards ADD COLUMN added_at TEXT');
       }
     }
+    if (oldVersion < 12) {
+      // albums: maxCapacity non aveva migrazione
+      await _addColumnIfMissing(db, 'albums', 'maxCapacity', 'INTEGER');
+
+      // yugioh_cards: colonne lingua aggiunte dopo v4 senza migrazione
+      await _addColumnIfMissing(db, 'yugioh_cards', 'name_it', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_cards', 'description_it', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_cards', 'name_fr', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_cards', 'description_fr', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_cards', 'name_de', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_cards', 'description_de', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_cards', 'name_pt', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_cards', 'description_pt', 'TEXT');
+
+      // yugioh_prints: colonne lingua aggiunte dopo v4 senza migrazione
+      for (final lang in ['it', 'fr', 'de', 'pt']) {
+        await _addColumnIfMissing(db, 'yugioh_prints', 'set_name_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'yugioh_prints', 'set_code_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'yugioh_prints', 'rarity_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'yugioh_prints', 'rarity_code_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'yugioh_prints', 'set_price_$lang', 'REAL');
+      }
+
+      // Assicura che le righe delle collezioni esistano per utenti che facevano upgrade
+      await db.execute('''
+        INSERT OR IGNORE INTO collections (id, name, isUnlocked)
+        VALUES
+          ('yugioh',   'Yu-Gi-Oh!',              0),
+          ('pokemon',  'Pokémon',                 0),
+          ('magic',    'Magic: The Gathering',    0),
+          ('onepiece', 'One Piece',               0)
+      ''');
+    }
+    if (oldVersion < 13) {
+      // Spagnolo: nuove colonne per yugioh_cards
+      await _addColumnIfMissing(db, 'yugioh_cards', 'name_sp', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_cards', 'description_sp', 'TEXT');
+
+      // Spagnolo: nuove colonne per yugioh_prints
+      await _addColumnIfMissing(db, 'yugioh_prints', 'set_name_sp', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_prints', 'set_code_sp', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_prints', 'rarity_sp', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_prints', 'rarity_code_sp', 'TEXT');
+      await _addColumnIfMissing(db, 'yugioh_prints', 'set_price_sp', 'REAL');
+    }
   }
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
@@ -173,6 +218,14 @@ class DatabaseHelper {
     ''');
   }
 
+  /// Aggiunge una colonna solo se non esiste già (sicuro da chiamare in migrazioni).
+  Future<void> _addColumnIfMissing(DatabaseExecutor db, String table, String column, String type) async {
+    final cols = await db.rawQuery('PRAGMA table_info($table)');
+    if (!cols.any((c) => c['name'] == column)) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
+    }
+  }
+
   Future<void> _createYugiohTables(DatabaseExecutor db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS yugioh_cards(
@@ -201,6 +254,8 @@ class DatabaseHelper {
         description_de TEXT,
         name_pt TEXT,
         description_pt TEXT,
+        name_sp TEXT,
+        description_sp TEXT,
         created_at TEXT,
         updated_at TEXT
       )
@@ -236,6 +291,11 @@ class DatabaseHelper {
         rarity_pt TEXT,
         rarity_code_pt TEXT,
         set_price_pt REAL,
+        set_name_sp TEXT,
+        set_code_sp TEXT,
+        rarity_sp TEXT,
+        rarity_code_sp TEXT,
+        set_price_sp REAL,
         created_at TEXT,
         updated_at TEXT,
         FOREIGN KEY (card_id) REFERENCES yugioh_cards(id) ON DELETE CASCADE,
@@ -630,6 +690,60 @@ class DatabaseHelper {
 
       return id;
     });
+  }
+
+  /// Returns the completion ratio (0.0–1.0) for each collection based on unique
+  /// catalog entries owned vs total catalog entries in SQLite.
+  Future<Map<String, double>> getCollectionCompletions() async {
+    final db = await database;
+    final completions = <String, double>{};
+
+    int firstInt(List<Map<String, Object?>> rows) {
+      if (rows.isEmpty) return 0;
+      final v = rows.first.values.first;
+      if (v is int) return v;
+      return 0;
+    }
+
+    Future<double> ratio(String collection, String ownedQuery, List<dynamic> ownedArgs,
+        String totalQuery) async {
+      final owned = firstInt(await db.rawQuery(ownedQuery, ownedArgs));
+      final total = firstInt(await db.rawQuery(totalQuery));
+      return total > 0 ? (owned / total).clamp(0.0, 1.0) : 0.0;
+    }
+
+    completions['yugioh'] = await ratio(
+      'yugioh',
+      'SELECT COUNT(DISTINCT CAST(catalogId AS INTEGER)) FROM cards WHERE collection=? AND catalogId IS NOT NULL',
+      ['yugioh'],
+      'SELECT COUNT(*) FROM yugioh_cards',
+    );
+
+    completions['pokemon'] = await ratio(
+      'pokemon',
+      'SELECT COUNT(DISTINCT catalogId) FROM cards WHERE collection=? AND catalogId IS NOT NULL',
+      ['pokemon'],
+      'SELECT COUNT(*) FROM pokemon_cards',
+    );
+
+    completions['onepiece'] = await ratio(
+      'onepiece',
+      'SELECT COUNT(DISTINCT CAST(catalogId AS INTEGER)) FROM cards WHERE collection=? AND catalogId IS NOT NULL',
+      ['onepiece'],
+      'SELECT COUNT(*) FROM onepiece_cards',
+    );
+
+    // Collections without a local catalog yet — always 0% until catalog is added
+    for (final key in [
+      'magic', 'lorcana', 'riftbound', 'flesh_blood', 'starwars_unlimited',
+      'digimon', 'dragonball', 'vanguard', 'weiss_schwarz', 'final_fantasy',
+      'force_of_will', 'battle_spirits', 'wow', 'starwars_destiny',
+      'dragoborne', 'little_pony', 'the_spoils',
+    ]) {
+      completions[key] = 0.0;
+    }
+
+    return completions;
   }
 
   // Returns all owned card instances for a collection.
@@ -1079,6 +1193,39 @@ class DatabaseHelper {
     };
   }
 
+  Future<List<Map<String, dynamic>>> getStatsPerCollection() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT collection,
+             SUM(quantity) as totalCards,
+             SUM(value * quantity) as totalValue
+      FROM cards
+      GROUP BY collection
+      ORDER BY totalValue DESC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getStatsPerRarity() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT rarity,
+             SUM(quantity) as count,
+             SUM(value * quantity) as totalValue
+      FROM cards
+      WHERE rarity != ''
+      GROUP BY rarity
+      ORDER BY count DESC
+      LIMIT 10
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllCardsForExport() async {
+    final db = await database;
+    return await db.rawQuery(
+      'SELECT name, serialNumber, collection, rarity, quantity, value FROM cards ORDER BY collection, name',
+    );
+  }
+
   // ============================================================
   // Yu-Gi-Oh Catalog Methods
   // ============================================================
@@ -1126,6 +1273,26 @@ class DatabaseHelper {
           value
         )
         WHERE collection = 'onepiece' AND catalogId IS NOT NULL
+      ''');
+    } else if (collection == 'pokemon') {
+      // set_price è null per le carte TCGDex (nessuna fonte prezzi disponibile);
+      // l'aggiornamento preserva il valore inserito manualmente dall'utente.
+      await db.execute('''
+        UPDATE cards
+        SET value = COALESCE(
+          (SELECT p.set_price
+           FROM pokemon_prints p
+           WHERE p.card_id = CAST(cards.catalogId AS INTEGER)
+             AND (p.set_code = cards.serialNumber
+               OR p.set_code_it = cards.serialNumber
+               OR p.set_code_fr = cards.serialNumber
+               OR p.set_code_de = cards.serialNumber
+               OR p.set_code_pt = cards.serialNumber)
+           ORDER BY p.set_price DESC
+           LIMIT 1),
+          value
+        )
+        WHERE collection = 'pokemon' AND catalogId IS NOT NULL
       ''');
     }
   }
@@ -1238,6 +1405,8 @@ class DatabaseHelper {
             'description_de': cardData['description_de'],
             'name_pt': cardData['name_pt'],
             'description_pt': cardData['description_pt'],
+            'name_sp': cardData['name_sp'],
+            'description_sp': cardData['description_sp'],
             'created_at': now,
             'updated_at': now,
           }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -1256,8 +1425,9 @@ class DatabaseHelper {
                   set_name_fr, set_code_fr, rarity_fr, rarity_code_fr, set_price_fr,
                   set_name_de, set_code_de, rarity_de, rarity_code_de, set_price_de,
                   set_name_pt, set_code_pt, rarity_pt, rarity_code_pt, set_price_pt,
+                  set_name_sp, set_code_sp, rarity_sp, rarity_code_sp, set_price_sp,
                   created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ''', [
                 cardId, setCode, p['set_name'],
                 rarity, p['rarity_code'],
@@ -1271,6 +1441,8 @@ class DatabaseHelper {
                 p['set_price_de'] is num ? p['set_price_de'] : double.tryParse(p['set_price_de']?.toString() ?? ''),
                 p['set_name_pt'], p['set_code_pt'], p['rarity_pt'], p['rarity_code_pt'],
                 p['set_price_pt'] is num ? p['set_price_pt'] : double.tryParse(p['set_price_pt']?.toString() ?? ''),
+                p['set_name_sp'], p['set_code_sp'], p['rarity_sp'], p['rarity_code_sp'],
+                p['set_price_sp'] is num ? p['set_price_sp'] : double.tryParse(p['set_price_sp']?.toString() ?? ''),
                 now, now,
               ]);
 
@@ -1380,7 +1552,7 @@ class DatabaseHelper {
         yc.race, yc.archetype, yc.attribute,
         yc.atk, yc.def, yc.level, yc.scale, yc.linkval, yc.linkmarkers,
         yc.ygoprodeck_url,
-        yc.image_url AS imageUrl,
+        COALESCE(yp.artwork, yc.image_url) AS imageUrl,
         yp.id AS printId,
         yp.set_code AS setCode,
         $setCodeCol AS localizedSetCode,
@@ -1503,7 +1675,9 @@ class DatabaseHelper {
             cardData['set_name'],
             cardData['set_series'],
             cardData['number'],
-            cardData['image_url'],
+            // Dopo l'upload su Storage il campo diventa camelCase 'imageUrl';
+            // prima dell'upload (o se fallisce) rimane 'image_url'
+            cardData['imageUrl'] ?? cardData['image_url'],
             cardData['name_it'],
             cardData['name_fr'],
             cardData['name_de'],
@@ -1639,7 +1813,7 @@ class DatabaseHelper {
         pc.set_id AS setId,
         pc.set_name AS cardSetName,
         pc.number,
-        pc.image_url AS imageUrl,
+        COALESCE(pp.artwork, pc.image_url) AS imageUrl,
         pp.id AS printId,
         pp.set_code AS setCode,
         $setCodeCol AS localizedSetCode,
@@ -1654,7 +1828,7 @@ class DatabaseHelper {
         $isLocalizedPrint AS isLocalizedPrint,
         EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(pc.id AS TEXT) AND collection = 'pokemon') AS isOwned
       FROM pokemon_cards pc
-      INNER JOIN pokemon_prints pp ON pc.id = pp.card_id
+      LEFT JOIN pokemon_prints pp ON pc.id = pp.card_id
       $whereClause
       ORDER BY pc.name, $setCodeCol
       LIMIT ? OFFSET ?
@@ -1859,7 +2033,7 @@ class DatabaseHelper {
     Database db = await database;
     if (collection == 'yugioh') {
       return db.rawQuery('''
-        SELECT yc.id, yc.name, yc.image_url as imageUrl,
+        SELECT yc.id, yc.name, COALESCE(p.artwork, yc.image_url) as imageUrl,
                p.set_code as serialNumber, p.rarity,
                CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END as isOwned
         FROM yugioh_prints p
@@ -1876,7 +2050,7 @@ class DatabaseHelper {
       ''', [setIdentifier]);
     } else if (collection == 'onepiece') {
       return db.rawQuery('''
-        SELECT oc.id, oc.name, oc.image_url as imageUrl,
+        SELECT oc.id, oc.name, COALESCE(p.artwork, oc.image_url) as imageUrl,
                p.card_set_id as serialNumber, p.rarity,
                CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END as isOwned
         FROM onepiece_prints p
@@ -2067,6 +2241,58 @@ class DatabaseHelper {
     if (r.isNotEmpty) await deleteCard(r.first['id'] as int);
   }
 
+  /// Delete albums and cards that have NO firestoreId and are NOT in pending_sync.
+  /// These are orphaned rows (sync was lost) — they would duplicate remote items
+  /// when pullFromCloud() inserts them with a firestoreId.
+  Future<void> deleteOrphanedItems() async {
+    final db = await database;
+    await db.rawDelete('''
+      DELETE FROM cards WHERE firestoreId IS NULL
+        AND id NOT IN (
+          SELECT local_id FROM pending_sync WHERE table_name = 'cards'
+        )
+    ''');
+    await db.rawDelete('''
+      DELETE FROM albums WHERE firestoreId IS NULL
+        AND id NOT IN (
+          SELECT local_id FROM pending_sync WHERE table_name = 'albums'
+        )
+    ''');
+  }
+
+  /// Delete albums that have a firestoreId but it's NOT in [keepIds].
+  /// Albums without a firestoreId (offline-created, not yet synced) are untouched.
+  Future<void> deleteAlbumsNotInFirestoreIds(List<String> keepIds) async {
+    if (keepIds.isEmpty) {
+      // Delete all albums that have a firestoreId
+      final db = await database;
+      await db.delete('albums', where: 'firestoreId IS NOT NULL');
+      return;
+    }
+    final db = await database;
+    final placeholders = keepIds.map((_) => '?').join(',');
+    await db.rawDelete(
+      'DELETE FROM albums WHERE firestoreId IS NOT NULL AND firestoreId NOT IN ($placeholders)',
+      keepIds,
+    );
+  }
+
+  /// Delete cards that have a firestoreId but it's NOT in [keepIds].
+  /// Cards without a firestoreId (offline-created, not yet synced) are untouched.
+  Future<void> deleteCardsNotInFirestoreIds(List<String> keepIds) async {
+    if (keepIds.isEmpty) {
+      final db = await database;
+      await db.delete('cards', where: 'firestoreId IS NOT NULL');
+      return;
+    }
+    final db = await database;
+    final placeholders = keepIds.map((_) => '?').join(',');
+    await db.rawDelete(
+      'DELETE FROM cards WHERE firestoreId IS NOT NULL AND firestoreId NOT IN ($placeholders)',
+      keepIds,
+    );
+  }
+
   Future<void> addPendingSync(String tableName, int localId, String changeType, {String? data}) async {
     Database db = await database;
     await db.insert('pending_sync', {
@@ -2081,6 +2307,28 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getPendingSync() async {
     Database db = await database;
     return await db.query('pending_sync', orderBy: 'created_at ASC');
+  }
+
+  Future<int> getPendingSyncCount() async {
+    Database db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM pending_sync');
+    return result.first['count'] as int? ?? 0;
+  }
+
+  /// Restituisce il timestamp più recente tra cards e albums (updated_at),
+  /// utile per capire se il locale ha dati più aggiornati del cloud.
+  Future<DateTime?> getMaxLocalUpdatedAt() async {
+    Database db = await database;
+    final result = await db.rawQuery('''
+      SELECT MAX(updated_at) as max_ts FROM (
+        SELECT updated_at FROM cards
+        UNION ALL
+        SELECT updated_at FROM albums
+      )
+    ''');
+    final ts = result.first['max_ts'] as String?;
+    if (ts == null) return null;
+    return DateTime.tryParse(ts);
   }
 
   Future<void> clearPendingSync({int? id}) async {

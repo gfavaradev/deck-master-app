@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
+import '../services/notification_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/card_dialogs.dart';
@@ -43,6 +44,8 @@ class _CatalogPageState extends State<CatalogPage> {
   String _preferredLanguage = 'EN';
   bool _hasUpdate = false;
   bool _isDownloadingUpdate = false;
+  bool _isCatalogMissing = false; // true = nessun catalogo locale, bisogna scaricarlo
+  String? _loadError;
   double? _downloadProgress;
   DateTime? _downloadStartTime;
   int? _lastUsedAlbumId;
@@ -106,25 +109,87 @@ class _CatalogPageState extends State<CatalogPage> {
     ]);
   }
 
-  /// Check if there's a catalog update available
+  /// Check if there's a catalog update available.
+  /// Never auto-downloads or shows dialogs — the download flow is managed by
+  /// MainLayout (startup check) and HomePageSimple (post-unlock prompt).
+  /// Here we only set state flags so the UI shows the right inline widget.
   Future<void> _checkForUpdates() async {
-    if (widget.collectionKey != 'yugioh' && widget.collectionKey != 'onepiece') return;
+    if (widget.collectionKey != 'yugioh' &&
+        widget.collectionKey != 'onepiece' &&
+        widget.collectionKey != 'pokemon') {
+      return;
+    }
 
     try {
       final updateInfo = widget.collectionKey == 'onepiece'
           ? await _dbHelper.checkOnepieceCatalogUpdates()
-          : await _dbHelper.checkCatalogUpdates();
+          : widget.collectionKey == 'pokemon'
+              ? await _dbHelper.checkPokemonCatalogUpdates()
+              : await _dbHelper.checkCatalogUpdates();
       if (!mounted) return;
 
-      final isFirst = updateInfo['isFirstDownload'] == true;
-      if (isFirst) {
-        // Nessun catalogo locale: avvia il download automaticamente in background
-        _downloadUpdate();
-      } else if (updateInfo['needsUpdate'] == true) {
-        // Aggiornamento disponibile: mostra il banner "Aggiorna"
-        setState(() => _hasUpdate = true);
+      if (updateInfo['needsUpdate'] == true) {
+        setState(() {
+          if (updateInfo['isFirstDownload'] == true) {
+            _isCatalogMissing = true;
+          } else {
+            _hasUpdate = true;
+          }
+        });
       }
     } catch (_) {}
+  }
+
+  void _showUpdateDialog(Map<String, dynamic> updateInfo) {
+    final sizeMb = updateInfo['estimatedSizeMb']?.toString();
+    final collectionName = widget.collectionName;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgMedium,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.system_update, color: AppColors.gold),
+            const SizedBox(width: 10),
+            const Text('Aggiornamento disponibile',
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+          ],
+        ),
+        content: Text(
+          sizeMb != null
+              ? 'È disponibile un aggiornamento del catalogo $collectionName (${sizeMb}MB).\nVuoi scaricarlo adesso?'
+              : 'È disponibile un aggiornamento del catalogo $collectionName.\nVuoi scaricarlo adesso?',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              // Salva reminder: alla prossima apertura mostra la notifica
+              NotificationService().scheduleCatalogUpdateReminder(
+                collectionName: collectionName,
+                collectionKey: widget.collectionKey,
+              );
+              setState(() => _hasUpdate = true);
+            },
+            child: const Text('Più tardi',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              NotificationService().cancelCatalogReminder();
+              _downloadUpdate();
+            },
+            style: FilledButton.styleFrom(backgroundColor: AppColors.gold),
+            child: const Text('Scarica ora',
+                style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Download catalog update
@@ -145,17 +210,22 @@ class _CatalogPageState extends State<CatalogPage> {
             if (mounted) setState(() => _downloadProgress = progress);
           },
         );
+      } else if (widget.collectionKey == 'pokemon') {
+        await _dbHelper.redownloadPokemonCatalog(
+          onProgress: (current, total) {
+            if (mounted) setState(() => _downloadProgress = current / total);
+          },
+          onSaveProgress: (progress) {
+            if (mounted) setState(() => _downloadProgress = progress);
+          },
+        );
       } else {
         await _dbHelper.redownloadYugiohCatalog(
           onProgress: (current, total) {
-            if (mounted) {
-              setState(() => _downloadProgress = current / total);
-            }
+            if (mounted) setState(() => _downloadProgress = current / total);
           },
           onSaveProgress: (progress) {
-            if (mounted) {
-              setState(() => _downloadProgress = progress);
-            }
+            if (mounted) setState(() => _downloadProgress = progress);
           },
         );
       }
@@ -165,6 +235,7 @@ class _CatalogPageState extends State<CatalogPage> {
           _isDownloadingUpdate = false;
           _downloadProgress = null;
           _hasUpdate = false;
+          _isCatalogMissing = false;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -208,8 +279,10 @@ class _CatalogPageState extends State<CatalogPage> {
 
   /// Load first page of cards with pagination
   Future<void> _loadCards() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
+      _loadError = null;
       _currentOffset = 0;
       _catalogCards = [];
       _hasMoreCards = true;
@@ -242,22 +315,12 @@ class _CatalogPageState extends State<CatalogPage> {
     }
   }
 
-  /// Rileva la lingua dal codice seriale digitato (es. "LOB-EN001" → "EN", "SDAZ-IT042" → "IT").
-  /// Ritorna null se il pattern non è riconosciuto, così il chiamante usa _preferredLanguage.
-  String? _detectLanguageFromQuery(String query) {
-    final match = RegExp(r'^[A-Z0-9]+-([A-Z]{2})\d', caseSensitive: false)
-        .firstMatch(query.trim());
-    if (match == null) return null;
-    final code = match.group(1)!.toUpperCase();
-    const valid = {'EN', 'IT', 'FR', 'DE', 'PT'};
-    return valid.contains(code) ? code : null;
-  }
 
   /// Load a single page of cards
   Future<void> _loadPage() async {
     try {
       final detectedLang = widget.collectionKey == 'yugioh'
-          ? _detectLanguageFromQuery(_lastQuery)
+          ? LanguageService.detectLanguageFromQuery(_lastQuery)
           : null;
       final effectiveLanguage = detectedLang ?? _preferredLanguage;
 
@@ -288,6 +351,7 @@ class _CatalogPageState extends State<CatalogPage> {
     } catch (e) {
       debugPrint('Error loading cards: $e');
       _hasMoreCards = false;
+      if (mounted) setState(() => _loadError = 'Errore di caricamento. Controlla la connessione.');
     }
   }
 
@@ -333,22 +397,19 @@ class _CatalogPageState extends State<CatalogPage> {
     setState(() => _isAdding = true);
 
     try {
-      // Get selected cards by matching keys
       final selectedCards = _catalogCards
           .where((card) => _selectedCardIds.contains(_getCardKey(card)))
           .toList();
 
-      // Sort albums: last used first, rest in original order
-      final sortedAlbums = List<AlbumModel>.from(_availableAlbums);
-      if (_lastUsedAlbumId != null) {
-        sortedAlbums.sort((a, b) {
+      // Sort albums: last used first
+      final sortedAlbums = List<AlbumModel>.from(_availableAlbums)
+        ..sort((a, b) {
           if (a.id == _lastUsedAlbumId) return -1;
           if (b.id == _lastUsedAlbumId) return 1;
           return 0;
         });
-      }
 
-      // Show album selection dialog
+      // Album picker
       final selectedAlbum = await showDialog<AlbumModel>(
         context: context,
         builder: (context) => AlertDialog(
@@ -370,8 +431,7 @@ class _CatalogPageState extends State<CatalogPage> {
                         ),
                         title: Text(album.name),
                         subtitle: isLastUsed
-                            ? const Text('Ultimo usato',
-                                style: TextStyle(fontSize: 11, color: Colors.amber))
+                            ? const Text('Ultimo usato', style: TextStyle(fontSize: 11, color: Colors.amber))
                             : null,
                         onTap: () => Navigator.pop(context, album),
                       );
@@ -379,45 +439,37 @@ class _CatalogPageState extends State<CatalogPage> {
                   ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Annulla'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
           ],
         ),
       );
-
       if (selectedAlbum == null) return;
 
-      // Check album capacity before adding
+      // Capacity check
       final currentCount = await _dbHelper.getCardCountByAlbum(selectedAlbum.id!);
       final remaining = selectedAlbum.maxCapacity - currentCount;
       if (remaining <= 0) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Album "${selectedAlbum.name}" è pieno ($currentCount/${selectedAlbum.maxCapacity}).'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Album "${selectedAlbum.name}" è pieno ($currentCount/${selectedAlbum.maxCapacity}).'),
+            backgroundColor: Colors.red,
+          ));
         }
         return;
       }
-      final cardsToAdd = selectedCards.length > remaining ? remaining : selectedCards.length;
-      final limitedCards = selectedCards.sublist(0, cardsToAdd);
-      if (cardsToAdd < selectedCards.length && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Album quasi pieno: aggiunte solo $cardsToAdd/${selectedCards.length} carte.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+      final limitedCards = selectedCards.length > remaining
+          ? selectedCards.sublist(0, remaining)
+          : selectedCards;
+      if (limitedCards.length < selectedCards.length && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Album quasi pieno: aggiunte solo ${limitedCards.length}/${selectedCards.length} carte.'),
+          backgroundColor: Colors.orange,
+        ));
       }
 
-      // Show progress dialog for multiple cards
+      // Progress dialog
       ValueNotifier<int>? progressNotifier;
-      final totalToAdd = limitedCards.length;
-      if (totalToAdd > 1 && mounted) {
+      if (limitedCards.length > 1 && mounted) {
         progressNotifier = ValueNotifier<int>(0);
         showDialog(
           context: context,
@@ -428,123 +480,47 @@ class _CatalogPageState extends State<CatalogPage> {
               title: const Text('Aggiunta in corso...'),
               content: ValueListenableBuilder<int>(
                 valueListenable: progressNotifier!,
-                builder: (context, progress, _) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      LinearProgressIndicator(
-                        value: totalToAdd > 0 ? progress / totalToAdd : null,
-                      ),
-                      const SizedBox(height: 12),
-                      Text('$progress / $totalToAdd carte elaborate'),
-                    ],
-                  );
-                },
+                builder: (context, progress, _) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    LinearProgressIndicator(value: limitedCards.isNotEmpty ? progress / limitedCards.length : null),
+                    const SizedBox(height: 12),
+                    Text('$progress / ${limitedCards.length} carte elaborate'),
+                  ],
+                ),
               ),
             ),
           ),
         );
       }
 
-      // Add cards to collection; route duplicates to Doppioni (same logic as single-card add)
-      int addedCount = 0;
-      int updatedCount = 0;
-      int doppioniCount = 0;
-      int? doppioniAlbumId;
+      // Delegate add logic to the service
+      final result = await _dbHelper.addCatalogCardsToAlbum(
+        limitedCards, selectedAlbum, widget.collectionKey,
+        onProgress: (done, total) => progressNotifier?.value = done,
+      );
 
-      for (final card in limitedCards) {
-        try {
-          final catalogId = card['id']?.toString();
-          final name = card['localizedName'] ?? card['name'] ?? 'Unknown';
-          final serialNumber = card['localizedSetCode'] ?? card['setCode'] ?? '';
-          final rarity = card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'] ?? '';
-
-          // Check if this exact print exists in ANY album across the whole collection
-          final existingAnywhere = await _dbHelper.findOwnedInstances(
-            widget.collectionKey, name, serialNumber, rarity,
-          );
-
-          if (existingAnywhere.isNotEmpty) {
-            // Already owned → route to Doppioni
-            doppioniAlbumId ??= await _getOrCreateDoppioniAlbum();
-            final existingInDoppioni = existingAnywhere
-                .where((c) => c.albumId == doppioniAlbumId)
-                .toList();
-            if (existingInDoppioni.isNotEmpty) {
-              await _dbHelper.updateCard(existingInDoppioni.first.copyWith(
-                quantity: existingInDoppioni.first.quantity + 1,
-              ));
-            } else {
-              await _dbHelper.insertCard(CardModel(
-                catalogId: catalogId,
-                name: name,
-                serialNumber: serialNumber,
-                collection: widget.collectionKey,
-                albumId: doppioniAlbumId,
-                type: card['type'] ?? card['card_type'] ?? '',
-                rarity: rarity,
-                description: card['localizedDescription'] ?? card['description'] ?? '',
-                imageUrl: card['artwork'] ?? card['imageUrl'],
-                value: ((card['localizedSetPrice'] ?? card['setPrice'] ?? card['marketPrice']) as num?)?.toDouble() ?? 0.0,
-              ));
-            }
-            doppioniCount++;
-          } else {
-            // Not yet owned → add to selected album (increment if already there)
-            final existingInAlbum = await _dbHelper.findCardInAlbum(
-              selectedAlbum.id!, catalogId, serialNumber, rarity,
-            );
-            if (existingInAlbum != null) {
-              await _dbHelper.updateCard(
-                existingInAlbum.copyWith(quantity: existingInAlbum.quantity + 1),
-              );
-              updatedCount++;
-            } else {
-              await _dbHelper.insertCard(CardModel(
-                catalogId: catalogId,
-                name: name,
-                serialNumber: serialNumber,
-                collection: widget.collectionKey,
-                albumId: selectedAlbum.id!,
-                type: card['type'] ?? card['card_type'] ?? '',
-                rarity: rarity,
-                description: card['localizedDescription'] ?? card['description'] ?? '',
-                imageUrl: card['artwork'] ?? card['imageUrl'],
-                value: ((card['localizedSetPrice'] ?? card['setPrice'] ?? card['marketPrice']) as num?)?.toDouble() ?? 0.0,
-              ));
-              addedCount++;
-            }
-          }
-        } catch (e) {
-          debugPrint('Error adding card: $e');
-        }
-        progressNotifier?.value++;
-      }
-
-      // Close progress dialog
       if (progressNotifier != null && mounted) {
         Navigator.pop(context);
         progressNotifier.dispose();
       }
 
       if (mounted) {
-        final parts = <String>[];
-        if (addedCount > 0) parts.add('$addedCount aggiunte');
-        if (updatedCount > 0) parts.add('$updatedCount quantità aggiornate');
-        if (doppioniCount > 0) parts.add('$doppioniCount nei Doppioni');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(parts.isNotEmpty ? parts.join(', ') : 'Nessuna modifica'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // Remember last used album
+        final added = result['added'] ?? 0;
+        final updated = result['updated'] ?? 0;
+        final doppioni = result['doppioni'] ?? 0;
+        final parts = <String>[
+          if (added > 0) '$added aggiunte',
+          if (updated > 0) '$updated quantità aggiornate',
+          if (doppioni > 0) '$doppioni nei Doppioni',
+        ];
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(parts.isNotEmpty ? parts.join(', ') : 'Nessuna modifica'),
+          backgroundColor: Colors.green,
+        ));
         final prefs = await SharedPreferences.getInstance();
         await prefs.setInt('last_album_id_${widget.collectionKey}', selectedAlbum.id!);
         setState(() => _lastUsedAlbumId = selectedAlbum.id);
-
-        // Clear selection and reload
         _clearSelection();
         await _loadAlbumsAndOwned();
         await _loadCards();
@@ -554,17 +530,6 @@ class _CatalogPageState extends State<CatalogPage> {
     }
   }
 
-  Future<int> _getOrCreateDoppioniAlbum() async {
-    final albums = await _dbHelper.getAlbumsByCollection(widget.collectionKey);
-    final existing = albums.where((a) => a.name == 'Doppioni').toList();
-    if (existing.isNotEmpty) return existing.first.id!;
-    return await _dbHelper.insertAlbum(AlbumModel(
-      name: 'Doppioni',
-      collection: widget.collectionKey,
-      maxCapacity: 1000,
-    ));
-  }
-
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -572,7 +537,7 @@ class _CatalogPageState extends State<CatalogPage> {
         Column(
           children: [
             if (_isSelectionMode) _buildSelectionBanner(),
-            if (_hasUpdate) _buildUpdateBanner(),
+            if (_hasUpdate && !_isDownloadingUpdate) _buildUpdateIcon(),
             if (_isDownloadingUpdate) _buildDownloadProgress(),
           Padding(
             padding: const EdgeInsets.all(8.0),
@@ -599,9 +564,31 @@ class _CatalogPageState extends State<CatalogPage> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _catalogCards.isEmpty
-                    ? const Center(child: Text('Nessuna carta trovata'))
-                    : GridView.builder(
+                : _loadError != null && _catalogCards.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.wifi_off, size: 48, color: Colors.grey),
+                              const SizedBox(height: 12),
+                              Text(_loadError!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: _loadCards,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Riprova'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _catalogCards.isEmpty
+                        ? _isCatalogMissing
+                            ? _buildCatalogMissingState()
+                            : const Center(child: Text('Nessuna carta trovata'))
+                        : GridView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(8),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -649,7 +636,8 @@ class _CatalogPageState extends State<CatalogPage> {
                               '${card['id']}-${card['localizedSetCode'] ?? card['setCode'] ?? ''}';
                           final int ownedQty = _ownedQuantityMap[ownedKey] ?? 0;
 
-                          return InkWell(
+                          return RepaintBoundary(
+                            child: InkWell(
                             onTap: () {
                               if (_isSelectionMode) {
                                 _toggleSelection(card);
@@ -781,7 +769,7 @@ class _CatalogPageState extends State<CatalogPage> {
                                   ),
                               ],
                             ),
-                          );
+                          ));
                         },
                       ),
           ),
@@ -1099,50 +1087,78 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
-  /// Build update available banner
-  Widget _buildUpdateBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.bgMedium,
-        border: Border(bottom: BorderSide(color: AppColors.gold.withValues(alpha: 0.3))),
+  /// Empty state quando il catalogo non è ancora stato scaricato
+  Widget _buildCatalogMissingState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_download_outlined, size: 64, color: AppColors.gold),
+            const SizedBox(height: 16),
+            Text(
+              'Catalogo ${widget.collectionName} non disponibile',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Scarica il catalogo per sfogliare e aggiungere carte alla tua collezione.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _isDownloadingUpdate ? null : _downloadUpdate,
+              icon: _isDownloadingUpdate
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
+                    )
+                  : const Icon(Icons.download_rounded),
+              label: Text(_isDownloadingUpdate ? 'Download in corso...' : 'Scarica catalogo'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: Colors.black,
+              ),
+            ),
+          ],
+        ),
       ),
-      child: Row(
-        children: [
-          const Icon(Icons.system_update, color: AppColors.gold, size: 24),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Aggiornamento disponibile',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
-                  ),
+    );
+  }
+
+  /// Barra compatta che indica aggiornamento in attesa
+  Widget _buildUpdateIcon() {
+    return GestureDetector(
+      onTap: () => _showUpdateDialog({}),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: AppColors.gold.withValues(alpha: 0.12),
+        child: Row(
+          children: [
+            const Icon(Icons.system_update, color: AppColors.gold, size: 16),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Aggiornamento catalogo disponibile — tocca per scaricarlo',
+                style: TextStyle(
+                  color: AppColors.gold,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                 ),
-                SizedBox(height: 2),
-                Text(
-                  'Il catalogo è stato aggiornato',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton.icon(
-            onPressed: _downloadUpdate,
-            icon: const Icon(Icons.download, size: 16, color: Colors.black),
-            label: const Text('Aggiorna', style: TextStyle(color: Colors.black)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.gold,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            ),
-          ),
-        ],
+            const Icon(Icons.chevron_right, color: AppColors.gold, size: 16),
+          ],
+        ),
       ),
     );
   }

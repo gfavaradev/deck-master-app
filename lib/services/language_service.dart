@@ -4,7 +4,7 @@ import 'dart:io' show Platform;
 
 class LanguageService {
   static const String _languageKey = 'yugioh_display_language';
-  static const List<String> supportedLanguages = ['EN', 'IT', 'FR', 'DE', 'PT'];
+  static const List<String> supportedLanguages = ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'];
 
   static const Map<String, String> languageLabels = {
     'EN': 'English',
@@ -12,6 +12,7 @@ class LanguageService {
     'FR': 'Français',
     'DE': 'Deutsch',
     'PT': 'Português',
+    'SP': 'Español',
   };
 
   // In-memory cache: avoids repeated SharedPreferences I/O on every page load
@@ -43,5 +44,15 @@ class LanguageService {
     final String locale = Platform.localeName;
     final String code = locale.split('_')[0].toUpperCase();
     return supportedLanguages.contains(code) ? code : 'EN';
+  }
+
+  /// Detects language from a serial code query, e.g. "LOB-EN001" → "EN", "SDAZ-IT042" → "IT".
+  /// Returns null if the pattern is not recognized.
+  static String? detectLanguageFromQuery(String query) {
+    final match = RegExp(r'^[A-Z0-9]+-([A-Z]{2})\d', caseSensitive: false)
+        .firstMatch(query.trim());
+    if (match == null) return null;
+    final code = match.group(1)!.toUpperCase();
+    return supportedLanguages.contains(code) ? code : null;
   }
 }

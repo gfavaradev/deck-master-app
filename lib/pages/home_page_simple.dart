@@ -35,7 +35,13 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     if (mounted) {
       setState(() {
         _unlockedCollections = all.where((c) => c.isUnlocked).toList();
-        _availableCollections = all.where((c) => !c.isUnlocked).toList();
+        final available = all.where((c) => !c.isUnlocked).toList();
+        available.sort((a, b) {
+          final aHas = _catalogAvailable.contains(a.key) ? 0 : 1;
+          final bHas = _catalogAvailable.contains(b.key) ? 0 : 1;
+          return aHas.compareTo(bHas);
+        });
+        _availableCollections = available;
         _isLoading = false;
       });
     }
@@ -43,9 +49,75 @@ class _HomePageSimpleState extends State<HomePageSimple> {
 
   Future<void> _unlock(CollectionModel collection) async {
     await _repo.unlockCollection(collection.key);
-    // Il download del catalogo viene gestito automaticamente da CatalogPage
-    // al primo accesso, in modo non bloccante.
     _loadCollections();
+    _checkAndPromptCatalogDownload(collection);
+  }
+
+  Future<void> _checkAndPromptCatalogDownload(CollectionModel collection) async {
+    if (!mounted) return;
+    try {
+      final info = await _repo.checkCollectionCatalogUpdates(collection.key);
+      if (!mounted || info['needsUpdate'] != true) return;
+      _showCatalogDownloadDialog(collection, info);
+    } catch (_) {}
+  }
+
+  void _showCatalogDownloadDialog(CollectionModel collection, Map<String, dynamic> info) {
+    final totalCards = info['totalCards'] as int? ?? 0;
+    final mb = (totalCards * 3 / 1024).clamp(1.0, 999.0);
+    final sizeStr = '~${mb.toStringAsFixed(0)} MB';
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('Catalogo ${collection.name}'),
+        content: Text(
+          'Il catalogo di ${collection.name} è disponibile ($sizeStr).\nVuoi scaricarlo adesso?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Più tardi'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _downloadCatalog(collection, info);
+            },
+            child: const Text('Scarica'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadCatalog(CollectionModel collection, Map<String, dynamic> info) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Download catalogo ${collection.name} in corso...'),
+        duration: const Duration(minutes: 10),
+      ),
+    );
+    try {
+      await _repo.downloadCollectionCatalog(collection.key, updateInfo: info);
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Catalogo ${collection.name} scaricato con successo!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore download: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -74,20 +146,22 @@ class _HomePageSimpleState extends State<HomePageSimple> {
             ),
             const SizedBox(height: 30),
           ],
-          _buildSectionTitle('Collezioni Disponibili'),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: 1.2,
+          if (_availableCollections.isNotEmpty) ...[
+            _buildSectionTitle('Collezioni Disponibili'),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1.2,
+              ),
+              itemCount: _availableCollections.length,
+              itemBuilder: (context, index) =>
+                  _buildCollectionTile(_availableCollections[index], false),
             ),
-            itemCount: _availableCollections.length,
-            itemBuilder: (context, index) =>
-                _buildCollectionTile(_availableCollections[index], false),
-          ),
+          ],
         ],
       ),
     );

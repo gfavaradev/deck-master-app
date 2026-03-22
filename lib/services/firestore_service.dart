@@ -435,6 +435,15 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
+  Future<DateTime?> getLastSync(String userId) async {
+    try {
+      final doc = await _firestore.collection('users').doc(userId).get();
+      final ts = doc.data()?['lastSyncAt'];
+      if (ts is Timestamp) return ts.toDate();
+    } catch (_) {}
+    return null;
+  }
+
   Future<bool> hasUserData(String userId) async {
     // Check if user document exists OR if user has any subcollections (collections, albums, cards, decks)
     final doc = await _firestore.collection('users').doc(userId).get();
@@ -468,5 +477,25 @@ class FirestoreService {
     if (cards.docs.isNotEmpty) return true;
 
     return false;
+  }
+
+  /// Delete all albums, cards and decks documents for a user.
+  /// Used by resetAndResync to start from a clean slate.
+  Future<void> clearUserData(String userId) async {
+    for (final col in ['albums', 'cards', 'decks']) {
+      QuerySnapshot snapshot;
+      do {
+        snapshot = await _firestore
+            .collection('users/$userId/$col')
+            .limit(450)
+            .get();
+        if (snapshot.docs.isEmpty) break;
+        final batch = _firestore.batch();
+        for (final doc in snapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      } while (snapshot.docs.length == 450);
+    }
   }
 }

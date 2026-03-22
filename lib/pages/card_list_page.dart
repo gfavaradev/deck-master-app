@@ -9,6 +9,7 @@ import '../widgets/collection_summary.dart';
 import '../widgets/card_dialogs.dart';
 import '../theme/app_colors.dart';
 import 'support_page.dart';
+import 'camera_recognition_page.dart';
 import '../services/language_service.dart';
 
 class CardListPage extends StatefulWidget {
@@ -61,6 +62,11 @@ class _CardListPageState extends State<CardListPage> {
     _syncSub?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _onRefresh() async {
+    await _repo.fullSync();
+    await _refreshCards();
   }
 
   Future<void> _refreshCards() async {
@@ -137,6 +143,65 @@ class _CardListPageState extends State<CardListPage> {
     });
   }
 
+
+  Future<void> _openOcr() async {
+    final result = await Navigator.push<RecognitionResult>(
+      context,
+      MaterialPageRoute(builder: (_) => const CameraRecognitionPage()),
+    );
+    if (result == null || !mounted) return;
+
+    _searchController.text = result.cardName;
+    _filterCards(result.cardName);
+
+    setState(() => _catalogSearching = true);
+    final results = await _repo.getCatalogCardsByCollection(
+      widget.collectionKey,
+      query: result.cardName,
+      language: _preferredLanguage,
+      limit: 10,
+    );
+    if (!mounted) return;
+    setState(() => _catalogSearching = false);
+
+    if (results.isEmpty) return;
+
+    if (results.length == 1) {
+      _showAddFromCatalog(results.first);
+      return;
+    }
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgMedium,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              '${results.length} carte trovate per "${result.cardName}"',
+              style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
+            ),
+          ),
+          ...results.map((card) => ListTile(
+                title: Text(card['localizedName'] ?? card['name'] ?? '', style: const TextStyle(color: AppColors.textPrimary)),
+                subtitle: Text(card['setCode'] ?? '', style: const TextStyle(color: AppColors.textSecondary)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAddFromCatalog(card);
+                },
+              )),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
   void _showAddFromCatalog(Map<String, dynamic> catalogCard) {
     CardDialogs.showAddCard(
       context: context,
@@ -155,10 +220,9 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Future<void> _updateQuantity(CardModel card, int delta) async {
-    // Gestione carte dal catalogo (non ancora in un album)
+    // Catalog card not yet in an album: show album picker first
     if (card.albumId == -1) {
       if (delta <= 0) return;
-
       final int? selectedId = await showDialog<int>(
         context: context,
         builder: (context) => AlertDialog(
@@ -172,88 +236,24 @@ class _CardListPageState extends State<CardListPage> {
           ),
         ),
       );
-
       if (!context.mounted || selectedId == null) return;
-      await _repo.insertCard(card.copyWith(
-        resetId: true,
-        albumId: selectedId,
-        quantity: delta,
-      ));
+      await _repo.insertCard(card.copyWith(resetId: true, albumId: selectedId, quantity: delta));
       _refreshCards();
       return;
     }
 
-    final album = _availableAlbums.firstWhere(
-      (a) => a.id == card.albumId,
-      orElse: () => AlbumModel(name: 'Sconosciuto', collection: card.collection, maxCapacity: 0),
-    );
-    final isDoppioni = album.name == 'Doppioni';
-
-    // Minus on a non-doppioni card: drain doppioni first, floor main at 1
-    if (delta < 0 && !isDoppioni) {
-      if (widget.albumId == null) {
-        // General view: check doppioni list for matching card
-        final doppioniMatch = _doppioniCards.where((c) =>
-          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
-          c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
-          (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
-        ).toList();
-
-        if (doppioniMatch.isNotEmpty) {
-          final doppioniCard = doppioniMatch.first;
-          final newDoppioniQty = doppioniCard.quantity - 1;
-          if (newDoppioniQty <= 0) {
-            await _repo.deleteCard(doppioniCard.id!);
-          } else {
-            await _repo.updateCard(doppioniCard.copyWith(quantity: newDoppioniQty));
-          }
-          _refreshCards();
-          return;
-        }
-        // No doppioni left: floor the main card at 1, do nothing
-        return;
-      } else {
-        // Album view: floor the card at 1
-        if (card.quantity + delta < 1) return;
-      }
-    }
-
-    // Plus on a non-doppioni card with quantity >= 1: add to Doppioni
-    if (delta > 0 && !isDoppioni && card.quantity >= 1) {
-      final doppioniAlbumId = await _getOrCreateDuplicatesAlbum();
-      final existingInDoppioni = _doppioniCards.where((c) =>
-        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
-        c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
-        (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
-      ).toList();
-
-      if (existingInDoppioni.isNotEmpty) {
-        await _repo.updateCard(existingInDoppioni.first.copyWith(
-          quantity: existingInDoppioni.first.quantity + delta
-        ));
-      } else {
-        await _repo.insertCard(card.copyWith(
-          resetId: true,
-          albumId: doppioniAlbumId,
-          quantity: delta,
-        ));
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Doppione aggiunto all\'album "Doppioni"'), duration: Duration(seconds: 1))
-      );
-      _refreshCards();
-      return;
-    }
-
-    final newQuantity = card.quantity + delta;
-    if (newQuantity < 1) {
+    // Quantity would drop to zero → delete with undo
+    if (card.quantity + delta < 1) {
       _confirmDelete(card);
       return;
     }
 
-    if (delta > 0 && album.id != null && album.maxCapacity > 0) {
+    // Capacity check for non-doppioni increments in album view
+    final album = _availableAlbums.firstWhere(
+      (a) => a.id == card.albumId,
+      orElse: () => AlbumModel(name: '', collection: card.collection, maxCapacity: 0),
+    );
+    if (delta > 0 && album.name != 'Doppioni' && album.id != null && album.maxCapacity > 0) {
       final freshCount = await _repo.getCardCountByAlbum(album.id!);
       if (freshCount + delta > album.maxCapacity) {
         if (!mounted) return;
@@ -261,7 +261,7 @@ class _CardListPageState extends State<CardListPage> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Capacità Superata'),
-            content: Text('Aumentare la quantità supererà la capacità massima dell\'album ($freshCount/${album.maxCapacity}). Vuoi procedere comunque?'),
+            content: Text('Supererà la capacità massima ($freshCount/${album.maxCapacity}). Procedere?'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
               TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Procedi')),
@@ -272,7 +272,19 @@ class _CardListPageState extends State<CardListPage> {
       }
     }
 
-    await _repo.updateCard(card.copyWith(quantity: newQuantity));
+    // Delegate doppioni routing + update to the service
+    final willAddToDoppioni = delta > 0 && album.name != 'Doppioni' && card.quantity >= 1;
+    await _repo.adjustCardQuantity(
+      card, delta,
+      collectionKey: widget.collectionKey,
+      isAlbumView: widget.albumId != null,
+    );
+    if (!mounted) return;
+    if (willAddToDoppioni) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Doppione aggiunto all\'album "Doppioni"'), duration: Duration(seconds: 1)),
+      );
+    }
     _refreshCards();
   }
 
@@ -288,53 +300,32 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Future<void> _confirmDelete(CardModel card) async {
-    final proceed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Elimina Carta'),
-        content: Text('Sei sicuro di voler eliminare "${card.name}"?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Elimina', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+    final deleted = await _repo.deleteCardWithRelated(
+      card, widget.collectionKey,
+      allRelated: widget.albumId == null,
+    );
+    _refreshCards();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('"${card.name}" eliminata'),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Annulla',
+          onPressed: () async {
+            for (final c in deleted) {
+              await _repo.insertCard(c);
+            }
+            _refreshCards();
+          },
+        ),
       ),
     );
-
-    if (proceed == true) {
-      if (widget.albumId == null) {
-        // Se siamo nella vista generale, eliminiamo TUTTE le istanze di questa carta (tutti gli album)
-        final allRelated = await _repo.getCardsByCollection(widget.collectionKey);
-        final toDelete = allRelated.where((c) =>
-          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
-          c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
-          (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
-        );
-        for (var c in toDelete) {
-          await _repo.deleteCard(c.id!);
-        }
-      } else {
-        // Se siamo in un album specifico, eliminiamo solo quella specifica istanza
-        await _repo.deleteCard(card.id!);
-      }
-      _refreshCards();
-    }
   }
 
-  Future<int> _getOrCreateDuplicatesAlbum() async {
-    final existing = _availableAlbums.where((a) => a.name == 'Doppioni').toList();
-    if (existing.isNotEmpty) return existing.first.id!;
-    
-    final id = await _repo.insertAlbum(AlbumModel(
-      name: 'Doppioni',
-      collection: widget.collectionKey,
-      maxCapacity: 1000,
-    ));
-    await _refreshCards();
-    return id;
-  }
+  Future<int> _getOrCreateDuplicatesAlbum() =>
+      _repo.getOrCreateDoppioniAlbum(widget.collectionKey);
 
   Future<void> _showDetails(CardModel card) async {
     final decks = card.id != null
@@ -460,32 +451,48 @@ class _CardListPageState extends State<CardListPage> {
                   children: [
                     IconButton(
                       icon: Icon(Icons.list, color: !_isGridView ? AppColors.purple : AppColors.textHint),
-                      onPressed: () {
-                        setState(() => _isGridView = false);
-                      },
+                      onPressed: () => setState(() => _isGridView = false),
                       tooltip: 'Vista Lista',
                     ),
                     Container(width: 1, height: 24, color: AppColors.textHint.withValues(alpha: 0.3)),
                     IconButton(
                       icon: Icon(Icons.grid_view, color: _isGridView ? AppColors.purple : AppColors.textHint),
-                      onPressed: () {
-                        setState(() => _isGridView = true);
-                      },
+                      onPressed: () => setState(() => _isGridView = true),
                       tooltip: 'Vista Griglia',
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.document_scanner),
+                color: AppColors.textSecondary,
+                tooltip: 'Riconosci carta (OCR)',
+                onPressed: _catalogSearching ? null : _openOcr,
               ),
             ],
           ),
         ),
         CollectionSummary(uniqueCards: uniqueCards, duplicates: duplicates, totalCards: totalCards, totalValue: totalValue),
         Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _filteredCards.isEmpty
-                  ? _buildEmptyState()
-                  : _isGridView ? _buildGrid() : _buildList(),
+          child: RefreshIndicator(
+            onRefresh: _onRefresh,
+            child: _isLoading
+                ? const Stack(children: [
+                    Center(child: CircularProgressIndicator()),
+                  ])
+                : _filteredCards.isEmpty
+                    ? SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: SizedBox(
+                          height: 400,
+                          child: _buildEmptyState(),
+                        ),
+                      )
+                    : _isGridView
+                        ? _buildGrid()
+                        : _buildList(),
+          ),
         ),
       ],
     );
@@ -493,6 +500,7 @@ class _CardListPageState extends State<CardListPage> {
 
   Widget _buildList() {
     return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       itemCount: _filteredCards.length,
       itemBuilder: (context, index) {
         final card = _filteredCards[index];

@@ -277,9 +277,12 @@ class SyncService {
     if (userId == null) return;
 
     try {
-      await _dbHelper.clearUserData();
+      // Remove orphaned local rows (no firestoreId, not in pending_sync).
+      // These accumulate when sync fails mid-way and cause items to appear
+      // doubled alongside the remote versions that are about to be pulled.
+      await _dbHelper.deleteOrphanedItems();
 
-      // ── Ottimizzazione: fetch albums + cards + decks in parallelo ─────────
+      // ── Fetch remote data in parallel ──────────────────────────────────────
       final results = await Future.wait([
         _firestoreService.getCollections(userId),
         _firestoreService.getAlbums(userId),
@@ -297,23 +300,45 @@ class SyncService {
         if (col.isUnlocked) await _dbHelper.unlockCollection(col.key);
       }
 
-      // Albums (devono essere inseriti prima delle carte per avere la mappa id)
+      // ── Albums: upsert by firestoreId ─────────────────────────────────────
       final Map<String, int> firestoreToLocalAlbumId = {};
-      for (var albumData in remoteAlbums) {
-        final album = AlbumModel(
-          name: albumData['name'],
-          collection: albumData['collection'],
+      final remoteAlbumFsIds = <String>[];
+
+      for (final albumData in remoteAlbums) {
+        final firestoreId = albumData['firestoreId'] as String;
+        remoteAlbumFsIds.add(firestoreId);
+
+        final incoming = AlbumModel(
+          name: albumData['name'] ?? '',
+          collection: albumData['collection'] ?? '',
           maxCapacity: albumData['maxCapacity'] ?? 100,
         );
-        final localId = await _dbHelper.insertAlbum(album);
-        final firestoreId = albumData['firestoreId'] as String;
-        await _dbHelper.updateFirestoreId('albums', localId, firestoreId);
-        firestoreToLocalAlbumId[firestoreId] = localId;
+
+        final existing = await _dbHelper.getAlbumByFirestoreId(firestoreId);
+        if (existing != null) {
+          await _dbHelper.updateAlbum(
+            incoming.copyWith(id: existing.id, firestoreId: firestoreId),
+          );
+          firestoreToLocalAlbumId[firestoreId] = existing.id!;
+        } else {
+          final localId = await _dbHelper.insertAlbum(incoming);
+          await _dbHelper.updateFirestoreId('albums', localId, firestoreId);
+          firestoreToLocalAlbumId[firestoreId] = localId;
+        }
       }
 
-      // Cards
-      for (var cardData in remoteCards) {
-        // Map albumFirestoreId back to local albumId
+      // Delete local albums removed on another device (has firestoreId not in remote set)
+      await _dbHelper.deleteAlbumsNotInFirestoreIds(remoteAlbumFsIds);
+
+      // ── Cards: upsert by firestoreId ──────────────────────────────────────
+      final remoteCardFsIds = <String>[];
+
+      for (final cardData in remoteCards) {
+        final firestoreId = cardData['firestoreId'] as String?;
+        if (firestoreId == null) continue;
+        remoteCardFsIds.add(firestoreId);
+
+        // Map albumFirestoreId → local albumId
         int albumId = cardData['albumId'] ?? -1;
         final albumFirestoreId = cardData['albumFirestoreId'] as String?;
         if (albumFirestoreId != null && firestoreToLocalAlbumId.containsKey(albumFirestoreId)) {
@@ -321,53 +346,60 @@ class SyncService {
         }
 
         final card = CardModel(
-          catalogId: cardData['catalogId'],
-          name: cardData['name'] ?? '',
+          catalogId:    cardData['catalogId'],
+          name:         cardData['name'] ?? '',
           serialNumber: cardData['serialNumber'] ?? '',
-          collection: cardData['collection'] ?? '',
-          albumId: albumId,
-          type: cardData['type'] ?? '',
-          rarity: cardData['rarity'] ?? '',
-          description: cardData['description'] ?? '',
-          quantity: cardData['quantity'] ?? 1,
-          value: (cardData['value'] as num?)?.toDouble() ?? 0.0,
-          imageUrl: cardData['imageUrl'],
+          collection:   cardData['collection'] ?? '',
+          albumId:      albumId,
+          type:         cardData['type'] ?? '',
+          rarity:       cardData['rarity'] ?? '',
+          description:  cardData['description'] ?? '',
+          quantity:     cardData['quantity'] ?? 1,
+          value:        (cardData['value'] as num?)?.toDouble() ?? 0.0,
+          imageUrl:     cardData['imageUrl'],
+          firestoreId:  firestoreId,
         );
-        final localId = await _dbHelper.insertCard(card);
-        await _dbHelper.updateFirestoreId('cards', localId, cardData['firestoreId']);
+
+        final existing = await _dbHelper.getCardByFirestoreId(firestoreId);
+        if (existing != null) {
+          await _dbHelper.updateCard(card.copyWith(id: existing.id));
+        } else {
+          final localId = await _dbHelper.insertCard(card);
+          await _dbHelper.updateFirestoreId('cards', localId, firestoreId);
+        }
       }
 
-      // Decks (già fetchati in parallelo)
-      for (var deckData in remoteDecks) {
-        final localDeckId = await _dbHelper.insertDeck(
-          deckData['name'],
-          deckData['collection'],
-        );
-        await _dbHelper.updateFirestoreId('decks', localDeckId, deckData['firestoreId']);
+      // Delete local cards removed on another device
+      await _dbHelper.deleteCardsNotInFirestoreIds(remoteCardFsIds);
 
-        // Deck cards are embedded - we'd need the local card IDs
-        // For now, deck card sync is best-effort
-        final List<dynamic> deckCards = deckData['cards'] ?? [];
-        for (var dc in deckCards) {
-          try {
-            await _dbHelper.addCardToDeck(
-              localDeckId,
-              dc['cardId'] as int,
-              dc['quantity'] as int,
-            );
-          } catch (_) {
-            // Card might not exist locally yet, skip
-          }
+      // ── Decks: upsert by firestoreId ──────────────────────────────────────
+      final db = await _dbHelper.database;
+      for (final deckData in remoteDecks) {
+        final firestoreId = deckData['firestoreId'] as String?;
+        if (firestoreId == null) continue;
+
+        final existing = await db.query('decks',
+            where: 'firestoreId = ?', whereArgs: [firestoreId]);
+        if (existing.isNotEmpty) {
+          await db.update(
+            'decks',
+            {'name': deckData['name'], 'collection': deckData['collection']},
+            where: 'firestoreId = ?', whereArgs: [firestoreId],
+          );
+        } else {
+          final localDeckId = await _dbHelper.insertDeck(
+            deckData['name'] ?? '',
+            deckData['collection'] ?? '',
+          );
+          await _dbHelper.updateFirestoreId('decks', localDeckId, firestoreId);
         }
       }
 
       await _dbHelper.clearPendingSync();
-      debugPrint('Pull from cloud completed successfully');
+      debugPrint('Pull from cloud completed (merge) — albums: ${remoteAlbums.length}, cards: ${remoteCards.length}');
+      _remoteChangeController.add('cards');
     } catch (e) {
       debugPrint('Error during pull from cloud: $e');
-      // Clear any partial data so the next login retriggers a fresh pull
-      // instead of landing in a state where albums exist but cards don't.
-      try { await _dbHelper.clearUserData(); } catch (_) {}
       rethrow;
     }
   }
@@ -376,11 +408,22 @@ class SyncService {
   // Sync on Login: Decide whether to push or pull
   // ============================================================
 
+  static const _lastSyncKey = 'sync_last_sync_at';
+
+  Future<void> _saveLocalLastSyncAt(DateTime dt) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastSyncKey, dt.toIso8601String());
+  }
+
   Future<void> syncOnLogin() async {
     if (kIsWeb) return;
     if (_isSyncing) return;
 
-    if (_lastSyncTime != null &&
+    // Controlla se ci sono item pending: se sì, non applicare il cooldown
+    final pendingCount = await _dbHelper.getPendingSyncCount();
+    final hasPending = pendingCount > 0;
+
+    if (!hasPending && _lastSyncTime != null &&
         DateTime.now().difference(_lastSyncTime!) < _syncCooldown) {
       debugPrint('Sync skipped — last sync was ${DateTime.now().difference(_lastSyncTime!).inMinutes}min ago');
       return;
@@ -392,39 +435,51 @@ class SyncService {
       final userId = _userId;
       if (userId == null) return;
 
-      // ── Ottimizzazione: tutte le letture partono in parallelo ─────────────
-      // 1. _syncCollections  → Firestore read (collections)
-      // 2. hasUserData       → Firestore read (skip se già cachato)
-      // 3. getAllAlbums       → SQLite read
-      // 4. getAllCards        → SQLite read
+      // Letture in parallelo
       final cachedHasRemote = await _getCachedHasRemote(userId);
 
-      final syncCollsFuture  = _syncCollections(userId);
-      final hasRemoteFuture  = cachedHasRemote
+      final syncCollsFuture   = _syncCollections(userId);
+      final hasRemoteFuture   = cachedHasRemote
           ? Future.value(true)
           : _firestoreService.hasUserData(userId);
-      final albumsFuture     = _dbHelper.getAllAlbums();
-      final cardsFuture      = _dbHelper.getAllCards();
+      final albumsFuture      = _dbHelper.getAllAlbums();
+      final cardsFuture       = _dbHelper.getAllCards();
 
-      // Attendi tutti in parallelo
       await syncCollsFuture;
-      final hasRemoteData = await hasRemoteFuture;
-      final localAlbums   = await albumsFuture;
-      final localCards    = await cardsFuture;
+      final hasRemoteData  = await hasRemoteFuture;
+      final localAlbums    = await albumsFuture;
+      final localCards     = await cardsFuture;
 
       if (hasRemoteData) await _setCachedHasRemote(userId);
 
-      final hasLocalData = localAlbums.isNotEmpty || localCards.isNotEmpty;
+      // Local is considered "present" only when BOTH albums and cards exist.
+      // Albums without cards is an anomalous/partial state (e.g. cards table
+      // was cleared mid-sync) — treat it the same as fully empty so we pull
+      // fresh data from the cloud instead of skipping the restore.
+      final hasLocalData = localAlbums.isNotEmpty && localCards.isNotEmpty;
 
       if (hasRemoteData && !hasLocalData) {
+        // Cloud ha dati, locale vuoto o incompleto → flush pending, poi scarica dal cloud
+        if (hasPending) await flushPendingQueue();
         await pullFromCloud();
       } else if (hasLocalData && !hasRemoteData) {
+        // Locale ha dati, cloud vuoto → carica sul cloud
         await initialUpload();
       } else if (hasRemoteData && hasLocalData) {
-        await flushPendingQueue();
+        // Entrambi hanno dati.
+        // 1. Flush pending: pusha su Firestore solo le modifiche in coda
+        //    (carte/album creati/modificati offline o con sync fallita).
+        //    initialUpload() NON va usato qui — reinseriscerebbe tutti gli item
+        //    come nuovi documenti Firestore, causando duplicati.
+        if (hasPending) await flushPendingQueue();
+
+        // 2. Pull: riceve le modifiche dal cloud (altri dispositivi, ecc.)
+        await pullFromCloud();
       }
 
-      _lastSyncTime = DateTime.now();
+      final now = DateTime.now();
+      _lastSyncTime = now;
+      await _saveLocalLastSyncAt(now);
     } catch (e) {
       debugPrint('Error during sync on login: $e');
     } finally {
@@ -602,6 +657,44 @@ class SyncService {
   // ============================================================
   // Flush Pending Queue
   // ============================================================
+
+  // ============================================================
+  // Reset & Resync: deduplicate local data, clean Firestore, re-upload
+  // ============================================================
+
+  /// Wipe all local user data and pull a fresh copy from Firestore.
+  /// Use when the user sees doubled cards/albums/decks in the app
+  /// (local SQLite has orphaned rows that Firestore does not know about).
+  Future<void> resetAndResync({void Function(String)? onStatus}) async {
+    stopListening();
+
+    final userId = _userId;
+    if (userId == null) return;
+
+    try {
+      onStatus?.call('Pulizia dati locali...');
+
+      // Clear all local user tables (albums, cards, decks, deck_cards, pending_sync)
+      await _dbHelper.clearUserData();
+
+      onStatus?.call('Scaricamento dal cloud...');
+
+      // Pull a fresh copy from Firestore (already clean, no duplicates)
+      await pullFromCloud();
+
+      // Reset the cached has-remote flag so next sync re-checks from scratch
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_hasRemoteDataPrefix$userId');
+
+      onStatus?.call('Completato!');
+      debugPrint('resetAndResync completed');
+    } catch (e) {
+      debugPrint('Error during resetAndResync: $e');
+      rethrow;
+    } finally {
+      startListening();
+    }
+  }
 
   Future<void> flushPendingQueue() async {
     if (!await canSync()) return;

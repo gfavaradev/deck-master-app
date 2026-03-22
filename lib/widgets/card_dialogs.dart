@@ -215,7 +215,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
         widget.availableAlbums.any((a) => a.id == widget.lastUsedAlbumId);
     selectedAlbumId = hasLastUsed
         ? widget.lastUsedAlbumId
-        : widget.availableAlbums.first.id;
+        : (widget.availableAlbums.isNotEmpty ? widget.availableAlbums.first.id : null);
     selectedCatalogCard = initial;
 
     _initAsync();
@@ -275,10 +275,10 @@ class _AddCardDialogState extends State<_AddCardDialog> {
           if (found.isEmpty) {
             found = sets.where((s) => s['setCode'] == preSelectedSetCode).toList();
           }
-          selectedSetCode = found.isNotEmpty ? _setKey(found.first) : _setKey(sets.first);
+          selectedSetCode = found.isNotEmpty ? _setKey(found.first) : (sets.isNotEmpty ? _setKey(sets.first) : null);
         } else {
-          selectedSetCode = _setKey(sets.first);
-          _applySet(sets.first);
+          selectedSetCode = sets.isNotEmpty ? _setKey(sets.first) : null;
+          if (sets.isNotEmpty) _applySet(sets.first);
         }
       } else {
         selectedSetCode = null;

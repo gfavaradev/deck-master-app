@@ -9,6 +9,14 @@ import '../models/subscription_model.dart';
 import '../theme/app_colors.dart';
 import 'admin_collection_page.dart';
 
+/// Azione primaria (bottone) per una collezione admin
+class _OpsAction {
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _OpsAction(this.label, this.icon, this.onTap);
+}
+
 /// Body riutilizzabile con la lista dei cataloghi da gestire
 class AdminCatalogBody extends StatefulWidget {
   const AdminCatalogBody({super.key});
@@ -23,10 +31,12 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   double? _progress;
   String _statusText = '';
   String _currentOp = '';
+  String _runningCollectionKey = '';
 
   // ─── Operations ───────────────────────────────────────────────────────────
 
   Future<void> _run(
+    String collectionKey,
     String opLabel,
     Future<Map<String, dynamic>> Function(String uid) task,
     String Function(Map<String, dynamic> result) successMessage,
@@ -36,6 +46,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
     setState(() {
       _isRunning = true;
+      _runningCollectionKey = collectionKey;
       _progress = null;
       _statusText = '';
       _currentOp = opLabel;
@@ -47,7 +58,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     try {
       final result = await task(uid);
       if (!mounted) return;
-      setState(() => _isRunning = false);
+      setState(() { _isRunning = false; _runningCollectionKey = ''; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(successMessage(result)),
@@ -57,7 +68,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     } catch (e, stack) {
       debugPrint('[$_currentOp] ERROR: $e\n$stack');
       if (mounted) {
-        setState(() => _isRunning = false);
+        setState(() { _isRunning = false; _runningCollectionKey = ''; });
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -84,6 +95,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   }
 
   Future<void> _confirmAndRun(
+    String collectionKey,
     String opLabel,
     String confirmTitle,
     String confirmBody,
@@ -108,7 +120,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await _run(opLabel, task, successMessage);
+    await _run(collectionKey, opLabel, task, successMessage);
   }
 
   void _onProgress(String status, double? progress) {
@@ -116,9 +128,10 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     BackgroundDownloadService.updateStatus(status);
   }
 
-  // ─── Action handlers ──────────────────────────────────────────────────────
+  // ─── Yu-Gi-Oh! action handlers ────────────────────────────────────────────
 
   Future<void> _downloadFull() => _confirmAndRun(
+        'yugioh',
         'Download Completo',
         'Download Completo Catalogo',
         'Scarica l\'intero catalogo Yu-Gi-Oh! da YGOPRODeck API e '
@@ -130,10 +143,11 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           onProgress: _onProgress,
         ),
         (r) => 'Completato! ${r['totalCards']} carte caricate'
-            '${r['preservedAdminCards'] > 0 ? " (${r['preservedAdminCards']} preservate)" : ""}.',
+            '${(r['preservedAdminCards'] as int? ?? 0) > 0 ? " (${r['preservedAdminCards']} preservate)" : ""}.',
       );
 
   Future<void> _downloadIncremental() => _confirmAndRun(
+        'yugioh',
         'Aggiornamento Incrementale',
         'Aggiorna Nuove Carte',
         'Aggiunge solo le carte nuove presenti su YGOPRODeck '
@@ -143,27 +157,13 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => r['newCards'] == 0
+        (r) => (r['newCards'] as int? ?? 0) == 0
             ? 'Nessuna carta nuova trovata.'
             : '${r['newCards']} carte nuove aggiunte.',
       );
 
-  Future<void> _fillSets() => _confirmAndRun(
-        'Riempi Set Mancanti',
-        'Riempi Set Localizzati',
-        'Genera i set IT/FR/DE/PT mancanti per tutte le carte '
-            'nel catalogo Firestore.\n\n'
-            'Scrive solo i chunk che necessitano modifiche. Continuare?',
-        (uid) => _service.fillMissingLocalizedSets(
-          adminUid: uid,
-          onProgress: _onProgress,
-        ),
-        (r) => r['modifiedCards'] == 0
-            ? 'Tutti i set erano già completi.'
-            : '${r['modifiedCards']} carte aggiornate in ${r['modifiedChunks']}/${r['totalChunks']} chunk.',
-      );
-
   Future<void> _migrateImages() => _confirmAndRun(
+        'yugioh',
         'Migrazione Immagini',
         'Migrazione Immagini',
         'Migra le immagini delle carte da ygoprodeck.com a Firebase Storage.\n\n'
@@ -175,7 +175,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           onProgress: (cur, tot) =>
               _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
         ),
-        (r) => r['migrated'] == 0 && r['failed'] == 0
+        (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
             ? 'Tutte le immagini erano già migrate.'
             : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
       );
@@ -183,6 +183,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   // ─── One Piece action handlers ─────────────────────────────────────────────
 
   Future<void> _downloadFullOnePiece() => _confirmAndRun(
+        'onepiece',
         'Download Completo One Piece',
         'Download Completo One Piece TCG',
         'Scarica l\'intero catalogo One Piece TCG da OPTCG API e '
@@ -197,6 +198,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
       );
 
   Future<void> _migrateOnePieceImages() => _confirmAndRun(
+        'onepiece',
         'Migrazione Immagini One Piece',
         'Migrazione Immagini One Piece',
         'Scarica le immagini delle carte One Piece dall\'OPTCG API '
@@ -208,12 +210,13 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           onProgress: (cur, tot) =>
               _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
         ),
-        (r) => r['migrated'] == 0 && r['failed'] == 0
+        (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
             ? 'Tutte le immagini erano già migrate.'
             : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
       );
 
   Future<void> _forceMigrateOnePieceImages() => _confirmAndRun(
+        'onepiece',
         'Ri-migrazione Forzata One Piece',
         'Ri-migrazione Forzata Immagini',
         'Ri-carica TUTTE le immagini One Piece su Firebase Storage, '
@@ -232,6 +235,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   // ─── Pokémon action handlers ──────────────────────────────────────────────
 
   Future<void> _downloadFullPokemon() => _confirmAndRun(
+        'pokemon',
         'Download Completo Pokémon',
         'Download Catalogo Pokémon TCG',
         'Scarica l\'intero catalogo Pokémon TCG da pokemontcg.io e '
@@ -248,6 +252,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
       );
 
   Future<void> _migratePokemonImages() => _confirmAndRun(
+        'pokemon',
         'Migrazione Immagini Pokémon',
         'Migrazione Immagini Pokémon',
         'Scarica le immagini Pokémon da pokemontcg.io e le carica su Firebase Storage '
@@ -259,12 +264,13 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           onProgress: (cur, tot) =>
               _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
         ),
-        (r) => r['migrated'] == 0 && r['failed'] == 0
+        (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
             ? 'Tutte le immagini erano già migrate.'
             : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
       );
 
   Future<void> _forceMigratePokemonImages() => _confirmAndRun(
+        'pokemon',
         'Ri-migrazione Forzata Pokémon',
         'Ri-migrazione Forzata Immagini Pokémon',
         'Ri-carica TUTTE le immagini Pokémon su Firebase Storage, '
@@ -396,13 +402,6 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                   color: Colors.indigo,
                   onTap: _downloadIncremental,
                   tooltip: 'Aggiunge solo le carte nuove (incrementale)',
-                ),
-                _opButton(
-                  icon: Icons.language,
-                  label: 'Riempi Set',
-                  color: Colors.orange.shade700,
-                  onTap: _fillSets,
-                  tooltip: 'Genera i set IT/FR/DE/PT mancanti',
                 ),
                 _opButton(
                   icon: Icons.cloud_upload,

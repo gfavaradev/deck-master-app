@@ -75,13 +75,19 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   }
 
   Future<void> _checkAuth() async {
-    final User? user = FirebaseAuth.instance.currentUser;
+    // On Windows desktop, Firebase Auth restores credentials asynchronously from
+    // a local JSON file. Using currentUser directly can return null before restoration
+    // completes. authStateChanges().first waits for the first emitted auth state.
+    final User? user = await FirebaseAuth.instance
+        .authStateChanges()
+        .first
+        .timeout(const Duration(seconds: 5), onTimeout: () => null);
 
     if (user != null) {
       // Sync parte subito in parallelo con il greeting — non blocca la UI
       // ma aspettiamo che finisca prima di navigare (max 2s extra dopo il greeting)
       final syncFuture = _repo.syncOnLogin()
-          .timeout(const Duration(seconds: 6))
+          .timeout(const Duration(seconds: 20))
           .catchError((_) {});
       _checkAppVersion().then((v) { if (mounted) _updatedVersion = v; });
 
