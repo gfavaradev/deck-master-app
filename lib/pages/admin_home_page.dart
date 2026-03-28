@@ -2,20 +2,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/admin_catalog_service.dart';
+import '../services/admin_translation_service.dart';
 import '../services/background_download_service.dart';
+import '../services/cardtrader_service.dart';
 import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../models/subscription_model.dart';
 import '../theme/app_colors.dart';
 import 'admin_collection_page.dart';
-
-/// Azione primaria (bottone) per una collezione admin
-class _OpsAction {
-  final String label;
-  final IconData icon;
-  final VoidCallback? onTap;
-  const _OpsAction(this.label, this.icon, this.onTap);
-}
+import 'admin_sets_rarities_page.dart';
 
 /// Body riutilizzabile con la lista dei cataloghi da gestire
 class AdminCatalogBody extends StatefulWidget {
@@ -27,11 +22,12 @@ class AdminCatalogBody extends StatefulWidget {
 
 class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   final AdminCatalogService _service = AdminCatalogService();
+  final AdminTranslationService _translationService = AdminTranslationService();
+  final CardtraderService _cardtraderService = CardtraderService();
   bool _isRunning = false;
   double? _progress;
   String _statusText = '';
   String _currentOp = '';
-  String _runningCollectionKey = '';
 
   // ─── Operations ───────────────────────────────────────────────────────────
 
@@ -46,19 +42,18 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
     setState(() {
       _isRunning = true;
-      _runningCollectionKey = collectionKey;
       _progress = null;
       _statusText = '';
       _currentOp = opLabel;
     });
 
-    // Avvia il foreground service: mantiene il processo vivo se l'app va in background
-    await BackgroundDownloadService.startDownload(opLabel);
-
     try {
+      // Avvia il foreground service: mantiene il processo vivo se l'app va in background
+      await BackgroundDownloadService.startDownload(opLabel);
+
       final result = await task(uid);
       if (!mounted) return;
-      setState(() { _isRunning = false; _runningCollectionKey = ''; });
+      setState(() { _isRunning = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(successMessage(result)),
@@ -68,7 +63,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     } catch (e, stack) {
       debugPrint('[$_currentOp] ERROR: $e\n$stack');
       if (mounted) {
-        setState(() { _isRunning = false; _runningCollectionKey = ''; });
+        setState(() { _isRunning = false; });
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -112,7 +107,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Annulla'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Avvia'),
           ),
@@ -178,6 +173,42 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
             ? 'Tutte le immagini erano già migrate.'
             : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
+      );
+
+  Future<void> _translateMissingYugioh() => _confirmAndRun(
+        'yugioh',
+        'Traduci Carte YGO',
+        'Scarica Traduzioni Ufficiali',
+        'Scarica i nomi e le descrizioni ufficiali in IT, FR, DE, PT, SP '
+            'dal database YGOPRODeck (Konami/Neuron) per tutte le carte '
+            'con campi mancanti.\n\n'
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _translationService.translateMissingTranslations(
+          catalog: 'yugioh',
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => (r['translated'] as int? ?? 0) == 0
+            ? 'Nessuna traduzione mancante trovata.'
+            : '${r['translated']} carte aggiornate in ${r['modifiedChunks']} chunk'
+                '${(r['errors'] as int? ?? 0) > 0 ? " (${r['errors']} errori)" : ""}.',
+      );
+
+  Future<void> _fillMissingSetsYugioh() => _confirmAndRun(
+        'yugioh',
+        'Genera Set Mancanti YGO',
+        'Genera Set Localizzati Yu-Gi-Oh!',
+        'Genera automaticamente i set in IT/FR/DE/PT per tutte le carte '
+            'che hanno solo i set EN.\n\n'
+            'I set già presenti non vengono sovrascritti. Continuare?',
+        (uid) => _service.fillMissingLocalizedSets(
+          catalog: 'yugioh',
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => (r['modifiedCards'] as int? ?? 0) == 0
+            ? 'Nessun set mancante trovato.'
+            : '${r['modifiedCards']} carte aggiornate in ${r['modifiedChunks']} chunk.',
       );
 
   // ─── One Piece action handlers ─────────────────────────────────────────────
@@ -285,6 +316,156 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         (r) => '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
       );
 
+  Future<void> _fillMissingSetsOnePiece() => _confirmAndRun(
+        'onepiece',
+        'Genera Set Mancanti One Piece',
+        'Genera Set Localizzati One Piece',
+        'Genera automaticamente i set nelle lingue mancanti per tutte le carte '
+            'One Piece che hanno solo i set base.\n\n'
+            'I set già presenti non vengono sovrascritti. Continuare?',
+        (uid) => _service.fillMissingLocalizedSets(
+          catalog: 'onepiece',
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => (r['modifiedCards'] as int? ?? 0) == 0
+            ? 'Nessun set mancante trovato.'
+            : '${r['modifiedCards']} carte aggiornate in ${r['modifiedChunks']} chunk.',
+      );
+
+  Future<void> _fillMissingSetsPokemon() => _confirmAndRun(
+        'pokemon',
+        'Genera Set Mancanti Pokémon',
+        'Genera Set Localizzati Pokémon',
+        'Genera automaticamente i set nelle lingue mancanti per tutte le carte '
+            'Pokémon che hanno solo i set base.\n\n'
+            'I set già presenti non vengono sovrascritti. Continuare?',
+        (uid) => _service.fillMissingLocalizedSets(
+          catalog: 'pokemon',
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => (r['modifiedCards'] as int? ?? 0) == 0
+            ? 'Nessun set mancante trovato.'
+            : '${r['modifiedCards']} carte aggiornate in ${r['modifiedChunks']} chunk.',
+      );
+
+  // ─── CardTrader sync handlers ──────────────────────────────────────────────
+
+  /// Shows a language-picker dialog for [catalog], then runs the CT sync for
+  /// the selected language. Returns without doing anything if cancelled.
+  Future<void> _syncCardtraderWithLanguagePicker(String catalog) async {
+    final langs = CardtraderService.languagesForCatalog(catalog);
+    if (langs.isEmpty) return;
+
+    // Default selection: first language in the map
+    String? selected = langs.keys.first;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: Text('Sync Prezzi CardTrader — ${_catalogDisplayName(catalog)}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Seleziona la lingua da sincronizzare.\n'
+                'Verranno scaricati tutti i blueprint noti e i prezzi '
+                'delle carte con listing attivi.',
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: selected,
+                decoration: const InputDecoration(
+                  labelText: 'Lingua',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: langs.entries
+                    .map((e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text('${e.value} (${e.key})'),
+                        ))
+                    .toList(),
+                onChanged: (v) => setS(() => selected = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Avvia Sync'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || selected == null) return;
+    final lang = selected!;
+    final langLabel = langs[lang] ?? lang;
+
+    _confirmAndRun(
+      catalog,
+      'Sync Prezzi CardTrader — $langLabel',
+      'Sincronizza Prezzi ($langLabel)',
+      'Verranno scaricati tutti i blueprint per la lingua "$langLabel" '
+          'e i prezzi per le carte con listing attivi su CardTrader.\n\n'
+          'Può richiedere diversi minuti. Continuare?',
+      (uid) => _cardtraderService.syncPrices(
+        catalog: catalog,
+        adminUid: uid,
+        onProgress: _onProgress,
+        language: lang,
+      ),
+      (r) {
+        final total = r['blueprints'] as int? ?? 0;
+        final priced = r['pricedBlueprints'] as int? ?? 0;
+        final exps = r['expansions'] as int? ?? 0;
+        final err = r['errors'] as int? ?? 0;
+        return '$total blueprint in $exps espansioni · $priced con prezzo'
+            ' · ${r['valuesUpdated'] ?? 0} valori aggiornati'
+            '${err > 0 ? " ($err errori)" : ""}.';
+      },
+    );
+  }
+
+  static String _catalogDisplayName(String catalog) => switch (catalog) {
+        'yugioh' => 'Yu-Gi-Oh!',
+        'pokemon' => 'Pokémon',
+        'onepiece' => 'One Piece',
+        _ => catalog,
+      };
+
+  Future<void> _syncCardtraderYugioh() =>
+      _syncCardtraderWithLanguagePicker('yugioh');
+
+  Future<void> _syncCardtraderPokemon() =>
+      _syncCardtraderWithLanguagePicker('pokemon');
+
+  Future<void> _syncCardtraderOnePiece() =>
+      _syncCardtraderWithLanguagePicker('onepiece');
+
+  /// Ricalcola `cards.value` dai prezzi CT già in cache locale (senza API call).
+  Future<void> _applyCtPricesToCollection() => _run(
+        'cardtrader',
+        'Applica Prezzi CT',
+        (_) async {
+          int total = 0;
+          for (final cat in ['yugioh', 'pokemon', 'onepiece']) {
+            total += await _cardtraderService.applyLocalPricesToCollection(cat);
+          }
+          return {'valuesUpdated': total};
+        },
+        (r) => '${r['valuesUpdated']} valori aggiornati dalla cache CT locale.',
+      );
+
   // ─── UI ───────────────────────────────────────────────────────────────────
 
   @override
@@ -293,21 +474,23 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: collections.length + 4, // +4 for operations cards + pro card
+      itemCount: collections.length + 6, // +6: 3 ops + cardtrader + pro + sets/rarities
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         if (index == 0) return _buildOperationsCard();
         if (index == 1) return _buildOnePieceOperationsCard();
         if (index == 2) return _buildPokemonOperationsCard();
-        if (index == 3) return _buildProManagementCard(context);
-        final col = collections[index - 4];
+        if (index == 3) return _buildCardtraderSyncCard();
+        if (index == 4) return _buildProManagementCard(context);
+        if (index == 5) return _buildSetsRaritiesCard(context);
+        final col = collections[index - 6];
         return Card(
           elevation: 2,
           child: ListTile(
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             leading: CircleAvatar(
-              backgroundColor: Colors.deepPurple.shade100,
+              backgroundColor: AppColors.bgLight,
               child: Icon(_iconFor(col['icon']!), color: Colors.deepPurple),
             ),
             title: Text(
@@ -337,7 +520,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   Widget _buildOperationsCard() {
     return Card(
       elevation: 2,
-      color: Colors.deepPurple.shade50,
+      color: AppColors.bgLight,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -361,7 +544,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             const SizedBox(height: 4),
             const Text(
               'Yu-Gi-Oh! — Gestione dati Firestore',
-              style: TextStyle(color: Colors.black45, fontSize: 12),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 16),
 
@@ -378,7 +561,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                 const SizedBox(height: 4),
                 Text(
                   _statusText,
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                 ),
               ],
               const SizedBox(height: 16),
@@ -412,6 +595,20 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                       ? 'Non disponibile su Web (CORS)'
                       : 'Carica immagini su Firebase Storage',
                 ),
+                _opButton(
+                  icon: Icons.auto_fix_high,
+                  label: 'Genera Set Mancanti',
+                  color: Colors.deepPurple.shade700,
+                  onTap: _fillMissingSetsYugioh,
+                  tooltip: 'Genera automaticamente i set IT/FR/DE/PT da EN per tutte le carte',
+                ),
+                _opButton(
+                  icon: Icons.translate,
+                  label: 'Traduci Mancanti',
+                  color: Colors.purple.shade800,
+                  onTap: _translateMissingYugioh,
+                  tooltip: 'Genera traduzioni madrelingua IT/FR/PT/SP con Claude AI',
+                ),
               ],
             ),
 
@@ -419,11 +616,11 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
               const SizedBox(height: 8),
               const Row(
                 children: [
-                  Icon(Icons.info_outline, size: 12, color: Colors.black38),
+                  Icon(Icons.info_outline, size: 12, color: AppColors.textHint),
                   SizedBox(width: 4),
                   Text(
                     '"Migra Immagini" non disponibile su Web (CORS).',
-                    style: TextStyle(fontSize: 11, color: Colors.black38),
+                    style: TextStyle(fontSize: 11, color: AppColors.textHint),
                   ),
                 ],
               ),
@@ -437,7 +634,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   Widget _buildOnePieceOperationsCard() {
     return Card(
       elevation: 2,
-      color: Colors.red.shade50,
+      color: AppColors.bgLight,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -460,7 +657,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             const SizedBox(height: 4),
             const Text(
               'One Piece TCG — Gestione dati Firestore',
-              style: TextStyle(color: Colors.black45, fontSize: 12),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -492,17 +689,24 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                       ? 'Non disponibile su Web (CORS)'
                       : 'Forza ri-migrazione di tutte le immagini (dopo eliminazione da Storage)',
                 ),
+                _opButton(
+                  icon: Icons.auto_fix_high,
+                  label: 'Genera Set Mancanti',
+                  color: Colors.red.shade900,
+                  onTap: _fillMissingSetsOnePiece,
+                  tooltip: 'Genera automaticamente i set nelle lingue mancanti per tutte le carte',
+                ),
               ],
             ),
             if (kIsWeb) ...[
               const SizedBox(height: 8),
               const Row(
                 children: [
-                  Icon(Icons.info_outline, size: 12, color: Colors.black38),
+                  Icon(Icons.info_outline, size: 12, color: AppColors.textHint),
                   SizedBox(width: 4),
                   Text(
                     '"Migra Immagini" non disponibile su Web (CORS).',
-                    style: TextStyle(fontSize: 11, color: Colors.black38),
+                    style: TextStyle(fontSize: 11, color: AppColors.textHint),
                   ),
                 ],
               ),
@@ -516,7 +720,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   Widget _buildPokemonOperationsCard() {
     return Card(
       elevation: 2,
-      color: Colors.red.shade50,
+      color: AppColors.bgLight,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -539,7 +743,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             const SizedBox(height: 4),
             const Text(
               'Pokémon TCG — Gestione dati Firestore',
-              style: TextStyle(color: Colors.black45, fontSize: 12),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -571,17 +775,24 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                       ? 'Non disponibile su Web (CORS)'
                       : 'Forza ri-migrazione di tutte le immagini',
                 ),
+                _opButton(
+                  icon: Icons.auto_fix_high,
+                  label: 'Genera Set Mancanti',
+                  color: Colors.red.shade900,
+                  onTap: _fillMissingSetsPokemon,
+                  tooltip: 'Genera automaticamente i set nelle lingue mancanti per tutte le carte',
+                ),
               ],
             ),
             if (kIsWeb) ...[
               const SizedBox(height: 8),
               const Row(
                 children: [
-                  Icon(Icons.info_outline, size: 12, color: Colors.black38),
+                  Icon(Icons.info_outline, size: 12, color: AppColors.textHint),
                   SizedBox(width: 4),
                   Text(
                     '"Migra Immagini" non disponibile su Web (CORS).',
-                    style: TextStyle(fontSize: 11, color: Colors.black38),
+                    style: TextStyle(fontSize: 11, color: AppColors.textHint),
                   ),
                 ],
               ),
@@ -609,7 +820,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: Colors.grey.shade300,
+          disabledBackgroundColor: AppColors.bgLight,
           padding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         ),
@@ -664,6 +875,118 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                   foregroundColor: Colors.black,
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSetsRaritiesCard(BuildContext context) {
+    return Card(
+      elevation: 2,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        leading: const CircleAvatar(
+          backgroundColor: AppColors.bgLight,
+          child: Icon(Icons.list_alt, color: Colors.deepPurple),
+        ),
+        title: const Text(
+          'Espansioni & Rarità',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        subtitle: const Text('Lista completa con traduzioni per collezione'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AdminSetsRaritiesPage()),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardtraderSyncCard() {
+    return Card(
+      elevation: 2,
+      color: AppColors.bgLight,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.teal.withValues(alpha: 0.35)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.price_check, color: Colors.teal),
+                SizedBox(width: 8),
+                Text(
+                  'Prezzi CardTrader',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.teal,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Prezzi di mercato reali per lingua e 1ª Edizione',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            if (_isRunning) ...[
+              Text(
+                _currentOp,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(value: _progress),
+              if (_statusText.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  _statusText,
+                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ],
+              const SizedBox(height: 16),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _opButton(
+                  icon: Icons.style,
+                  label: 'Yu-Gi-Oh!',
+                  color: Colors.deepPurple,
+                  onTap: _syncCardtraderYugioh,
+                  tooltip: 'Sincronizza prezzi YGO per lingua e edizione',
+                ),
+                _opButton(
+                  icon: Icons.catching_pokemon,
+                  label: 'Pokémon',
+                  color: Colors.red.shade700,
+                  onTap: _syncCardtraderPokemon,
+                  tooltip: 'Sincronizza prezzi Pokémon per lingua',
+                ),
+                _opButton(
+                  icon: Icons.sailing,
+                  label: 'One Piece',
+                  color: Colors.orange.shade800,
+                  onTap: _syncCardtraderOnePiece,
+                  tooltip: 'Sincronizza prezzi One Piece',
+                ),
+                _opButton(
+                  icon: Icons.calculate_outlined,
+                  label: 'Applica prezzi',
+                  color: Colors.teal,
+                  onTap: _applyCtPricesToCollection,
+                  tooltip: 'Ricalcola valori collezione dai prezzi CT già in cache (senza API)',
+                ),
+              ],
             ),
           ],
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/admin_catalog_service.dart';
 import '../services/auth_service.dart';
 import '../models/pending_catalog_change.dart';
+import '../theme/app_colors.dart';
 import '../widgets/admin_card_edit_dialog.dart';
 import 'dart:math';
 
@@ -120,7 +121,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
       changeId: _generateChangeId(),
       type: ChangeType.edit,
       cardData: result,
-      originalCardId: (card['id'] as num?)?.toInt(),
+      originalCardId: card['id'] is num ? (card['id'] as num).toInt() : null,
       timestamp: DateTime.now(),
       adminUid: adminUid,
     );
@@ -202,7 +203,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
       changeId: _generateChangeId(),
       type: ChangeType.delete,
       cardData: {},
-      originalCardId: (card['id'] as num?)?.toInt(),
+      originalCardId: card['id'] is num ? (card['id'] as num).toInt() : null,
       timestamp: DateTime.now(),
       adminUid: adminUid,
     );
@@ -236,9 +237,8 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
         content: Text('Pubblicare ${_pendingChanges.length} modifiche su Firestore?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
             child: const Text('Pubblica'),
           ),
         ],
@@ -281,8 +281,6 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.collectionName),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
         actions: [
           if (_pendingChanges.isNotEmpty)
             Stack(
@@ -298,7 +296,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                   right: 8,
                   child: Container(
                     padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
                     child: Text(
                       '${_pendingChanges.length}',
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
@@ -327,7 +325,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                   else
                     const CircularProgressIndicator(),
                   const SizedBox(height: 16),
-                  Text(_loadStatus, style: const TextStyle(color: Colors.grey)),
+                  Text(_loadStatus, style: const TextStyle(color: AppColors.textSecondary)),
                 ],
               ),
             )
@@ -362,19 +360,19 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                     children: [
                       Text(
                         '${_filteredCards.length} / ${_allCards.length} carte',
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
                       ),
                       if (_pendingChanges.isNotEmpty) ...[
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.orange.shade100,
+                            color: Colors.deepPurple.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             '${_pendingChanges.length} modifiche in attesa',
-                            style: TextStyle(color: Colors.orange.shade800, fontSize: 12),
+                            style: const TextStyle(color: Colors.deepPurple, fontSize: 12),
                           ),
                         ),
                       ],
@@ -393,11 +391,11 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                             return ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: isPending
-                                    ? Colors.orange.shade100
-                                    : Colors.deepPurple.shade50,
+                                    ? Colors.deepPurple.withValues(alpha: 0.25)
+                                    : AppColors.bgLight,
                                 child: Icon(
                                   Icons.style,
-                                  color: isPending ? Colors.orange : Colors.deepPurple,
+                                  color: isPending ? Colors.deepPurple : AppColors.blue,
                                   size: 20,
                                 ),
                               ),
@@ -405,7 +403,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                                 card['name'] ?? 'Sconosciuto',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  color: isPending ? Colors.orange.shade800 : null,
+                                  color: isPending ? Colors.deepPurple : AppColors.textPrimary,
                                 ),
                               ),
                               subtitle: Text(
@@ -435,8 +433,6 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addCard,
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
         label: const Text('Nuova Carta'),
       ),

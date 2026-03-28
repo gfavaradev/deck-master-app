@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/data_repository.dart';
+import '../services/language_service.dart';
+import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/cardtrader_price_badge.dart';
 
 class SetDetailPage extends StatefulWidget {
   final String collectionKey;
@@ -31,22 +35,34 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
 
   List<Map<String, dynamic>> _allCards = [];
   bool _isLoading = true;
+  String _lang = 'en';
+  StreamSubscription<String>? _syncSub;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadCards();
+    LanguageService.getPreferredLanguage().then((l) {
+      if (mounted && l.toLowerCase() != _lang) {
+        _lang = l.toLowerCase();
+        _loadCards();
+      }
+    });
+    _syncSub = SyncService().onRemoteChange.listen((_) {
+      if (mounted) _loadCards();
+    });
   }
 
   @override
   void dispose() {
+    _syncSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _loadCards() async {
-    final data = await _repo.getSetDetail(widget.collectionKey, widget.setIdentifier);
+    final data = await _repo.getSetDetail(widget.collectionKey, widget.setIdentifier, lang: _lang);
     if (!mounted) return;
     setState(() {
       _allCards = data;
@@ -156,11 +172,26 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: Text(
-              serial.isNotEmpty && rarity.isNotEmpty
-                  ? '$serial  •  $rarity'
-                  : serial.isNotEmpty ? serial : rarity,
-              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  serial.isNotEmpty && rarity.isNotEmpty
+                      ? '$serial  •  $rarity'
+                      : serial.isNotEmpty ? serial : rarity,
+                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+                if (isOwned && serial.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  CardtraderPriceBadge(
+                    collection: widget.collectionKey,
+                    serialNumber: serial,
+                    cardName: name,
+                    rarity: rarity.isNotEmpty ? rarity : null,
+                  ),
+                ],
+              ],
             ),
             trailing: Icon(
               isOwned ? Icons.check_circle : Icons.cancel,

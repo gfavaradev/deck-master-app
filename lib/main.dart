@@ -21,8 +21,8 @@ void main() async {
 
   // AppCheck non blocca l'avvio — si attiva in background
   FirebaseAppCheck.instance.activate(
-    androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-    appleProvider: AppleProvider.debug,
+    providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+    providerApple: const AppleDebugProvider(),
   );
 
   // Disabilita la persistence nativa di Firestore (usiamo SQLite come cache locale)
@@ -30,11 +30,9 @@ void main() async {
     persistenceEnabled: false,
   );
 
-  // Avvia in background — non bloccano runApp
-  Future.wait([
-    BackgroundDownloadService.initialize(),
-    NotificationService().initialize(),
-  ]);
+  // Avvia in background — non bloccano runApp, errori non critici ignorati
+  BackgroundDownloadService.initialize().catchError((_) {});
+  NotificationService().initialize().catchError((_) {});
   // Mostra reminder catalogo se era stato posticipato nella sessione precedente
   NotificationService().checkAndShowPendingCatalogReminder();
 
@@ -70,7 +68,7 @@ class MyApp extends StatelessWidget {
         bottomNavigationBarTheme: const BottomNavigationBarThemeData(
           backgroundColor: AppColors.bgMedium,
           selectedItemColor: AppColors.gold,
-          unselectedItemColor: Color(0x80FFFFFF),
+          unselectedItemColor: AppColors.textHint,
           elevation: 0,
         ),
         cardTheme: const CardThemeData(
@@ -89,7 +87,7 @@ class MyApp extends StatelessWidget {
           labelStyle: TextStyle(color: AppColors.textSecondary),
           hintStyle: TextStyle(color: AppColors.textHint),
           enabledBorder: OutlineInputBorder(
-            borderSide: BorderSide(color: Color(0x40FFFFFF)),
+            borderSide: BorderSide(color: AppColors.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderSide: BorderSide(color: AppColors.gold, width: 2),
@@ -99,7 +97,7 @@ class MyApp extends StatelessWidget {
           textColor: AppColors.textPrimary,
           iconColor: AppColors.textSecondary,
         ),
-        dividerColor: Color(0x1FFFFFFF),
+        dividerColor: AppColors.divider,
         textTheme: const TextTheme(
           bodyMedium: TextStyle(color: AppColors.textPrimary),
           bodySmall: TextStyle(color: AppColors.textSecondary),

@@ -908,13 +908,15 @@ class AdminCatalogService {
     return {'newCards': newCards.length};
   }
 
-  /// Fills missing localized sets (IT/FR/DE/PT) for all cards currently in
-  /// the Firestore catalog, using surgical per-chunk writes.
+  /// Fills missing localized sets for all cards in the given catalog,
+  /// using surgical per-chunk writes.
+  /// Supported: 'yugioh', 'pokemon', 'onepiece'
   Future<Map<String, dynamic>> fillMissingLocalizedSets({
+    required String catalog,
     required String adminUid,
     required Function(String status, double? progress) onProgress,
   }) async {
-    const catalogCollection = 'yugioh_catalog';
+    final catalogCollection = '${catalog}_catalog';
 
     onProgress('Leggendo metadati...', null);
     final metadataDoc =
@@ -1622,6 +1624,9 @@ class AdminCatalogService {
       'lastUpdated': FieldValue.serverTimestamp(),
       'version': currentVersion + 1,
       'updatedBy': adminUid,
+      // Svuota i modifiedChunks per forzare un re-download completo sul client
+      // (la migrazione tocca tutti i chunk, non un sottoinsieme)
+      'modifiedChunks': [],
     }, SetOptions(merge: true));
 
     return {'migrated': migrated, 'failed': failed, 'chunksUpdated': affectedChunkIds.length};

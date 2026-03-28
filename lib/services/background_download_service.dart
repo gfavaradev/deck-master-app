@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -39,10 +40,14 @@ class BackgroundDownloadService {
   static final _service = FlutterBackgroundService();
   static bool _initialized = false;
 
+  // FlutterBackgroundService è supportato solo su Android/iOS.
+  static bool get _isMobile =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   /// Inizializza il canale notifiche e configura il servizio.
   /// Va chiamato una sola volta in main() prima di runApp.
   static Future<void> initialize() async {
-    if (kIsWeb || _initialized) return;
+    if (!_isMobile || _initialized) return;
 
     // Crea il canale notifiche Android
     const channel = AndroidNotificationChannel(
@@ -85,19 +90,19 @@ class BackgroundDownloadService {
   /// Avvia il Foreground Service prima di iniziare un download.
   /// Il download reale gira nell'isolato principale (nessuna modifica al codice esistente).
   static Future<void> startDownload(String operationName) async {
-    if (kIsWeb) return;
+    if (!_isMobile) return;
     await _service.startService();
   }
 
   /// Aggiorna il testo della notifica con il progresso corrente.
   static void updateStatus(String status) {
-    if (kIsWeb) return;
+    if (!_isMobile) return;
     _service.invoke('update', {'status': status});
   }
 
   /// Ferma il Foreground Service al termine del download.
   static Future<void> stopDownload() async {
-    if (kIsWeb) return;
+    if (!_isMobile) return;
     _service.invoke('stop');
   }
 }

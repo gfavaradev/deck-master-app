@@ -445,38 +445,38 @@ class FirestoreService {
   }
 
   Future<bool> hasUserData(String userId) async {
-    // Check if user document exists OR if user has any subcollections (collections, albums, cards, decks)
-    final doc = await _firestore.collection('users').doc(userId).get();
-    if (doc.exists) return true;
+    try {
+      // Check if user document exists OR if user has any subcollections
+      final doc = await _firestore
+          .collection('users')
+          .doc(userId)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      if (doc.exists) return true;
 
-    // Check collections subcollection
-    final collections = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('collections')
-        .limit(1)
-        .get();
-    if (collections.docs.isNotEmpty) return true;
+      // Check albums subcollection (most reliable indicator of real data)
+      final albums = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('albums')
+          .limit(1)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      if (albums.docs.isNotEmpty) return true;
 
-    // Check albums subcollection
-    final albums = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('albums')
-        .limit(1)
-        .get();
-    if (albums.docs.isNotEmpty) return true;
-
-    // Check cards subcollection
-    final cards = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('cards')
-        .limit(1)
-        .get();
-    if (cards.docs.isNotEmpty) return true;
-
-    return false;
+      // Check cards subcollection
+      final cards = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('cards')
+          .limit(1)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      return cards.docs.isNotEmpty;
+    } catch (_) {
+      // Offline o timeout → assume che i dati remoti esistano se c'è cache locale
+      return false;
+    }
   }
 
   /// Delete all albums, cards and decks documents for a user.

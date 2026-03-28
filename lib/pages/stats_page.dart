@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
 import '../services/sync_service.dart';
+import '../theme/app_colors.dart';
 import 'set_completion_page.dart';
 
 class StatsPage extends StatefulWidget {
@@ -70,7 +71,6 @@ class _StatsPageState extends State<StatsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Statistiche'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -133,7 +133,7 @@ class _StatsPageState extends State<StatsPage> {
                     ),
                     const SizedBox(width: 8),
                     Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
-                    Text('$cards carte', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                    Text('$cards carte', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                     const SizedBox(width: 12),
                     Text('€${value.toStringAsFixed(2)}',
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
@@ -189,7 +189,7 @@ class _StatsPageState extends State<StatsPage> {
                           child: Text(rarity, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
                         ),
                         Text('$count  •  €${value.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -228,7 +228,7 @@ class _StatsPageState extends State<StatsPage> {
         title: const Text('Espansioni', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         subtitle: Text(
           'Completamento set per ${widget.collectionName}',
-          style: const TextStyle(fontSize: 13, color: Colors.grey),
+          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
         ),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.push(
@@ -265,7 +265,7 @@ class _StatsPageState extends State<StatsPage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.w500)),
+                Text(title, style: const TextStyle(fontSize: 16, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
                 Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               ],
             ),

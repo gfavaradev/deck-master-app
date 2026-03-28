@@ -6,15 +6,11 @@ import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
-import '../services/subscription_service.dart';
-import '../models/user_model.dart';
 import '../theme/app_colors.dart';
 import '../widgets/user_avatar_widget.dart';
 import 'main_layout.dart';
 import 'login_page.dart';
 import 'profile_page.dart';
-import 'pro_page.dart';
-import 'donations_page.dart';
 import 'admin_users_page.dart';
 import 'admin_home_page.dart';
 
@@ -28,13 +24,11 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final AuthService _authService = AuthService();
   final DataRepository _repo = DataRepository();
-  final SubscriptionService _subService = SubscriptionService();
   final User? _user = FirebaseAuth.instance.currentUser;
   bool _isOffline = false;
   bool _isSigningIn = false;
 
   bool _isAdmin = false;
-  UserModel? _userModel;
   bool _notificationsEnabled = false;
   bool _notifAppUpdates = true;
   bool _notifCatalogUpdates = true;
@@ -52,12 +46,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadLanguagePreference();
     _checkAdminStatus();
     _loadNotificationPreference();
-    _loadUserModel();
-  }
-
-  Future<void> _loadUserModel() async {
-    final user = await _subService.getCurrentUserModel();
-    if (mounted) setState(() => _userModel = user);
   }
 
   Future<void> _loadNotificationPreference() async {
@@ -242,7 +230,9 @@ class _SettingsPageState extends State<SettingsPage> {
       final result = await ExportService().exportToClipboard(format);
       if (!mounted) return;
       if (result.requiresPro) {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Funzione disponibile a breve')),
+        );
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
@@ -450,7 +440,9 @@ class _SettingsPageState extends State<SettingsPage> {
             return RadioListTile<String>(
               title: Text(LanguageService.languageLabels[code] ?? code),
               value: code,
+              // ignore: deprecated_member_use
               groupValue: _selectedLanguage,
+              // ignore: deprecated_member_use
               onChanged: (val) async {
                 if (val != null) {
                   await LanguageService.setPreferredLanguage(val);
@@ -466,60 +458,8 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildProSection() {
-    final hasPro = _userModel?.hasProAccess ?? false;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Text(
-            'Piano',
-            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.workspace_premium, color: AppColors.gold),
-          title: Text(hasPro ? 'Deck Master Pro' : 'Passa a Pro'),
-          subtitle: Text(
-            hasPro ? 'Abbonamento attivo — grazie!' : 'Sblocca il Deck Builder e altre funzioni',
-          ),
-          trailing: hasPro
-              ? Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.gold,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'PRO',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                )
-              : const Icon(Icons.chevron_right),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ProPage()),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.favorite_outline, color: Color(0xFFFF6B35)),
-          title: const Text('Supporta il Progetto'),
-          subtitle: const Text('Donazioni e badge esclusivi'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const DonationsPage()),
-          ),
-        ),
-      ],
-    );
-  }
+  // Pro e Donazioni temporaneamente nascosti — da riabilitare quando il pagamento sarà configurato
+  Widget _buildProSection() => const SizedBox.shrink();
 
   Widget _buildAdminSection() {
     return Column(

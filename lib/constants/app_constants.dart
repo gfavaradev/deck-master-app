@@ -1,5 +1,5 @@
-/// Centralized constants for the entire application
-/// This ensures consistency and easy maintenance
+// Centralized constants for the entire application
+// This ensures consistency and easy maintenance
 
 // ============================================================
 // Catalog Constants

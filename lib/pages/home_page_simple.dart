@@ -49,7 +49,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
 
   Future<void> _unlock(CollectionModel collection) async {
     await _repo.unlockCollection(collection.key);
-    _loadCollections();
+    await _loadCollections();
     _checkAndPromptCatalogDownload(collection);
   }
 
@@ -216,17 +216,17 @@ class _HomePageSimpleState extends State<HomePageSimple> {
               ? const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFFCDD8FF), Color(0xFFDDD0FF)],
+                  colors: [AppColors.collectionCardBg, AppColors.collectionCardBgEnd],
                 )
               : const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFFB4BCD8), Color(0xFFC4BCD8)],
+                  colors: [AppColors.collectionCardLocked, AppColors.collectionCardLockedEnd],
                 ),
           border: Border.all(
             color: isUnlocked
-                ? AppColors.gold.withValues(alpha: 0.55)
-                : const Color(0x33FFFFFF),
+                ? AppColors.gold.withValues(alpha: 0.7)
+                : AppColors.gold.withValues(alpha: 0.2),
             width: isUnlocked ? 1.5 : 1.0,
           ),
           boxShadow: isUnlocked
@@ -265,15 +265,15 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                 right: 0,
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 5),
-                  decoration: const BoxDecoration(
-                    color: Color(0xCC0D0F1E),
-                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(15)),
+                  decoration: BoxDecoration(
+                    color: AppColors.gold.withValues(alpha: 0.18),
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(15)),
                   ),
                   child: const Text(
                     'Prossimamente',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: AppColors.gold,
+                      color: Color(0xFF7A5C00),
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.8,
@@ -285,7 +285,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
               const Positioned(
                 top: 8,
                 right: 8,
-                child: Icon(Icons.lock_outline, size: 18, color: AppColors.gold),
+                child: Icon(Icons.lock_outline, size: 18, color: Color(0xFF7A5C00)),
               ),
           ],
         ),

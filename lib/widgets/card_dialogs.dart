@@ -5,6 +5,7 @@ import '../models/album_model.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import '../pages/album_list_page.dart';
+import 'cardtrader_price_badge.dart';
 
 class CardDialogs {
   static void showDetails({
@@ -32,7 +33,7 @@ class CardDialogs {
                 const SizedBox(height: 8),
                 if (availableAlbums.isNotEmpty)
                   DropdownButtonFormField<int>(
-                    value: selectedAlbumId,
+                    initialValue: selectedAlbumId,
                     decoration: const InputDecoration(labelText: 'Album', isDense: true),
                     items: availableAlbums.map((album) {
                       return DropdownMenuItem<int>(
@@ -53,6 +54,15 @@ class CardDialogs {
                 Text('Quantità: ${card.quantity}'),
                 Text('Valore unitario: €${card.value.toStringAsFixed(2)}'),
                 Text('Valore totale: €${(card.value * card.quantity).toStringAsFixed(2)}'),
+                if (card.serialNumber.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  CardtraderPriceBadge(
+                    collection: card.collection,
+                    serialNumber: card.serialNumber,
+                    cardName: card.name,
+                    rarity: card.rarity.isNotEmpty ? card.rarity : null,
+                  ),
+                ],
                 Text('Tipo: ${card.type}'),
                 Text('Rarità: ${card.rarity}'),
                 if (cardDecks.isNotEmpty) ...[
@@ -322,7 +332,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
           children: [
             // ── Album ─────────────────────────────────────────────────────
             DropdownButtonFormField<int>(
-              value: selectedAlbumId,
+              initialValue: selectedAlbumId,
               decoration: const InputDecoration(labelText: 'Seleziona Album'),
               items: widget.availableAlbums.map((album) {
                 return DropdownMenuItem<int>(
@@ -382,7 +392,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
             // ── Set / Seriale ──────────────────────────────────────────────
             if (availableSets.isNotEmpty) ...[
               DropdownButtonFormField<String>(
-                value: selectedSetCode,
+                initialValue: selectedSetCode,
                 decoration: const InputDecoration(labelText: 'Seleziona Set / Seriale'),
                 items: availableSets.map((set) {
                   final code = set['setCode'] ?? '';
@@ -529,12 +539,12 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       }
     }
     
+    // Save last used album before pop (always the user's real choice, not the auto-doppioni album)
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setInt('last_album_id_${widget.collectionKey}', selectedAlbumId!);
+
     if (!mounted) return;
     Navigator.pop(context);
-    // Save last used album (always the user's real choice, not the auto-doppioni album)
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setInt('last_album_id_${widget.collectionKey}', selectedAlbumId!);
-    });
     if (redirectedToDoppioni) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

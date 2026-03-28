@@ -184,7 +184,7 @@ class _AdminCatalogDesktopPageState extends State<AdminCatalogDesktopPage> {
         'yugioh',
         onProgress: (current, total) {
           if (mounted) {
-            setState(() => _downloadProgress = current / total);
+            setState(() => _downloadProgress = total > 0 ? current / total : null);
           }
         },
       );
@@ -908,6 +908,7 @@ class _AdminCatalogDesktopPageState extends State<AdminCatalogDesktopPage> {
   }
 
   Future<void> _syncChanges() async {
+    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -948,14 +949,14 @@ class _AdminCatalogDesktopPageState extends State<AdminCatalogDesktopPage> {
 
       if (result['success'] == true) {
         await _loadPendingChanges();
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        if (!mounted) return;
+        messenger.showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Sincronizzato'),
             backgroundColor: Colors.green,
           ),
         );
-      } else if (context.mounted) {
+      } else if (mounted) {
         _showError(result['error'] ?? 'Errore sconosciuto');
       }
     } catch (e) {

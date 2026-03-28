@@ -7,19 +7,11 @@ class UserService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// Admin email - automatically gets administrator role
-  static const String _adminEmail = 'g.favara.dev@gmail.com';
-
   /// Collection reference for users
   CollectionReference get _usersCollection => _firestore.collection('users');
 
   /// Get current user's UID
   String? get currentUserId => _auth.currentUser?.uid;
-
-  /// Check if email should have admin role
-  bool _isAdminEmail(String email) {
-    return email.toLowerCase() == _adminEmail.toLowerCase();
-  }
 
   /// Create a new user document in Firestore
   Future<void> createUser({
@@ -29,15 +21,12 @@ class UserService {
     String? photoUrl,
     UserRole role = UserRole.user,
   }) async {
-    // Automatically assign admin role to configured email
-    final finalRole = _isAdminEmail(email) ? UserRole.administrator : role;
-
     final user = UserModel(
       uid: uid,
       email: email,
       displayName: displayName,
       photoUrl: photoUrl,
-      role: finalRole,
+      role: role,
       createdAt: DateTime.now(),
       lastLoginAt: DateTime.now(),
     );

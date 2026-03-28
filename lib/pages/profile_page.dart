@@ -8,8 +8,6 @@ import '../services/data_repository.dart';
 import '../services/xp_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/donation_badge.dart';
-import 'donations_page.dart';
-import 'pro_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -225,15 +223,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
           if (tier != DonationTier.none) ...[
             const SizedBox(height: 10),
-            Center(
-              child: GestureDetector(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const DonationsPage()),
-                ),
-                child: DonationBadge(tier: tier, size: 20, showLabel: true),
-              ),
-            ),
+            Center(child: DonationBadge(tier: tier, size: 20, showLabel: true)),
           ],
 
           const SizedBox(height: 24),
@@ -392,25 +382,6 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           );
         }),
-
-        if (_selectedAvatarId != null) ...[
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.camera_alt_outlined, size: 16),
-              label: const Text('Usa foto profilo'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.textSecondary,
-                side: const BorderSide(color: AppColors.textHint),
-              ),
-              onPressed: () async {
-                await _clearAvatar();
-                if (mounted) setState(() => _selectedAvatarId = null);
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
       ],
     );
   }
@@ -477,8 +448,6 @@ class _ProfilePageState extends State<ProfilePage> {
       },
     );
   }
-
-  Future<void> _clearAvatar() => XpService().clearSelectedAvatar();
 
   Widget _buildAvatarTile(AvatarDef avatar, bool unlocked, bool selected) {
     final unlockLabel = avatar.unlockType == AvatarUnlockType.level
@@ -561,62 +530,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildProBanner(bool hasPro) {
-    if (hasPro) {
-      return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.gold.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.gold.withValues(alpha: 0.4)),
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.workspace_premium, color: AppColors.gold, size: 22),
-            SizedBox(width: 10),
-            Text(
-              'Piano Pro attivo',
-              style: TextStyle(
-                color: AppColors.gold,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ProPage()),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.bgMedium,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.gold.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.workspace_premium, color: AppColors.gold, size: 22),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                'Scopri Deck Master Pro',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-            Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
+  // Pro banner temporaneamente nascosto — da riabilitare quando il pagamento sarà configurato
+  Widget _buildProBanner(bool hasPro) => const SizedBox.shrink();
 }

@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
+import '../services/language_service.dart';
+import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import 'set_detail_page.dart';
 
@@ -26,23 +29,33 @@ class _SetCompletionPageState extends State<SetCompletionPage>
   List<Map<String, dynamic>> _allSets = [];
   bool _isLoading = true;
   String _query = '';
+  String _lang = 'en';
+  StreamSubscription<String>? _syncSub;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadSets();
+    LanguageService.getPreferredLanguage().then((l) {
+      _lang = l.toLowerCase();
+      if (mounted) _loadSets();
+    });
+    _syncSub = SyncService().onRemoteChange.listen((_) {
+      if (mounted) _loadSets();
+    });
   }
 
   @override
   void dispose() {
+    _syncSub?.cancel();
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _loadSets() async {
-    final data = await _repo.getSetStats(widget.collectionKey);
+    final data = await _repo.getSetStats(widget.collectionKey, lang: _lang);
     if (!mounted) return;
     setState(() {
       _allSets = data;
@@ -57,7 +70,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
   }
 
   String _setIdentifier(Map<String, dynamic> set) {
-    return set['setCode'] as String? ?? set['setName'] as String? ?? '';
+    return set['setQueryId'] as String? ?? set['setCode'] as String? ?? set['setName'] as String? ?? '';
   }
 
   List<Map<String, dynamic>> _filterSets(List<Map<String, dynamic>> sets) {

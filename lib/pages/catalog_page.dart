@@ -4,7 +4,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
-import '../services/notification_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/card_dialogs.dart';
@@ -45,6 +44,7 @@ class _CatalogPageState extends State<CatalogPage> {
   bool _hasUpdate = false;
   bool _isDownloadingUpdate = false;
   bool _isCatalogMissing = false; // true = nessun catalogo locale, bisogna scaricarlo
+  Map<String, dynamic>? _lastUpdateInfo; // usato da _downloadUpdate per l'incrementale YGO
   String? _loadError;
   double? _downloadProgress;
   DateTime? _downloadStartTime;
@@ -130,6 +130,7 @@ class _CatalogPageState extends State<CatalogPage> {
 
       if (updateInfo['needsUpdate'] == true) {
         setState(() {
+          _lastUpdateInfo = updateInfo;
           if (updateInfo['isFirstDownload'] == true) {
             _isCatalogMissing = true;
           } else {
@@ -138,58 +139,6 @@ class _CatalogPageState extends State<CatalogPage> {
         });
       }
     } catch (_) {}
-  }
-
-  void _showUpdateDialog(Map<String, dynamic> updateInfo) {
-    final sizeMb = updateInfo['estimatedSizeMb']?.toString();
-    final collectionName = widget.collectionName;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgMedium,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.system_update, color: AppColors.gold),
-            const SizedBox(width: 10),
-            const Text('Aggiornamento disponibile',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
-          ],
-        ),
-        content: Text(
-          sizeMb != null
-              ? 'È disponibile un aggiornamento del catalogo $collectionName (${sizeMb}MB).\nVuoi scaricarlo adesso?'
-              : 'È disponibile un aggiornamento del catalogo $collectionName.\nVuoi scaricarlo adesso?',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              // Salva reminder: alla prossima apertura mostra la notifica
-              NotificationService().scheduleCatalogUpdateReminder(
-                collectionName: collectionName,
-                collectionKey: widget.collectionKey,
-              );
-              setState(() => _hasUpdate = true);
-            },
-            child: const Text('Più tardi',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              NotificationService().cancelCatalogReminder();
-              _downloadUpdate();
-            },
-            style: FilledButton.styleFrom(backgroundColor: AppColors.gold),
-            child: const Text('Scarica ora',
-                style: TextStyle(color: Colors.black)),
-          ),
-        ],
-      ),
-    );
   }
 
   /// Download catalog update
@@ -201,34 +150,16 @@ class _CatalogPageState extends State<CatalogPage> {
     });
 
     try {
-      if (widget.collectionKey == 'onepiece') {
-        await _dbHelper.redownloadOnepieceCatalog(
-          onProgress: (current, total) {
-            if (mounted) setState(() => _downloadProgress = current / total);
-          },
-          onSaveProgress: (progress) {
-            if (mounted) setState(() => _downloadProgress = progress);
-          },
-        );
-      } else if (widget.collectionKey == 'pokemon') {
-        await _dbHelper.redownloadPokemonCatalog(
-          onProgress: (current, total) {
-            if (mounted) setState(() => _downloadProgress = current / total);
-          },
-          onSaveProgress: (progress) {
-            if (mounted) setState(() => _downloadProgress = progress);
-          },
-        );
-      } else {
-        await _dbHelper.redownloadYugiohCatalog(
-          onProgress: (current, total) {
-            if (mounted) setState(() => _downloadProgress = current / total);
-          },
-          onSaveProgress: (progress) {
-            if (mounted) setState(() => _downloadProgress = progress);
-          },
-        );
-      }
+      await _dbHelper.downloadCollectionCatalog(
+        widget.collectionKey,
+        updateInfo: _lastUpdateInfo,
+        onProgress: (current, total) {
+          if (mounted) setState(() => _downloadProgress = total > 0 ? current / total : null);
+        },
+        onSaveProgress: (progress) {
+          if (mounted) setState(() => _downloadProgress = progress);
+        },
+      );
 
       if (mounted) {
         setState(() {
@@ -1137,7 +1068,7 @@ class _CatalogPageState extends State<CatalogPage> {
   /// Barra compatta che indica aggiornamento in attesa
   Widget _buildUpdateIcon() {
     return GestureDetector(
-      onTap: () => _showUpdateDialog({}),
+      onTap: _downloadUpdate,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

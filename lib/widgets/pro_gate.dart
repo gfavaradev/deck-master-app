@@ -20,8 +20,10 @@ class ProGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (hasPro) return child;
+    // Pro temporaneamente disabilitato — tutti gli utenti vedono il contenuto
+    return child;
 
+    // ignore: dead_code
     return Stack(
       children: [
         // Contenuto originale sfocato

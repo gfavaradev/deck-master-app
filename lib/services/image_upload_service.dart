@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http/http.dart' as http;
 import 'user_service.dart';
@@ -77,16 +77,20 @@ class ImageUploadService {
         ? 'catalog/$catalog/images/${safeId}_$safeCode.jpg'
         : 'catalog/$catalog/images/$safeId.jpg';
 
-    final compressed = await FlutterImageCompress.compressWithList(
-      bytes,
-      minWidth: 400,
-      minHeight: 9999,
-      quality: 78,
-      format: CompressFormat.jpeg,
-    );
+    // flutter_image_compress non supporta Windows — usa i bytes originali su desktop
+    final toUpload = (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux)
+        ? bytes
+        : await FlutterImageCompress.compressWithList(
+            bytes,
+            minWidth: 400,
+            minHeight: 9999,
+            quality: 78,
+            format: CompressFormat.jpeg,
+          );
 
     final ref = FirebaseStorage.instance.ref(path);
-    await ref.putData(compressed, SettableMetadata(contentType: 'image/jpeg'));
+    await ref.putData(toUpload, SettableMetadata(contentType: 'image/jpeg'));
     return await ref.getDownloadURL();
   }
 }

@@ -9,7 +9,6 @@ import '../widgets/collection_summary.dart';
 import '../widgets/card_dialogs.dart';
 import '../theme/app_colors.dart';
 import 'support_page.dart';
-import 'camera_recognition_page.dart';
 import '../services/language_service.dart';
 
 class CardListPage extends StatefulWidget {
@@ -144,63 +143,6 @@ class _CardListPageState extends State<CardListPage> {
   }
 
 
-  Future<void> _openOcr() async {
-    final result = await Navigator.push<RecognitionResult>(
-      context,
-      MaterialPageRoute(builder: (_) => const CameraRecognitionPage()),
-    );
-    if (result == null || !mounted) return;
-
-    _searchController.text = result.cardName;
-    _filterCards(result.cardName);
-
-    setState(() => _catalogSearching = true);
-    final results = await _repo.getCatalogCardsByCollection(
-      widget.collectionKey,
-      query: result.cardName,
-      language: _preferredLanguage,
-      limit: 10,
-    );
-    if (!mounted) return;
-    setState(() => _catalogSearching = false);
-
-    if (results.isEmpty) return;
-
-    if (results.length == 1) {
-      _showAddFromCatalog(results.first);
-      return;
-    }
-
-    if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.bgMedium,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              '${results.length} carte trovate per "${result.cardName}"',
-              style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
-            ),
-          ),
-          ...results.map((card) => ListTile(
-                title: Text(card['localizedName'] ?? card['name'] ?? '', style: const TextStyle(color: AppColors.textPrimary)),
-                subtitle: Text(card['setCode'] ?? '', style: const TextStyle(color: AppColors.textSecondary)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showAddFromCatalog(card);
-                },
-              )),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
 
   void _showAddFromCatalog(Map<String, dynamic> catalogCard) {
     CardDialogs.showAddCard(
@@ -242,11 +184,8 @@ class _CardListPageState extends State<CardListPage> {
       return;
     }
 
-    // Quantity would drop to zero → delete with undo
-    if (card.quantity + delta < 1) {
-      _confirmDelete(card);
-      return;
-    }
+    // Minimum quantity is 1 — use the delete button to remove a card
+    if (card.quantity + delta < 1) return;
 
     // Capacity check for non-doppioni increments in album view
     final album = _availableAlbums.firstWhere(
@@ -306,21 +245,15 @@ class _CardListPageState extends State<CardListPage> {
     );
     _refreshCards();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('"${card.name}" eliminata'),
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: 'Annulla',
-          onPressed: () async {
-            for (final c in deleted) {
-              await _repo.insertCard(c);
-            }
-            _refreshCards();
-          },
-        ),
-      ),
+    _TopUndoBar.show(
+      context: context,
+      message: '"${card.name}" eliminata',
+      onUndo: () async {
+        for (final c in deleted) {
+          await _repo.insertCard(c);
+        }
+        _refreshCards();
+      },
     );
   }
 
@@ -462,13 +395,6 @@ class _CardListPageState extends State<CardListPage> {
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.document_scanner),
-                color: AppColors.textSecondary,
-                tooltip: 'Riconosci carta (OCR)',
-                onPressed: _catalogSearching ? null : _openOcr,
               ),
             ],
           ),
@@ -654,6 +580,157 @@ class _CardListPageState extends State<CardListPage> {
           onTap: _showDetails,
         );
       },
+    );
+  }
+}
+
+// ─── Top undo bar ─────────────────────────────────────────────────────────────
+
+class _TopUndoBar {
+  static OverlayEntry? _entry;
+
+  static void show({
+    required BuildContext context,
+    required String message,
+    required VoidCallback onUndo,
+  }) {
+    _entry?.remove();
+    _entry = null;
+
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _UndoBarWidget(
+        message: message,
+        onUndo: () {
+          onUndo();
+          _dismiss();
+        },
+        onExpired: _dismiss,
+      ),
+    );
+    _entry = entry;
+    Overlay.of(context).insert(entry);
+  }
+
+  static void _dismiss() {
+    _entry?.remove();
+    _entry = null;
+  }
+}
+
+class _UndoBarWidget extends StatefulWidget {
+  final String message;
+  final VoidCallback onUndo;
+  final VoidCallback onExpired;
+
+  const _UndoBarWidget({
+    required this.message,
+    required this.onUndo,
+    required this.onExpired,
+  });
+
+  @override
+  State<_UndoBarWidget> createState() => _UndoBarWidgetState();
+}
+
+class _UndoBarWidgetState extends State<_UndoBarWidget> {
+  int _remaining = 5;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      if (_remaining <= 1) {
+        t.cancel();
+        widget.onExpired();
+      } else {
+        setState(() => _remaining--);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final topPad = MediaQuery.of(context).padding.top;
+    return Positioned(
+      top: topPad + kToolbarHeight + 8,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.bgMedium,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.red.withValues(alpha: 0.45)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Countdown ring
+              SizedBox(
+                width: 34,
+                height: 34,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: _remaining / 5,
+                      strokeWidth: 2.5,
+                      color: Colors.red.shade400,
+                      backgroundColor: Colors.red.withValues(alpha: 0.15),
+                    ),
+                    Text(
+                      '$_remaining',
+                      style: TextStyle(
+                        color: Colors.red.shade300,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  widget.message,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: widget.onUndo,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange.shade300,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: const Text(
+                  'Annulla',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

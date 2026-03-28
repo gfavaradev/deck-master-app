@@ -14,12 +14,14 @@ import 'login_page.dart';
 import 'profile_page.dart';
 import 'admin_home_page.dart';
 import '../services/auth_service.dart';
+import '../services/background_download_service.dart';
 import '../services/data_repository.dart';
 import '../services/notification_service.dart';
 import '../services/sync_service.dart';
 import '../services/xp_service.dart';
 import '../widgets/user_avatar_widget.dart';
 import 'notifications_page.dart';
+import 'card_scanner_page.dart';
 
 /// Layout principale con barra di navigazione persistente
 class MainLayout extends StatefulWidget {
@@ -45,7 +47,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   String? _currentCollectionKey;
   String? _currentCollectionName;
   bool _isAdmin = false;
-  bool _hasUnreadNotifications = false;
+  int _unreadCount = 0;
   final AuthService _authService = AuthService();
   final DataRepository _repo = DataRepository();
   User? _currentUser;
@@ -80,7 +82,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _checkPendingCatalogNavigation();
       await Future.delayed(const Duration(seconds: 2));
-      if (mounted && !_isAdmin) _checkCatalogUpdate();
+      if (mounted) _checkCatalogUpdate();
     });
 
     if (widget.updateNotification != null) {
@@ -201,7 +203,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   }
 
   Future<void> _checkAdmin() async {
-    final isAdmin = await _authService.isCurrentUserAdmin();
+    final isAdmin = await _authService.isCurrentUserAdmin()
+        .timeout(const Duration(seconds: 8))
+        .catchError((_) => false);
     if (mounted) {
       setState(() {
         _isAdmin = isAdmin;
@@ -210,12 +214,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   }
 
   Future<void> _checkUnreadNotifications() async {
-    final hasUnread = await hasUnreadNotifications();
-    if (mounted) {
-      setState(() {
-        _hasUnreadNotifications = hasUnread;
-      });
-    }
+    final count = await unreadNotificationCount();
+    if (mounted) setState(() => _unreadCount = count);
   }
 
   Future<void> _checkCatalogUpdate() async {
@@ -223,7 +223,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       final updates = await _repo.checkAllUnlockedCatalogUpdates();
       if (!mounted || updates.isEmpty) return;
       setState(() => _pendingUpdates = updates);
-      _showCatalogUpdateDialog(updates);
+      // Nessun popup immediato: aggiorna solo il badge con il conteggio pending
+      await setPendingUpdatesCount(updates.length);
+      if (mounted) _checkUnreadNotifications();
     } catch (_) {}
   }
 
@@ -288,56 +290,72 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       _hasPendingCatalogUpdate = false;
       _catalogDownloadProgress = null;
     });
+
     final total = updates.length;
     int successCount = 0;
-    for (int i = 0; i < updates.length; i++) {
-      final info = updates[i];
-      final key = info['collectionKey'] as String;
-      if (mounted) {
-        setState(() {
-          _currentDownloadingName = info['collectionName'] as String? ?? key;
-          _currentDownloadingIndex = i + 1;
-        });
-      }
-      try {
-        await _repo.downloadCollectionCatalog(
-          key,
-          updateInfo: info,
-          onProgress: (current, colTotal) {
-            if (mounted) {
-              setState(() => _catalogDownloadProgress = (i + current / colTotal) / total);
-            }
-          },
-          onSaveProgress: (progress) {
-            if (mounted) {
-              setState(() => _catalogDownloadProgress = (i + progress) / total);
-            }
-          },
-        );
-        successCount++;
-      } catch (e) {
+    try {
+      // Avvia il Foreground Service Android (tiene vivo il processo in background)
+      await BackgroundDownloadService.startDownload('Catalogo');
+      for (int i = 0; i < updates.length; i++) {
+        final info = updates[i];
+        final key = info['collectionKey'] as String;
+        final name = info['collectionName'] as String? ?? key;
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Errore aggiornamento ${info['collectionName'] ?? key}: $e')),
+          setState(() {
+            _currentDownloadingName = name;
+            _currentDownloadingIndex = i + 1;
+          });
+        }
+        BackgroundDownloadService.updateStatus(
+          total > 1 ? 'Collezione ${i + 1}/$total: $name' : name,
+        );
+        try {
+          await _repo.downloadCollectionCatalog(
+            key,
+            updateInfo: info,
+            onProgress: (current, colTotal) {
+              if (mounted) {
+                setState(() => _catalogDownloadProgress = (i + current / colTotal) / total);
+              }
+              final pct = colTotal > 0 ? ((current / colTotal) * 100).toInt() : 0;
+              BackgroundDownloadService.updateStatus(
+                total > 1 ? 'Collezione ${i + 1}/$total: $name ($pct%)' : '$name ($pct%)',
+              );
+            },
+            onSaveProgress: (progress) {
+              if (mounted) {
+                setState(() => _catalogDownloadProgress = (i + progress) / total);
+              }
+            },
           );
+          successCount++;
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Errore aggiornamento ${info['collectionName'] ?? key}: $e')),
+            );
+          }
         }
       }
-    }
-    if (mounted) {
-      setState(() {
-        _isCatalogDownloading = false;
-        _catalogDownloadProgress = null;
-        _currentDownloadingName = null;
-        _currentDownloadingIndex = 0;
-        _pendingUpdates = [];
-      });
-      if (successCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Catalogo aggiornato con successo!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+    } finally {
+      // Ferma sempre il Foreground Service, anche in caso di errore
+      await BackgroundDownloadService.stopDownload();
+      if (mounted) {
+        setState(() {
+          _isCatalogDownloading = false;
+          _catalogDownloadProgress = null;
+          _currentDownloadingName = null;
+          _currentDownloadingIndex = 0;
+          _pendingUpdates = [];
+        });
+        if (successCount > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Catalogo aggiornato con successo!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
     }
   }
@@ -345,53 +363,83 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   void _showDownloadDetails() {
     final progress = _catalogDownloadProgress;
     final total = _pendingUpdates.isNotEmpty ? _pendingUpdates.length : _currentDownloadingIndex;
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.download_rounded, color: Colors.blue, size: 22),
-            SizedBox(width: 8),
-            Text('Download in corso'),
+      backgroundColor: Colors.transparent,
+      isDismissible: true,
+      enableDrag: true,
+      builder: (ctx) => Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 12,
+              offset: const Offset(0, -2),
+            ),
           ],
         ),
-        content: Column(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                const Icon(Icons.download_rounded, color: Colors.blue, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Download in corso',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const Spacer(),
+                if (progress != null)
+                  Text(
+                    '${(progress * 100).toInt()}%',
+                    style: const TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
             if (_currentDownloadingName != null) ...[
               Text(
                 _currentDownloadingIndex > 0 && total > 1
                     ? 'Collezione $_currentDownloadingIndex di $total: $_currentDownloadingName'
-                    : 'Collezione: $_currentDownloadingName',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                    : _currentDownloadingName!,
+                style: const TextStyle(fontSize: 13, color: Colors.grey),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
             ],
             ClipRRect(
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(
                 value: progress,
-                minHeight: 8,
+                minHeight: 6,
                 backgroundColor: Colors.grey.shade200,
                 color: Colors.blue,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              progress != null
-                  ? '${(progress * 100).toInt()}% completato'
-                  : 'Avvio download...',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
-            ),
+            const SizedBox(height: 4),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Chiudi'),
-          ),
-        ],
       ),
     );
   }
@@ -452,6 +500,20 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         title: Text(appBarTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          if (inCollection)
+            IconButton(
+              icon: const Icon(Icons.document_scanner_outlined),
+              tooltip: 'Scansiona carta',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CardScannerPage(
+                    collectionKey: _currentCollectionKey,
+                    collectionName: _currentCollectionName,
+                  ),
+                ),
+              ),
+            ),
           Stack(
             alignment: Alignment.center,
             children: [
@@ -459,24 +521,43 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 icon: const Icon(Icons.notifications_outlined),
                 tooltip: 'Notifiche',
                 onPressed: () async {
-                  await Navigator.push(
+                  final result = await Navigator.push<Map<String, dynamic>>(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const NotificationsPage()),
+                      builder: (_) => NotificationsPage(
+                        pendingCatalogUpdates: _pendingUpdates,
+                      ),
+                    ),
                   );
+                  if (!mounted) return;
+                  if (result?['action'] == 'download') {
+                    _startCatalogDownload();
+                  } else if (result?['action'] == 'later') {
+                    setState(() => _hasPendingCatalogUpdate = true);
+                  }
                   _checkUnreadNotifications();
                 },
               ),
-              if (_hasUnreadNotifications)
+              if (_unreadCount > 0)
                 Positioned(
-                  right: 10,
-                  top: 10,
+                  right: 6,
+                  top: 6,
                   child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
                       color: Colors.red,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _unreadCount > 99 ? '99+' : '$_unreadCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -552,10 +633,10 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           ),
           PopupMenuButton<String>(
             tooltip: 'Menu utente',
-            onSelected: (value) {
+            onSelected: (value) async {
               if (value == 'profile') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()))
-                    .then((_) { if (mounted) setState(() => _avatarVersion++); });
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
+                if (mounted) setState(() => _avatarVersion++);
               } else if (value == 'settings') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
               } else if (value == 'support') {

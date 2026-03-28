@@ -78,10 +78,13 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
     // On Windows desktop, Firebase Auth restores credentials asynchronously from
     // a local JSON file. Using currentUser directly can return null before restoration
     // completes. authStateChanges().first waits for the first emitted auth state.
-    final User? user = await FirebaseAuth.instance
+    // Prova prima il valore sincrono (già disponibile in cache locale)
+    // Se non c'è, aspetta fino a 8s per il ripristino asincrono (Windows/desktop)
+    User? user = FirebaseAuth.instance.currentUser;
+    user ??= await FirebaseAuth.instance
         .authStateChanges()
         .first
-        .timeout(const Duration(seconds: 5), onTimeout: () => null);
+        .timeout(const Duration(seconds: 8), onTimeout: () => null);
 
     if (user != null) {
       // Sync parte subito in parallelo con il greeting — non blocca la UI

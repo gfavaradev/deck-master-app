@@ -13,6 +13,7 @@ const _kLastSeenVersionYugioh = 'notif_last_seen_catalog_version_yugioh';
 const _kPrevTotalYugioh = 'notif_prev_total_cards_yugioh';
 const _kLastSeenVersionOnepiece = 'notif_last_seen_catalog_version_onepiece';
 const _kPrevTotalOnepiece = 'notif_prev_total_cards_onepiece';
+const _kPendingUpdatesCount = 'notif_pending_updates_count';
 
 // ─── Model ────────────────────────────────────────────────────────────────────
 
@@ -179,12 +180,26 @@ Future<List<_NotifEntry>> _detectAndPersistNewNotifs(
   return history;
 }
 
-// ─── Public API: badge check (usato da MainLayout) ────────────────────────────
+// ─── Public API ───────────────────────────────────────────────────────────────
 
-Future<bool> hasUnreadNotifications() async {
+/// Salva il numero di aggiornamenti catalogo in attesa di download (per il badge)
+Future<void> setPendingUpdatesCount(int count) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt(_kPendingUpdatesCount, count);
+}
+
+/// Numero totale di notifiche non lette (storico + aggiornamenti in attesa)
+Future<int> unreadNotificationCount() async {
   final prefs = await SharedPreferences.getInstance();
   final history = await _detectAndPersistNewNotifs(prefs);
-  return history.any((e) => !e.isRead);
+  final historyUnread = history.where((e) => !e.isRead).length;
+  final pendingCount = prefs.getInt(_kPendingUpdatesCount) ?? 0;
+  return historyUnread + pendingCount;
+}
+
+/// Restituisce true se ci sono notifiche non lette (usato da MainLayout)
+Future<bool> hasUnreadNotifications() async {
+  return (await unreadNotificationCount()) > 0;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -210,7 +225,7 @@ String _formatDate(String iso) {
       'lug', 'ago', 'set', 'ott', 'nov', 'dic'
     ];
     final m = int.tryParse(parts[1]) ?? 0;
-    final day = parts[2].split('T').first; // rimuovi eventuale orario
+    final day = parts[2].split('T').first;
     return '$day ${months[m]} ${parts[0]}';
   } catch (_) {
     return iso;
@@ -220,7 +235,14 @@ String _formatDate(String iso) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 class NotificationsPage extends StatefulWidget {
-  const NotificationsPage({super.key});
+  /// Aggiornamenti catalogo rilevati ma non ancora scaricati.
+  /// Passati da MainLayout per mostrare la sezione "Da scaricare".
+  final List<Map<String, dynamic>> pendingCatalogUpdates;
+
+  const NotificationsPage({
+    super.key,
+    this.pendingCatalogUpdates = const [],
+  });
 
   @override
   State<NotificationsPage> createState() => _NotificationsPageState();
@@ -241,6 +263,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
     // Rileva nuove notifiche e aggiunge allo storico
     final history = await _detectAndPersistNewNotifs(prefs);
+
+    // Cancella il contatore pending (l'utente sta guardando la pagina)
+    await prefs.setInt(_kPendingUpdatesCount, 0);
 
     // Salva subito la versione con tutto marcato come letto (per il badge in MainLayout)
     final markedHistory = history.map((e) => e.isRead ? e : e.markRead()).toList();
@@ -312,7 +337,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Widget _buildBody() {
-    if (_history.isEmpty) {
+    final hasPending = widget.pendingCatalogUpdates.isNotEmpty;
+    final isEmpty = _history.isEmpty && !hasPending;
+
+    if (isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -328,22 +356,23 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
     }
 
-    // Raggruppa per tipo per i section headers
-    final appEntries =
-        _history.where((e) => e.type == 'app_update').toList();
-    final catalogEntries =
-        _history.where((e) => e.type == 'catalog_update').toList();
+    final appEntries = _history.where((e) => e.type == 'app_update').toList();
+    final catalogEntries = _history.where((e) => e.type == 'catalog_update').toList();
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
+        // ── Sezione aggiornamenti in attesa di download ──────────────────────
+        if (hasPending) ...[
+          _buildSectionHeader('Aggiornamenti Disponibili', Icons.cloud_download_outlined),
+          ...widget.pendingCatalogUpdates.map(_buildPendingUpdateTile),
+        ],
         if (appEntries.isNotEmpty) ...[
           _buildSectionHeader('Novità dell\'App', Icons.system_update_alt),
           ...appEntries.map(_buildAppEntry),
         ],
         if (catalogEntries.isNotEmpty) ...[
-          _buildSectionHeader(
-              'Aggiornamenti Catalogo', Icons.library_books),
+          _buildSectionHeader('Aggiornamenti Catalogo', Icons.library_books),
           ...catalogEntries.map(_buildCatalogTile),
         ],
       ],
@@ -369,6 +398,115 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Pending update tile (da scaricare) ───────────────────────────────────────
+
+  Widget _buildPendingUpdateTile(Map<String, dynamic> update) {
+    final key = update['collectionKey'] as String? ?? '';
+    final name = update['collectionName'] as String? ?? key;
+    final isFirst = update['isFirstDownload'] == true;
+    final canIncremental = update['canDoIncremental'] == true;
+
+    final IconData icon;
+    final Color color;
+    if (key == 'yugioh') {
+      icon = Icons.auto_awesome;
+      color = AppColors.gold;
+    } else if (key == 'pokemon') {
+      icon = Icons.catching_pokemon;
+      color = const Color(0xFFEE1515);
+    } else {
+      icon = Icons.sailing;
+      color = const Color(0xFF4CAF50);
+    }
+
+    final String subtitle;
+    if (isFirst) {
+      subtitle = 'Primo download disponibile';
+    } else if (canIncremental) {
+      final chunks = (update['modifiedChunks'] as List?)?.length ?? 0;
+      subtitle = 'Aggiornamento parziale ($chunks chunk)';
+    } else {
+      subtitle = 'Aggiornamento completo disponibile';
+    }
+
+    return Card(
+      color: AppColors.bgMedium,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                SizedBox(
+                  height: 32,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: color,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => Navigator.pop(context, {'action': 'download'}),
+                    child: const Text('Scarica'),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context, {'action': 'later'}),
+                  child: Text(
+                    'Più tardi',
+                    style: TextStyle(
+                      color: AppColors.textHint,
+                      fontSize: 11,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -409,7 +547,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
           children: [
             Row(
               children: [
-                // Badge "NUOVA" se non ancora letta al momento della rilevazione
                 if (!entry.isRead) ...[
                   Container(
                     padding:
@@ -486,11 +623,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
           ],
         ),
       ),
-    ),  // Card
-    );  // Dismissible
+    ),
+    );
   }
 
-  // ── Catalog update tile ───────────────────────────────────────────────────────
+  // ── Catalog update tile (post-download storico) ───────────────────────────────
 
   Widget _buildCatalogTile(_NotifEntry entry) {
     final catalog = entry.data['catalog'] as String? ?? '';
@@ -601,7 +738,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           ],
         ),
       ),
-    ),  // Card
-    );  // Dismissible
+    ),
+    );
   }
 }

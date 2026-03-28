@@ -399,6 +399,7 @@ class DataRepository {
     final localId = await _dbHelper.insertAlbum(album);
     final savedAlbum = album.copyWith(id: localId);
     await _syncService.pushAlbumChange(savedAlbum, 'insert');
+    _syncService.notifyLocalChange('albums');
     return localId;
   }
 
@@ -408,6 +409,7 @@ class DataRepository {
 
   Future<int> updateAlbum(AlbumModel album) async {
     final result = await _dbHelper.updateAlbum(album);
+    _syncService.notifyLocalChange('albums');
     // Re-read to get firestoreId
     final albums = await _dbHelper.getAlbumsByCollection(album.collection);
     final updated = albums.firstWhere((a) => a.id == album.id, orElse: () => album);
@@ -419,6 +421,7 @@ class DataRepository {
     // Get firestoreId before deleting
     final firestoreId = await _dbHelper.getFirestoreId('albums', id);
     final result = await _dbHelper.deleteAlbum(id);
+    _syncService.notifyLocalChange('albums');
     if (firestoreId != null) {
       final placeholder = AlbumModel(id: id, firestoreId: firestoreId, name: '', collection: '', maxCapacity: 0);
       await _syncService.pushAlbumChange(placeholder, 'delete');
@@ -434,12 +437,14 @@ class DataRepository {
     final localId = await _dbHelper.insertCard(card);
     final savedCard = card.copyWith(id: localId);
     await _syncService.pushCardChange(savedCard, 'insert');
+    _syncService.notifyLocalChange('cards');
     return localId;
   }
 
   Future<int> updateCard(CardModel card) async {
     final result = await _dbHelper.updateCard(card);
     // Re-read to get firestoreId
+    _syncService.notifyLocalChange('cards');
     final firestoreId = card.id != null ? await _dbHelper.getFirestoreId('cards', card.id!) : null;
     final updatedCard = card.copyWith(firestoreId: firestoreId);
     await _syncService.pushCardChange(updatedCard, 'update');
@@ -449,6 +454,7 @@ class DataRepository {
   Future<int> deleteCard(int id) async {
     final firestoreId = await _dbHelper.getFirestoreId('cards', id);
     final result = await _dbHelper.deleteCard(id);
+    _syncService.notifyLocalChange('cards');
     if (firestoreId != null) {
       final placeholder = CardModel(
         id: id,
@@ -707,6 +713,9 @@ class DataRepository {
     return results;
   }
 
+  /// Lock globale: impedisce download paralleli sullo stesso catalogo.
+  static bool _isDownloadingCatalog = false;
+
   /// Generic catalog download, routes by [collectionKey].
   Future<void> downloadCollectionCatalog(
     String collectionKey, {
@@ -714,25 +723,34 @@ class DataRepository {
     void Function(int, int)? onProgress,
     void Function(double)? onSaveProgress,
   }) async {
-    switch (collectionKey) {
-      case 'onepiece':
-        await redownloadOnepieceCatalog(
-          onProgress: onProgress,
-          onSaveProgress: onSaveProgress,
-        );
-        break;
-      case 'pokemon':
-        await redownloadPokemonCatalog(
-          onProgress: onProgress,
-          onSaveProgress: onSaveProgress,
-        );
-        break;
-      default:
-        await downloadYugiohCatalog(
-          updateInfo: updateInfo,
-          onProgress: onProgress,
-          onSaveProgress: onSaveProgress,
-        );
+    if (_isDownloadingCatalog) {
+      debugPrint('downloadCollectionCatalog: download già in corso, skip.');
+      return;
+    }
+    _isDownloadingCatalog = true;
+    try {
+      switch (collectionKey) {
+        case 'onepiece':
+          await redownloadOnepieceCatalog(
+            onProgress: onProgress,
+            onSaveProgress: onSaveProgress,
+          );
+          break;
+        case 'pokemon':
+          await redownloadPokemonCatalog(
+            onProgress: onProgress,
+            onSaveProgress: onSaveProgress,
+          );
+          break;
+        default:
+          await downloadYugiohCatalog(
+            updateInfo: updateInfo,
+            onProgress: onProgress,
+            onSaveProgress: onSaveProgress,
+          );
+      }
+    } finally {
+      _isDownloadingCatalog = false;
     }
   }
 
@@ -872,11 +890,11 @@ class DataRepository {
     return await _dbHelper.getCardSets(cardId);
   }
 
-  Future<List<Map<String, dynamic>>> getSetStats(String collection) =>
-      _dbHelper.getSetStats(collection);
+  Future<List<Map<String, dynamic>>> getSetStats(String collection, {String lang = 'en'}) =>
+      _dbHelper.getSetStats(collection, lang: lang);
 
-  Future<List<Map<String, dynamic>>> getSetDetail(String collection, String setIdentifier) =>
-      _dbHelper.getSetDetail(collection, setIdentifier);
+  Future<List<Map<String, dynamic>>> getSetDetail(String collection, String setIdentifier, {String lang = 'en'}) =>
+      _dbHelper.getSetDetail(collection, setIdentifier, lang: lang);
 
   Future<Map<String, dynamic>?> checkSetCompletion(String collection, String serialNumber) =>
       _dbHelper.checkSetCompletion(collection, serialNumber);
@@ -925,6 +943,7 @@ class DataRepository {
 
   Future<int> insertDeck(String name, String collection) async {
     final localId = await _dbHelper.insertDeck(name, collection);
+    _syncService.notifyLocalChange('decks');
     // Push to Firestore
     try {
       if (await _syncService.canSync()) {
@@ -954,6 +973,7 @@ class DataRepository {
   Future<int> deleteDeck(int id) async {
     final firestoreId = await _dbHelper.getFirestoreId('decks', id);
     final result = await _dbHelper.deleteDeck(id);
+    _syncService.notifyLocalChange('decks');
     if (firestoreId != null) {
       await _syncService.pushDeckChange(id, 'delete');
     }
@@ -1010,8 +1030,13 @@ class DataRepository {
 
   Future<void> fullSync() async {
     // Push any local pending changes first, then restore the full cloud state.
-    await _syncService.flushPendingQueue();
-    await _syncService.pullFromCloud();
+    // Timeout totale 30s — se offline fallisce silenziosamente senza bloccare.
+    await _syncService.flushPendingQueue()
+        .timeout(const Duration(seconds: 15))
+        .catchError((_) {});
+    await _syncService.pullFromCloud()
+        .timeout(const Duration(seconds: 15))
+        .catchError((_) {});
   }
 
   /// Deduplicate local data, wipe Firestore, re-upload clean state.

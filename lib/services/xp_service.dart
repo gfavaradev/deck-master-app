@@ -1067,7 +1067,11 @@ class XpService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 8));
       final data = doc.data();
       if (data == null) return;
       final remoteXp = data['xp'] as int? ?? 0;

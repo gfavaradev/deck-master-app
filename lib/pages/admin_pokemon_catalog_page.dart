@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:deck_master/services/admin_catalog_service.dart';
 import 'package:deck_master/services/auth_service.dart';
+import 'package:deck_master/theme/app_colors.dart';
 
 /// Admin page for managing the Pokémon TCG catalog.
 /// Allows downloading the full catalog from pokemontcg.io and migrating
@@ -129,8 +130,8 @@ class _AdminPokemonCatalogPageState extends State<AdminPokemonCatalogPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin — Catalogo Pokémon'),
-        backgroundColor: Colors.red.shade700,
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.bgMedium,
+        foregroundColor: AppColors.textPrimary,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -192,7 +193,7 @@ class _AdminPokemonCatalogPageState extends State<AdminPokemonCatalogPage> {
                         Text(
                           '${((_progress ?? 0) * 100).toStringAsFixed(0)}%',
                           style: const TextStyle(
-                              fontSize: 12, color: Colors.grey),
+                              fontSize: 12, color: AppColors.textSecondary),
                         ),
                       ] else if (_isBusy) ...[
                         const SizedBox(height: 8),
@@ -324,7 +325,7 @@ class _SectionHeader extends StatelessWidget {
       style: const TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w600,
-        color: Colors.black54,
+        color: AppColors.textSecondary,
         letterSpacing: 0.3,
       ),
     );
@@ -362,12 +363,12 @@ class _ActionCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: enabled ? color.withValues(alpha: 0.1) : Colors.grey.shade100,
+                  color: enabled ? color.withValues(alpha: 0.1) : AppColors.bgLight,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   icon,
-                  color: enabled ? color : Colors.grey,
+                  color: enabled ? color : AppColors.textHint,
                   size: 26,
                 ),
               ),
@@ -381,7 +382,7 @@ class _ActionCard extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
-                        color: enabled ? Colors.black87 : Colors.grey,
+                        color: enabled ? AppColors.textPrimary : AppColors.textHint,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -389,7 +390,7 @@ class _ActionCard extends StatelessWidget {
                       description,
                       style: TextStyle(
                         fontSize: 12,
-                        color: enabled ? Colors.black54 : Colors.grey.shade400,
+                        color: enabled ? AppColors.textSecondary : AppColors.textHint,
                       ),
                     ),
                   ],
@@ -397,7 +398,7 @@ class _ActionCard extends StatelessWidget {
               ),
               Icon(
                 Icons.chevron_right,
-                color: enabled ? color : Colors.grey.shade300,
+                color: enabled ? color : AppColors.textHint,
               ),
             ],
           ),

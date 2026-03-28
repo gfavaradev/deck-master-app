@@ -12,7 +12,7 @@ class ProPage extends StatefulWidget {
 }
 
 class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
-  bool _annual = true;
+  final bool _annual = true;
   bool _isPurchasing = false;
   Offerings? _offerings;
   late AnimationController _shimmerController;
