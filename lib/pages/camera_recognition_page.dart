@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+// google_mlkit_text_recognition disabled for simulator build
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_colors.dart';
 
@@ -24,13 +24,6 @@ class _CameraRecognitionPageState extends State<CameraRecognitionPage> {
   bool _isProcessing = false;
   String? _lastError;
   final _picker = ImagePicker();
-  final _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-
-  @override
-  void dispose() {
-    _recognizer.close();
-    super.dispose();
-  }
 
   Future<void> _captureAndRecognize() async {
     setState(() {
@@ -49,57 +42,11 @@ class _CameraRecognitionPageState extends State<CameraRecognitionPage> {
         return;
       }
 
-      final inputImage = InputImage.fromFilePath(photo.path);
-      final recognized = await _recognizer.processImage(inputImage);
-
-      final lines = recognized.blocks
-          .expand((b) => b.lines)
-          .map((l) => l.text.trim())
-          .where((t) => t.isNotEmpty)
-          .toList();
-
-      if (lines.isEmpty) {
-        setState(() {
-          _isProcessing = false;
-          _lastError = 'Nessun testo riconosciuto. Riprova con la carta ben illuminata.';
-        });
-        return;
-      }
-
-      // Cerca il seriale: tipicamente formato "XXX-IT000" o "SV01-001"
-      final serialRegex = RegExp(r'[A-Z0-9]{2,6}-[A-Z]{0,2}\d{3}', caseSensitive: false);
-      String? serial;
-      String? cardName;
-
-      for (final line in lines) {
-        if (serial == null) {
-          final match = serialRegex.firstMatch(line);
-          if (match != null) serial = match.group(0);
-        }
-        // Il nome della carta tende ad essere una riga in maiuscolo o misto,
-        // più lunga di 3 caratteri, prima del seriale
-        if (cardName == null && line.length > 3 && !serialRegex.hasMatch(line)) {
-          cardName = line;
-        }
-      }
-
-      if (cardName == null && lines.isNotEmpty) {
-        cardName = lines.first;
-      }
-
-      if (!mounted) return;
-
-      if (cardName != null) {
-        Navigator.pop(
-          context,
-          RecognitionResult(cardName: cardName, serialNumber: serial),
-        );
-      } else {
-        setState(() {
-          _isProcessing = false;
-          _lastError = 'Non è stato possibile estrarre il nome della carta.';
-        });
-      }
+      // ML Kit disabled for simulator build
+      setState(() {
+        _isProcessing = false;
+        _lastError = 'OCR non disponibile su simulatore. Usa un dispositivo reale.';
+      });
     } catch (e) {
       if (mounted) {
         setState(() {

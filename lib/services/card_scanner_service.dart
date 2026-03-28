@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+// google_mlkit_text_recognition disabled for simulator build
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -77,47 +77,9 @@ class CardScannerService {
   }
 
   Future<CardScanResult?> _tryOcr(XFile image) async {
-    final inputImage = InputImage.fromFilePath(image.path);
-    final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-    try {
-      final recognized = await recognizer.processImage(inputImage);
-      final text = recognized.text.toUpperCase();
-      debugPrint('[CardScanner OCR] detected:\n$text');
-
-      // Yu-Gi-Oh
-      for (final m in _ygoSerial.allMatches(text)) {
-        final serial = m.group(0)!;
-        final card = await _searchCatalog('yugioh', serial);
-        if (card != null) {
-          return CardScanResult(
-            cardName: card['name'] as String? ?? serial,
-            serialNumber: serial,
-            collection: 'yugioh',
-            catalogCard: card,
-            source: 'ocr',
-          );
-        }
-      }
-
-      // One Piece
-      for (final m in _opSerial.allMatches(text)) {
-        final serial = m.group(0)!;
-        final card = await _searchCatalog('onepiece', serial);
-        if (card != null) {
-          return CardScanResult(
-            cardName: card['name'] as String? ?? serial,
-            serialNumber: serial,
-            collection: 'onepiece',
-            catalogCard: card,
-            source: 'ocr',
-          );
-        }
-      }
-
-      return null;
-    } finally {
-      await recognizer.close();
-    }
+    // ML Kit disabled for simulator build (iOS 26 incompatibility)
+    debugPrint('[CardScanner OCR] disabled on simulator — skipping to Gemini');
+    return null;
   }
 
   Future<CardScanResult?> _tryGemini(XFile image) async {
