@@ -235,10 +235,7 @@ class SyncService {
 
         final existing = await _dbHelper.getCardByFirestoreId(firestoreId);
         if (existing != null) {
-          // Preserva il valore locale se > 0: i prezzi CT sono calcolati localmente
-          // e non vengono mai scritti su Firestore, quindi il valore Firestore è sempre stale.
-          final localValue = existing.value > 0 ? existing.value : card.value;
-          await _dbHelper.updateCard(card.copyWith(id: existing.id, value: localValue));
+          await _dbHelper.updateCard(card.copyWith(id: existing.id));
         } else {
           final localId = await _dbHelper.insertCard(card);
           await _dbHelper.updateFirestoreId('cards', localId, firestoreId);
