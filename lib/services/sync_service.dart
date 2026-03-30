@@ -235,7 +235,9 @@ class SyncService {
 
         final existing = await _dbHelper.getCardByFirestoreId(firestoreId);
         if (existing != null) {
-          await _dbHelper.updateCard(card.copyWith(id: existing.id));
+          // Preserve local value — CT prices come from shared Firestore collection,
+          // not from per-user card documents.
+          await _dbHelper.updateCard(card.copyWith(id: existing.id, value: existing.value));
         } else {
           final localId = await _dbHelper.insertCard(card);
           await _dbHelper.updateFirestoreId('cards', localId, firestoreId);
@@ -270,10 +272,42 @@ class SyncService {
 
       await _dbHelper.clearPendingSync();
       debugPrint('Pull from cloud completed (merge) — albums: ${remoteAlbums.length}, cards: ${remoteCards.length}');
+
+      // Sync CardTrader prices from shared Firestore collection
+      await _syncCardtraderPrices();
+
       _remoteChangeController.add('cards');
     } catch (e) {
       debugPrint('Error during pull from cloud: $e');
       rethrow;
+    }
+  }
+
+  Future<void> _syncCardtraderPrices() async {
+    try {
+      for (final catalog in ['yugioh', 'pokemon', 'onepiece']) {
+        final remoteSyncedAt = await _firestoreService.getCardtraderPricesSyncedAt(catalog);
+        if (remoteSyncedAt == null) continue;
+
+        // Skip if local prices are already up to date
+        final prefs = await SharedPreferences.getInstance();
+        final localKey = 'ct_prices_synced_at_$catalog';
+        final localStr = prefs.getString(localKey);
+        if (localStr != null) {
+          final localSyncedAt = DateTime.tryParse(localStr);
+          if (localSyncedAt != null && !remoteSyncedAt.isAfter(localSyncedAt)) continue;
+        }
+
+        final prices = await _firestoreService.fetchCardtraderPrices(catalog);
+        if (prices.isEmpty) continue;
+
+        await _dbHelper.upsertCardtraderPrices(prices);
+        await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
+        await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
+        debugPrint('[SyncService] CT prices applied for $catalog: ${prices.length} rows');
+      }
+    } catch (e) {
+      debugPrint('[SyncService] Error syncing CT prices: $e');
     }
   }
 

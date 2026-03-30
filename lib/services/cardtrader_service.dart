@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'auth_service.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'sync_service.dart';
@@ -216,17 +215,12 @@ class CardtraderService {
 
   Future<void> _pushCardValuesToFirestore(String catalog) async {
     try {
-      final userId = AuthService().currentUserId;
-      if (userId == null) return;
-      final cards = await _db.getCardsWithValueByCollection(catalog);
-      final firestoreService = FirestoreService();
-      for (final card in cards) {
-        if (card.firestoreId == null) continue;
-        final albumFirestoreId = await _db.getFirestoreId('albums', card.albumId);
-        await firestoreService.updateCard(userId, card.firestoreId!, card, albumFirestoreId: albumFirestoreId);
-      }
+      final prices = await _db.getAllCardtraderPrices(catalog);
+      if (prices.isEmpty) return;
+      await FirestoreService().saveCardtraderPrices(catalog, prices);
+      debugPrint('[CardTrader] Saved ${prices.length} prices to shared Firestore for $catalog');
     } catch (e) {
-      debugPrint('[CardTrader] Error pushing values to Firestore: $e');
+      debugPrint('[CardTrader] Error pushing prices to Firestore: $e');
     }
   }
 

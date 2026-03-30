@@ -479,6 +479,71 @@ class FirestoreService {
     }
   }
 
+  // ============================================================
+  // CardTrader Prices (shared, not per-user)
+  // ============================================================
+
+  static const int _ctChunkSize = 400;
+
+  Future<void> saveCardtraderPrices(
+    String catalog,
+    List<Map<String, dynamic>> prices,
+  ) async {
+    final ref = _firestore.collection('cardtrader_prices').doc(catalog);
+
+    // Delete old chunks
+    final oldChunks = await ref.collection('chunks').get();
+    for (final chunk in oldChunks.docs) {
+      await chunk.reference.delete();
+    }
+
+    // Write new chunks
+    for (int i = 0; i < prices.length; i += _ctChunkSize) {
+      final slice = prices.sublist(i, (i + _ctChunkSize).clamp(0, prices.length));
+      await ref.collection('chunks').doc('$i').set({'rows': slice});
+    }
+
+    // Update metadata
+    await ref.set({
+      'catalog': catalog,
+      'count': prices.length,
+      'syncedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> fetchCardtraderPrices(String catalog) async {
+    try {
+      final chunks = await _firestore
+          .collection('cardtrader_prices')
+          .doc(catalog)
+          .collection('chunks')
+          .get()
+          .timeout(const Duration(seconds: 30));
+
+      final result = <Map<String, dynamic>>[];
+      for (final doc in chunks.docs) {
+        final rows = doc.data()['rows'] as List<dynamic>? ?? [];
+        result.addAll(rows.cast<Map<String, dynamic>>());
+      }
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<DateTime?> getCardtraderPricesSyncedAt(String catalog) async {
+    try {
+      final doc = await _firestore
+          .collection('cardtrader_prices')
+          .doc(catalog)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      final ts = doc.data()?['syncedAt'];
+      if (ts is Timestamp) return ts.toDate();
+    } catch (_) {}
+    return null;
+  }
+
   /// Delete all albums, cards and decks documents for a user.
   /// Used by resetAndResync to start from a clean slate.
   Future<void> clearUserData(String userId) async {

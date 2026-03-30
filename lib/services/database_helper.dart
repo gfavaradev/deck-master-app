@@ -2846,14 +2846,9 @@ class DatabaseHelper {
     return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
   }
 
-  Future<List<CardModel>> getCardsWithValueByCollection(String collection) async {
+  Future<List<Map<String, dynamic>>> getAllCardtraderPrices(String catalog) async {
     final db = await database;
-    final maps = await db.query(
-      'cards',
-      where: 'collection = ? AND value > 0',
-      whereArgs: [collection],
-    );
-    return maps.map((m) => CardModel.fromMap(m)).toList();
+    return db.query('cardtrader_prices', where: 'catalog = ?', whereArgs: [catalog]);
   }
 
   Future<List<Map<String, dynamic>>> getAllDecks() async {
