@@ -3,7 +3,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io' show Platform;
 
 class LanguageService {
-  static const String _languageKey = 'yugioh_display_language';
+  // Legacy key — kept for backward compatibility with existing SharedPreferences data
+  static const String _legacyYugiohKey = 'yugioh_display_language';
+
+  /// Languages available per collection. Collections not listed (or with empty list)
+  /// have no language support and won't show the language picker.
+  static const Map<String, List<String>> collectionLanguages = {
+    'yugioh':   ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'],
+    'pokemon':  ['EN', 'IT', 'FR', 'DE', 'PT'],
+    'onepiece': [],
+  };
+
+  /// Kept for backward compatibility — same as yugioh list.
   static const List<String> supportedLanguages = ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'];
 
   static const Map<String, String> languageLabels = {
@@ -15,35 +26,55 @@ class LanguageService {
     'SP': 'Español',
   };
 
-  // In-memory cache: avoids repeated SharedPreferences I/O on every page load
-  static String? _cached;
+  // Per-collection in-memory cache: avoids repeated SharedPreferences I/O
+  static final Map<String, String> _cache = {};
 
   // Broadcast stream: pages subscribe to be notified when the language changes
   static final _controller = StreamController<String>.broadcast();
   static Stream<String> get onLanguageChanged => _controller.stream;
 
-  static Future<String> getPreferredLanguage() async {
-    if (_cached != null) return _cached!;
+  static String _prefKey(String collectionKey) =>
+      collectionKey == 'yugioh' ? _legacyYugiohKey : '${collectionKey}_display_language';
+
+  // ── Legacy API (backward compat — delegates to yugioh) ──────────────────────
+
+  static Future<String> getPreferredLanguage() =>
+      getPreferredLanguageForCollection('yugioh');
+
+  static Future<void> setPreferredLanguage(String languageCode) =>
+      setPreferredLanguageForCollection('yugioh', languageCode);
+
+  // ── Per-collection API ───────────────────────────────────────────────────────
+
+  static Future<String> getPreferredLanguageForCollection(String collectionKey) async {
+    final langs = collectionLanguages[collectionKey] ?? [];
+    if (langs.isEmpty) return 'EN';
+    if (_cache.containsKey(collectionKey)) return _cache[collectionKey]!;
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_languageKey);
-    _cached = (saved != null && supportedLanguages.contains(saved))
-        ? saved
-        : _detectDeviceLanguage();
-    return _cached!;
+    final saved = prefs.getString(_prefKey(collectionKey));
+    final resolved = (saved != null && langs.contains(saved)) ? saved : _detectDeviceLanguage(langs);
+    _cache[collectionKey] = resolved;
+    return resolved;
   }
 
-  static Future<void> setPreferredLanguage(String languageCode) async {
+  static Future<void> setPreferredLanguageForCollection(String collectionKey, String languageCode) async {
     final code = languageCode.toUpperCase();
-    _cached = code; // update cache immediately
-    _controller.add(code); // notify all listeners
+    _cache[collectionKey] = code;
+    _controller.add(code);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_languageKey, code);
+    await prefs.setString(_prefKey(collectionKey), code);
   }
 
-  static String _detectDeviceLanguage() {
-    final String locale = Platform.localeName;
-    final String code = locale.split('_')[0].toUpperCase();
-    return supportedLanguages.contains(code) ? code : 'EN';
+  // ── Utility ──────────────────────────────────────────────────────────────────
+
+  static String _detectDeviceLanguage(List<String> langs) {
+    try {
+      final String locale = Platform.localeName;
+      final String code = locale.split('_')[0].toUpperCase();
+      return langs.contains(code) ? code : 'EN';
+    } catch (_) {
+      return 'EN';
+    }
   }
 
   /// Detects language from a serial code query, e.g. "LOB-EN001" → "EN", "SDAZ-IT042" → "IT".

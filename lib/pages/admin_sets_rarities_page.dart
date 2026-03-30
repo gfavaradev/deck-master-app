@@ -4,7 +4,8 @@ import '../services/admin_translation_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AdminSetsRaritiesPage extends StatefulWidget {
-  const AdminSetsRaritiesPage({super.key});
+  final String? initialCollection;
+  const AdminSetsRaritiesPage({super.key, this.initialCollection});
 
   @override
   State<AdminSetsRaritiesPage> createState() => _AdminSetsRaritiesPageState();
@@ -25,7 +26,14 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _collections.length, vsync: this);
+    final initialIndex = widget.initialCollection == null
+        ? 0
+        : _collections.indexWhere((c) => c['key'] == widget.initialCollection);
+    _tabController = TabController(
+      length: _collections.length,
+      vsync: this,
+      initialIndex: initialIndex < 0 ? 0 : initialIndex,
+    );
   }
 
   @override

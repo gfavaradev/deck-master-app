@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 17,
+      version: 18,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -252,6 +252,17 @@ class DatabaseHelper {
         'CREATE INDEX IF NOT EXISTS idx_ct_prices_collector '
         'ON cardtrader_prices(catalog, expansion_code, collector_number)',
       );
+    }
+    if (oldVersion < 18) {
+      // Create dedicated expansion/rarity tables and populate from existing prints data.
+      await _createExpansionRarityTables(db);
+      // Populate from existing data (best-effort — null expansions are skipped).
+      await _populateExpansionsFromPrints(db, 'yugioh');
+      await _populateExpansionsFromPrints(db, 'pokemon');
+      await _populateExpansionsFromPrints(db, 'onepiece');
+      await _populateRaritiesFromPrints(db, 'yugioh');
+      await _populateRaritiesFromPrints(db, 'pokemon');
+      await _populateRaritiesFromPrints(db, 'onepiece');
     }
   }
 
@@ -712,6 +723,254 @@ class DatabaseHelper {
       'CREATE INDEX IF NOT EXISTS idx_ct_prices_collector '
       'ON cardtrader_prices(catalog, expansion_code, collector_number)',
     );
+
+    // Dedicated expansion and rarity tables (v18)
+    await _createExpansionRarityTables(db);
+  }
+
+  Future<void> _createExpansionRarityTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS catalog_expansions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        catalog     TEXT NOT NULL,
+        set_id      TEXT,
+        set_name    TEXT NOT NULL,
+        set_name_it TEXT,
+        set_name_fr TEXT,
+        set_name_de TEXT,
+        set_name_pt TEXT,
+        set_name_sp TEXT,
+        UNIQUE(catalog, set_name)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_cat_expansions_catalog '
+      'ON catalog_expansions(catalog)',
+    );
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS catalog_rarities (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        catalog     TEXT NOT NULL,
+        rarity      TEXT NOT NULL,
+        rarity_code TEXT,
+        rarity_it   TEXT,
+        rarity_fr   TEXT,
+        rarity_de   TEXT,
+        rarity_pt   TEXT,
+        rarity_sp   TEXT,
+        UNIQUE(catalog, rarity)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_cat_rarities_catalog '
+      'ON catalog_rarities(catalog)',
+    );
+  }
+
+  // ── Expansion / Rarity population helpers ───────────────────────────────────
+
+  Future<void> _populateExpansionsFromPrints(DatabaseExecutor db, String catalog) async {
+    List<Map<String, dynamic>> rows;
+    if (catalog == 'yugioh') {
+      rows = await db.rawQuery('''
+        SELECT set_name,
+               MIN(set_name_it) AS set_name_it,
+               MIN(set_name_fr) AS set_name_fr,
+               MIN(set_name_de) AS set_name_de,
+               MIN(set_name_pt) AS set_name_pt,
+               MIN(set_name_sp) AS set_name_sp,
+               MIN(COALESCE(set_id,
+                 CASE WHEN set_code != '' AND INSTR(set_code,'-') > 0
+                      THEN SUBSTR(set_code,1,INSTR(set_code,'-')-1)
+                      WHEN set_code != '' THEN set_code ELSE NULL END
+               )) AS set_id
+        FROM yugioh_prints
+        WHERE set_name IS NOT NULL AND set_name != ''
+        GROUP BY set_name
+      ''');
+    } else if (catalog == 'pokemon') {
+      rows = await db.rawQuery('''
+        SELECT pp.set_name,
+               MIN(pp.set_name_it) AS set_name_it,
+               MIN(pp.set_name_fr) AS set_name_fr,
+               MIN(pp.set_name_de) AS set_name_de,
+               MIN(pp.set_name_pt) AS set_name_pt,
+               NULL AS set_name_sp,
+               MIN(pc.set_id) AS set_id
+        FROM pokemon_prints pp
+        JOIN pokemon_cards pc ON pp.card_id = pc.id
+        WHERE pp.set_name IS NOT NULL AND pp.set_name != ''
+        GROUP BY pp.set_name
+      ''');
+    } else if (catalog == 'onepiece') {
+      rows = await db.rawQuery('''
+        SELECT set_name, NULL AS set_name_it, NULL AS set_name_fr,
+               NULL AS set_name_de, NULL AS set_name_pt, NULL AS set_name_sp,
+               MIN(set_id) AS set_id
+        FROM onepiece_prints
+        WHERE set_name IS NOT NULL AND set_name != ''
+        GROUP BY set_name
+      ''');
+    } else {
+      return;
+    }
+    for (final row in rows) {
+      await db.insert('catalog_expansions', {
+        'catalog':     catalog,
+        'set_id':      row['set_id'],
+        'set_name':    row['set_name'],
+        'set_name_it': row['set_name_it'],
+        'set_name_fr': row['set_name_fr'],
+        'set_name_de': row['set_name_de'],
+        'set_name_pt': row['set_name_pt'],
+        'set_name_sp': row['set_name_sp'],
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+  }
+
+  Future<void> _populateRaritiesFromPrints(DatabaseExecutor db, String catalog) async {
+    List<Map<String, dynamic>> rows;
+    if (catalog == 'yugioh') {
+      rows = await db.rawQuery('''
+        SELECT rarity, MIN(rarity_code) AS rarity_code,
+               MIN(rarity_it) AS rarity_it, MIN(rarity_fr) AS rarity_fr,
+               MIN(rarity_de) AS rarity_de, MIN(rarity_pt) AS rarity_pt,
+               MIN(rarity_sp) AS rarity_sp
+        FROM yugioh_prints
+        WHERE rarity IS NOT NULL AND rarity != ''
+        GROUP BY rarity
+      ''');
+    } else if (catalog == 'pokemon') {
+      rows = await db.rawQuery('''
+        SELECT rarity, NULL AS rarity_code,
+               MIN(rarity_it) AS rarity_it, MIN(rarity_fr) AS rarity_fr,
+               MIN(rarity_de) AS rarity_de, MIN(rarity_pt) AS rarity_pt,
+               NULL AS rarity_sp
+        FROM pokemon_prints
+        WHERE rarity IS NOT NULL AND rarity != ''
+        GROUP BY rarity
+      ''');
+    } else if (catalog == 'onepiece') {
+      rows = await db.rawQuery('''
+        SELECT DISTINCT rarity, NULL AS rarity_code,
+               NULL AS rarity_it, NULL AS rarity_fr,
+               NULL AS rarity_de, NULL AS rarity_pt, NULL AS rarity_sp
+        FROM onepiece_prints
+        WHERE rarity IS NOT NULL AND rarity != ''
+      ''');
+    } else {
+      return;
+    }
+    for (final row in rows) {
+      await db.insert('catalog_rarities', {
+        'catalog':    catalog,
+        'rarity':     row['rarity'],
+        'rarity_code':row['rarity_code'],
+        'rarity_it':  row['rarity_it'],
+        'rarity_fr':  row['rarity_fr'],
+        'rarity_de':  row['rarity_de'],
+        'rarity_pt':  row['rarity_pt'],
+        'rarity_sp':  row['rarity_sp'],
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+  }
+
+  // ── Public expansion/rarity CRUD ────────────────────────────────────────────
+
+  /// Returns all expansions for [catalog] ordered by set_name.
+  Future<List<Map<String, dynamic>>> getExpansions(String catalog) async {
+    final db = await database;
+    return db.query('catalog_expansions',
+        where: 'catalog = ?', whereArgs: [catalog], orderBy: 'set_name ASC');
+  }
+
+  /// Returns all rarities for [catalog] ordered by rarity.
+  Future<List<Map<String, dynamic>>> getRarities(String catalog) async {
+    final db = await database;
+    return db.query('catalog_rarities',
+        where: 'catalog = ?', whereArgs: [catalog], orderBy: 'rarity ASC');
+  }
+
+  /// Upserts a single expansion row (insert or replace on conflict).
+  Future<void> upsertExpansion(String catalog, Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert('catalog_expansions', {'catalog': catalog, ...data},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Upserts a single rarity row.
+  Future<void> upsertRarity(String catalog, Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert('catalog_rarities', {'catalog': catalog, ...data},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Rebuilds catalog_expansions and catalog_rarities from current prints data.
+  /// Called after a full catalog download to keep tables in sync.
+  Future<void> rebuildExpansionsAndRarities(String catalog) async {
+    final db = await database;
+    await db.delete('catalog_expansions', where: 'catalog = ?', whereArgs: [catalog]);
+    await db.delete('catalog_rarities',   where: 'catalog = ?', whereArgs: [catalog]);
+    await _populateExpansionsFromPrints(db, catalog);
+    await _populateRaritiesFromPrints(db, catalog);
+  }
+
+  /// Renames an expansion's EN name and propagates to all matching prints.
+  Future<void> renameExpansion(String catalog, String oldName, String newName) async {
+    if (oldName == newName || newName.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.update('catalog_expansions', {'set_name': newName},
+          where: 'catalog = ? AND set_name = ?', whereArgs: [catalog, oldName]);
+      await txn.update('${catalog}_prints', {'set_name': newName},
+          where: 'set_name = ?', whereArgs: [oldName]);
+    });
+  }
+
+  /// Updates translation columns for an expansion and propagates to all prints.
+  Future<void> updateExpansionTranslations(
+      String catalog, String setName, Map<String, String> translations) async {
+    final db = await database;
+    final updates = <String, dynamic>{};
+    for (final e in translations.entries) {
+      updates['set_name_${e.key}'] = e.value.isNotEmpty ? e.value : null;
+    }
+    if (updates.isEmpty) return;
+    await db.transaction((txn) async {
+      await txn.update('catalog_expansions', updates,
+          where: 'catalog = ? AND set_name = ?', whereArgs: [catalog, setName]);
+      await txn.update('${catalog}_prints', updates,
+          where: 'set_name = ?', whereArgs: [setName]);
+    });
+  }
+
+  /// Renames a rarity's EN name and propagates to all matching prints.
+  Future<void> renameRarityEntry(String catalog, String oldRarity, String newRarity) async {
+    if (oldRarity == newRarity || newRarity.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.update('catalog_rarities', {'rarity': newRarity},
+          where: 'catalog = ? AND rarity = ?', whereArgs: [catalog, oldRarity]);
+      await txn.update('${catalog}_prints', {'rarity': newRarity},
+          where: 'rarity = ?', whereArgs: [oldRarity]);
+    });
+  }
+
+  /// Updates translation columns for a rarity and propagates to all prints.
+  Future<void> updateRarityEntryTranslations(
+      String catalog, String rarity, Map<String, String> translations) async {
+    final db = await database;
+    final updates = <String, dynamic>{};
+    for (final e in translations.entries) {
+      updates['rarity_${e.key}'] = e.value.isNotEmpty ? e.value : null;
+    }
+    if (updates.isEmpty) return;
+    await db.transaction((txn) async {
+      await txn.update('catalog_rarities', updates,
+          where: 'catalog = ? AND rarity = ?', whereArgs: [catalog, rarity]);
+      await txn.update('${catalog}_prints', updates,
+          where: 'rarity = ?', whereArgs: [rarity]);
+    });
   }
 
   Future<void> clearAllCardData() async {
@@ -2202,47 +2461,25 @@ class DatabaseHelper {
     };
   }
 
-  /// Rinomina il nome set inglese su TUTTE le stampe corrispondenti.
-  Future<void> renameSetName(String collection, String oldName, String newName) async {
-    if (oldName == newName || newName.isEmpty) return;
-    final db = await database;
-    await db.update('${collection}_prints', {'set_name': newName},
-        where: 'set_name = ?', whereArgs: [oldName]);
-  }
+  // Legacy wrappers kept for backward compat — delegate to the new table methods.
 
-  /// Rinomina la rarità inglese su TUTTE le stampe corrispondenti.
-  Future<void> renameRarity(String collection, String oldName, String newName) async {
-    if (oldName == newName || newName.isEmpty) return;
-    final db = await database;
-    await db.update('${collection}_prints', {'rarity': newName},
-        where: 'rarity = ?', whereArgs: [oldName]);
-  }
+  /// Rinomina il nome set inglese (cascade su prints + catalog_expansions).
+  Future<void> renameSetName(String collection, String oldName, String newName) =>
+      renameExpansion(collection, oldName, newName);
 
-  /// Aggiorna la traduzione del nome set su TUTTE le stampe corrispondenti.
+  /// Rinomina la rarità inglese (cascade su prints + catalog_rarities).
+  Future<void> renameRarity(String collection, String oldName, String newName) =>
+      renameRarityEntry(collection, oldName, newName);
+
+  /// Aggiorna le traduzioni del set (cascade su prints + catalog_expansions).
   Future<void> updateSetTranslations(
-      String collection, String setName, Map<String, String> translations) async {
-    final db = await database;
-    final table = '${collection}_prints';
-    final updates = <String, dynamic>{};
-    for (final e in translations.entries) {
-      updates['set_name_${e.key}'] = e.value.isNotEmpty ? e.value : null;
-    }
-    if (updates.isEmpty) return;
-    await db.update(table, updates, where: 'set_name = ?', whereArgs: [setName]);
-  }
+          String collection, String setName, Map<String, String> translations) =>
+      updateExpansionTranslations(collection, setName, translations);
 
-  /// Aggiorna la traduzione di una rarità su TUTTE le stampe corrispondenti.
+  /// Aggiorna le traduzioni della rarità (cascade su prints + catalog_rarities).
   Future<void> updateRarityTranslations(
-      String collection, String rarity, Map<String, String> translations) async {
-    final db = await database;
-    final table = '${collection}_prints';
-    final updates = <String, dynamic>{};
-    for (final e in translations.entries) {
-      updates['rarity_${e.key}'] = e.value.isNotEmpty ? e.value : null;
-    }
-    if (updates.isEmpty) return;
-    await db.update(table, updates, where: 'rarity = ?', whereArgs: [rarity]);
-  }
+          String collection, String rarity, Map<String, String> translations) =>
+      updateRarityEntryTranslations(collection, rarity, translations);
 
   /// Lingue disponibili per una collezione (suffissi colonne, lowercase).
   List<String> _collectionLangs(String collection) {
@@ -2253,97 +2490,21 @@ class DatabaseHelper {
     }
   }
 
-  /// Restituisce tutte le espansioni distinte per una collezione con le traduzioni.
+  /// Restituisce tutte le espansioni per una collezione (dalla tabella dedicata).
+  /// Campi restituiti compatibili con i vecchi consumatori: set_name, set_code, set_name_XX.
   Future<List<Map<String, dynamic>>> getDistinctSets(String collection) async {
-    final db = await database;
-    // Approccio uniforme: GROUP BY solo set_name EN, MIN() per traduzioni e set_code.
-    if (collection == 'yugioh') {
-      final rows = await db.rawQuery('''
-        SELECT set_name,
-               MIN(set_name_it) AS set_name_it,
-               MIN(set_name_fr) AS set_name_fr,
-               MIN(set_name_de) AS set_name_de,
-               MIN(set_name_pt) AS set_name_pt,
-               MIN(set_name_sp) AS set_name_sp,
-               MIN(COALESCE(
-                 set_id,
-                 CASE WHEN set_code != '' AND INSTR(set_code, '-') > 0
-                      THEN SUBSTR(set_code, 1, INSTR(set_code, '-') - 1)
-                      WHEN set_code != '' THEN set_code
-                      ELSE NULL END
-               )) AS set_code
-        FROM yugioh_prints
-        WHERE set_name IS NOT NULL AND set_name != ''
-        GROUP BY set_name
-        ORDER BY set_name
-      ''');
-      return rows;
-    } else if (collection == 'pokemon') {
-      // set_id (es. "swsh1") è in pokemon_cards, non in pokemon_prints
-      return db.rawQuery('''
-        SELECT pp.set_name,
-               MIN(pp.set_name_it) AS set_name_it,
-               MIN(pp.set_name_fr) AS set_name_fr,
-               MIN(pp.set_name_de) AS set_name_de,
-               MIN(pp.set_name_pt) AS set_name_pt,
-               MIN(pc.set_id) AS set_code
-        FROM pokemon_prints pp
-        JOIN pokemon_cards pc ON pp.card_id = pc.id
-        WHERE pp.set_name IS NOT NULL AND pp.set_name != ''
-        GROUP BY pp.set_name
-        ORDER BY pp.set_name
-      ''');
-    } else if (collection == 'onepiece') {
-      return db.rawQuery('''
-        SELECT set_name,
-               MIN(set_id) AS set_code
-        FROM onepiece_prints
-        WHERE set_name IS NOT NULL AND set_name != ''
-        GROUP BY set_name
-        ORDER BY set_name
-      ''');
-    }
-    return [];
+    final rows = await getExpansions(collection);
+    // Remap set_id → set_code per compatibilità con AdminSetsRaritiesPage
+    return rows.map((r) {
+      final m = Map<String, dynamic>.from(r);
+      m['set_code'] = m['set_id'];
+      return m;
+    }).toList();
   }
 
-  /// Restituisce tutte le rarità distinte per una collezione con le traduzioni.
-  Future<List<Map<String, dynamic>>> getDistinctRarities(String collection) async {
-    final db = await database;
-    if (collection == 'yugioh') {
-      return db.rawQuery('''
-        SELECT rarity,
-               MIN(rarity_it) AS rarity_it,
-               MIN(rarity_fr) AS rarity_fr,
-               MIN(rarity_de) AS rarity_de,
-               MIN(rarity_pt) AS rarity_pt,
-               MIN(rarity_sp) AS rarity_sp
-        FROM yugioh_prints
-        WHERE rarity IS NOT NULL AND rarity != ''
-        GROUP BY rarity
-        ORDER BY rarity
-      ''');
-    } else if (collection == 'onepiece') {
-      return db.rawQuery('''
-        SELECT DISTINCT rarity
-        FROM onepiece_prints
-        WHERE rarity IS NOT NULL AND rarity != ''
-        ORDER BY rarity
-      ''');
-    } else if (collection == 'pokemon') {
-      return db.rawQuery('''
-        SELECT rarity,
-               MIN(rarity_it) AS rarity_it,
-               MIN(rarity_fr) AS rarity_fr,
-               MIN(rarity_de) AS rarity_de,
-               MIN(rarity_pt) AS rarity_pt
-        FROM pokemon_prints
-        WHERE rarity IS NOT NULL AND rarity != ''
-        GROUP BY rarity
-        ORDER BY rarity
-      ''');
-    }
-    return [];
-  }
+  /// Restituisce tutte le rarità per una collezione (dalla tabella dedicata).
+  Future<List<Map<String, dynamic>>> getDistinctRarities(String collection) =>
+      getRarities(collection);
 
   /// Dettaglio carte in un set specifico con stato di possesso.
   /// [setIdentifier]: set_name (YGO), set_id (OP), setName (generico)

@@ -37,7 +37,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadSets();
-    LanguageService.getPreferredLanguage().then((l) {
+    LanguageService.getPreferredLanguageForCollection(widget.collectionKey).then((l) {
       _lang = l.toLowerCase();
       if (mounted) _loadSets();
     });

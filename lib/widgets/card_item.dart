@@ -126,7 +126,7 @@ class CardListItem extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${card.rarity} • Album: $albumName • €${card.value.toStringAsFixed(2)}',
+                      '${card.rarity} • Album: $albumName • ${card.value > 0 ? '€${card.value.toStringAsFixed(2)}' : 'N/D'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 12),
@@ -275,7 +275,7 @@ class CardGridItem extends StatelessWidget {
                   const SizedBox(height: 2),
                   // Album + Value
                   Text(
-                    '$albumName • €${card.value.toStringAsFixed(2)}',
+                    '$albumName • ${card.value > 0 ? '€${card.value.toStringAsFixed(2)}' : 'N/D'}',
                     style: const TextStyle(fontSize: 8, color: AppColors.textHint),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

@@ -638,7 +638,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
                 if (mounted) setState(() => _avatarVersion++);
               } else if (value == 'settings') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
+                Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsPage(collectionKey: _currentCollectionKey)));
               } else if (value == 'support') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportPage()));
               } else if (value == 'logout') {

@@ -9,7 +9,6 @@ import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../models/subscription_model.dart';
 import '../theme/app_colors.dart';
-import 'admin_collection_page.dart';
 import 'admin_sets_rarities_page.dart';
 
 /// Body riutilizzabile con la lista dei cataloghi da gestire
@@ -468,339 +467,237 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
   // ─── UI ───────────────────────────────────────────────────────────────────
 
+  static final _catalogs = [
+    _CatalogDef(
+      key: 'yugioh', name: 'Yu-Gi-Oh!',
+      icon: Icons.auto_awesome, color: Color(0xFF7B1FA2),
+    ),
+    _CatalogDef(
+      key: 'onepiece', name: 'One Piece TCG',
+      icon: Icons.sailing, color: Color(0xFFD32F2F),
+    ),
+    _CatalogDef(
+      key: 'pokemon', name: 'Pokémon TCG',
+      icon: Icons.catching_pokemon, color: Color(0xFFF57C00),
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final collections = AdminCatalogService.getCollectionList();
-
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      itemCount: collections.length + 6, // +6: 3 ops + cardtrader + pro + sets/rarities
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        if (index == 0) return _buildOperationsCard();
-        if (index == 1) return _buildOnePieceOperationsCard();
-        if (index == 2) return _buildPokemonOperationsCard();
-        if (index == 3) return _buildCardtraderSyncCard();
-        if (index == 4) return _buildProManagementCard(context);
-        if (index == 5) return _buildSetsRaritiesCard(context);
-        final col = collections[index - 6];
-        return Card(
-          elevation: 2,
-          child: ListTile(
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            leading: CircleAvatar(
-              backgroundColor: AppColors.bgLight,
-              child: Icon(_iconFor(col['icon']!), color: Colors.deepPurple),
-            ),
-            title: Text(
-              col['name']!,
-              style:
-                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text('Catalogo: ${col['key']}'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AdminCollectionPage(
-                    collectionKey: col['key']!,
-                    collectionName: col['name']!,
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+      children: [
+        // Global progress bar (shown while any operation runs)
+        if (_isRunning) _buildGlobalProgress(),
+        if (_isRunning) const SizedBox(height: 12),
+
+        // Per-collection stepper cards
+        for (final cat in _catalogs) ...[
+          _buildCollectionCard(cat),
+          const SizedBox(height: 12),
+        ],
+
+        // CardTrader prices
+        _buildCardtraderSyncCard(),
+        const SizedBox(height: 12),
+
+        // Espansioni & Rarità
+        _buildSetsRaritiesCard(context),
+        const SizedBox(height: 12),
+
+        // Pro management
+        _buildProManagementCard(context),
+      ],
     );
   }
 
-  Widget _buildOperationsCard() {
-    return Card(
-      elevation: 2,
-      color: AppColors.bgLight,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            const Row(
-              children: [
-                Icon(Icons.settings_applications, color: Colors.deepPurple),
-                SizedBox(width: 8),
-                Text(
-                  'Operazioni Catalogo',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.deepPurple,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Yu-Gi-Oh! — Gestione dati Firestore',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-
-            // Progress area (shown while running)
-            if (_isRunning) ...[
-              Text(
+  Widget _buildGlobalProgress() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.bgMedium,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.blue.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.blue),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Text(
                 _currentOp,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              const SizedBox(height: 6),
-              LinearProgressIndicator(value: _progress),
-              if (_statusText.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  _statusText,
-                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                ),
-              ],
-              const SizedBox(height: 16),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary),
+              )),
             ],
-
-            // Operation buttons
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _opButton(
-                  icon: Icons.download_for_offline,
-                  label: 'Download Completo',
-                  color: Colors.deepPurple,
-                  onTap: _downloadFull,
-                  tooltip: 'Scarica tutto il catalogo da YGOPRODeck API',
-                ),
-                _opButton(
-                  icon: Icons.update,
-                  label: 'Aggiorna Nuove',
-                  color: Colors.indigo,
-                  onTap: _downloadIncremental,
-                  tooltip: 'Aggiunge solo le carte nuove (incrementale)',
-                ),
-                _opButton(
-                  icon: Icons.cloud_upload,
-                  label: 'Migra Immagini',
-                  color: Colors.teal,
-                  onTap: kIsWeb ? null : _migrateImages,
-                  tooltip: kIsWeb
-                      ? 'Non disponibile su Web (CORS)'
-                      : 'Carica immagini su Firebase Storage',
-                ),
-                _opButton(
-                  icon: Icons.auto_fix_high,
-                  label: 'Genera Set Mancanti',
-                  color: Colors.deepPurple.shade700,
-                  onTap: _fillMissingSetsYugioh,
-                  tooltip: 'Genera automaticamente i set IT/FR/DE/PT da EN per tutte le carte',
-                ),
-                _opButton(
-                  icon: Icons.translate,
-                  label: 'Traduci Mancanti',
-                  color: Colors.purple.shade800,
-                  onTap: _translateMissingYugioh,
-                  tooltip: 'Genera traduzioni madrelingua IT/FR/PT/SP con Claude AI',
-                ),
-              ],
-            ),
-
-            if (kIsWeb) ...[
-              const SizedBox(height: 8),
-              const Row(
-                children: [
-                  Icon(Icons.info_outline, size: 12, color: AppColors.textHint),
-                  SizedBox(width: 4),
-                  Text(
-                    '"Migra Immagini" non disponibile su Web (CORS).',
-                    style: TextStyle(fontSize: 11, color: AppColors.textHint),
-                  ),
-                ],
-              ),
-            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: _progress,
+            backgroundColor: AppColors.bgDark,
+            valueColor: const AlwaysStoppedAnimation(AppColors.blue),
+            minHeight: 3,
+          ),
+          if (_statusText.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(_statusText, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildOnePieceOperationsCard() {
-    return Card(
-      elevation: 2,
-      color: AppColors.bgLight,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
+  Widget _buildCollectionCard(_CatalogDef cat) {
+    final steps = _stepsFor(cat);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.bgMedium,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cat.color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
               children: [
-                Icon(Icons.sailing, color: Colors.red),
-                SizedBox(width: 8),
-                Text(
-                  'Operazioni Catalogo',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.red,
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: cat.color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(cat.icon, color: cat.color, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(
+                  cat.name,
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: cat.color),
+                )),
+                // Espansioni & Rarità shortcut
+                TextButton.icon(
+                  onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => AdminSetsRaritiesPage(initialCollection: cat.key))),
+                  icon: Icon(Icons.list_alt, size: 14, color: cat.color),
+                  label: Text('Set/Rarità', style: TextStyle(fontSize: 12, color: cat.color)),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'One Piece TCG — Gestione dati Firestore',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _opButton(
-                  icon: Icons.download_for_offline,
-                  label: 'Download Completo',
-                  color: Colors.red.shade700,
-                  onTap: _downloadFullOnePiece,
-                  tooltip: 'Scarica tutto il catalogo da OPTCG API',
-                ),
-                _opButton(
-                  icon: Icons.cloud_upload,
-                  label: 'Migra Immagini',
-                  color: Colors.orange.shade800,
-                  onTap: kIsWeb ? null : _migrateOnePieceImages,
-                  tooltip: kIsWeb
-                      ? 'Non disponibile su Web (CORS)'
-                      : 'Carica immagini su Firebase Storage',
-                ),
-                _opButton(
-                  icon: Icons.refresh,
-                  label: 'Ri-migra Tutto',
-                  color: Colors.deepOrange.shade700,
-                  onTap: kIsWeb ? null : _forceMigrateOnePieceImages,
-                  tooltip: kIsWeb
-                      ? 'Non disponibile su Web (CORS)'
-                      : 'Forza ri-migrazione di tutte le immagini (dopo eliminazione da Storage)',
-                ),
-                _opButton(
-                  icon: Icons.auto_fix_high,
-                  label: 'Genera Set Mancanti',
-                  color: Colors.red.shade900,
-                  onTap: _fillMissingSetsOnePiece,
-                  tooltip: 'Genera automaticamente i set nelle lingue mancanti per tutte le carte',
-                ),
-              ],
-            ),
-            if (kIsWeb) ...[
-              const SizedBox(height: 8),
-              const Row(
-                children: [
-                  Icon(Icons.info_outline, size: 12, color: AppColors.textHint),
-                  SizedBox(width: 4),
-                  Text(
-                    '"Migra Immagini" non disponibile su Web (CORS).',
-                    style: TextStyle(fontSize: 11, color: AppColors.textHint),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
+          ),
+          Container(height: 0.5, color: AppColors.divider),
+          // Steps
+          ...steps.asMap().entries.map((entry) {
+            final i = entry.key;
+            final step = entry.value;
+            return _buildStepRow(i + 1, step, cat.color, isLast: i == steps.length - 1);
+          }),
+        ],
       ),
     );
   }
 
-  Widget _buildPokemonOperationsCard() {
-    return Card(
-      elevation: 2,
-      color: AppColors.bgLight,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.catching_pokemon, color: Colors.red),
-                SizedBox(width: 8),
-                Text(
-                  'Operazioni Catalogo',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.red,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Pokémon TCG — Gestione dati Firestore',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _opButton(
-                  icon: Icons.download_for_offline,
-                  label: 'Download Completo',
-                  color: Colors.red.shade700,
-                  onTap: _downloadFullPokemon,
-                  tooltip: 'Scarica tutto il catalogo da pokemontcg.io',
-                ),
-                _opButton(
-                  icon: Icons.cloud_upload,
-                  label: 'Migra Immagini',
-                  color: Colors.orange.shade800,
-                  onTap: kIsWeb ? null : _migratePokemonImages,
-                  tooltip: kIsWeb
-                      ? 'Non disponibile su Web (CORS)'
-                      : 'Carica immagini su Firebase Storage',
-                ),
-                _opButton(
-                  icon: Icons.refresh,
-                  label: 'Ri-migra Tutto',
-                  color: Colors.deepOrange.shade700,
-                  onTap: kIsWeb ? null : _forceMigratePokemonImages,
-                  tooltip: kIsWeb
-                      ? 'Non disponibile su Web (CORS)'
-                      : 'Forza ri-migrazione di tutte le immagini',
-                ),
-                _opButton(
-                  icon: Icons.auto_fix_high,
-                  label: 'Genera Set Mancanti',
-                  color: Colors.red.shade900,
-                  onTap: _fillMissingSetsPokemon,
-                  tooltip: 'Genera automaticamente i set nelle lingue mancanti per tutte le carte',
-                ),
-              ],
-            ),
-            if (kIsWeb) ...[
-              const SizedBox(height: 8),
-              const Row(
+  Widget _buildStepRow(int n, _StepDef step, Color accent, {required bool isLast}) {
+    final disabled = _isRunning || step.onTap == null;
+    return Column(
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: disabled ? null : step.onTap,
+            borderRadius: isLast
+                ? const BorderRadius.vertical(bottom: Radius.circular(16))
+                : BorderRadius.zero,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 12, color: AppColors.textHint),
-                  SizedBox(width: 4),
-                  Text(
-                    '"Migra Immagini" non disponibile su Web (CORS).',
-                    style: TextStyle(fontSize: 11, color: AppColors.textHint),
+                  Container(
+                    width: 24, height: 24,
+                    decoration: BoxDecoration(
+                      color: disabled
+                          ? AppColors.bgLight
+                          : accent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: disabled ? AppColors.border : accent.withValues(alpha: 0.6)),
+                    ),
+                    child: Center(child: Text(
+                      '$n',
+                      style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.bold,
+                        color: disabled ? AppColors.textHint : accent,
+                      ),
+                    )),
                   ),
+                  const SizedBox(width: 12),
+                  Icon(step.icon, size: 17,
+                      color: disabled ? AppColors.textHint : AppColors.textPrimary),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(step.label, style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500,
+                        color: disabled ? AppColors.textHint : AppColors.textPrimary,
+                      )),
+                      if (step.subtitle != null)
+                        Text(step.subtitle!, style: const TextStyle(
+                          fontSize: 11.5, color: AppColors.textSecondary,
+                        )),
+                    ],
+                  )),
+                  if (step.onTap != null)
+                    Icon(Icons.chevron_right, size: 18, color: accent.withValues(alpha: 0.7)),
                 ],
               ),
-            ],
-          ],
+            ),
+          ),
         ),
-      ),
+        if (!isLast) Padding(
+          padding: const EdgeInsets.only(left: 52),
+          child: Container(height: 0.5, color: AppColors.divider),
+        ),
+      ],
     );
+  }
+
+  List<_StepDef> _stepsFor(_CatalogDef cat) {
+    switch (cat.key) {
+      case 'yugioh':
+        return [
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da YGOPRODeck API', _downloadFull),
+          _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove (incrementale)', _downloadIncremental),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', kIsWeb ? null : _migrateImages),
+          _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set IT/FR/DE/PT/SP da EN', _fillMissingSetsYugioh),
+          _StepDef(Icons.translate, 'Scarica Traduzioni', 'Nomi e descrizioni ufficiali', _translateMissingYugioh),
+        ];
+      case 'onepiece':
+        return [
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da OPTCG API', _downloadFullOnePiece),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', kIsWeb ? null : _migrateOnePieceImages),
+          _StepDef(Icons.refresh, 'Ri-migra Tutto', 'Forza ri-migrazione di tutte le immagini', kIsWeb ? null : _forceMigrateOnePieceImages),
+          _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsOnePiece),
+        ];
+      case 'pokemon':
+        return [
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da pokemontcg.io', _downloadFullPokemon),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', kIsWeb ? null : _migratePokemonImages),
+          _StepDef(Icons.refresh, 'Ri-migra Tutto', 'Forza ri-migrazione di tutte le immagini', kIsWeb ? null : _forceMigratePokemonImages),
+          _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsPokemon),
+        ];
+      default:
+        return [];
+    }
   }
 
   Widget _opButton({
@@ -994,18 +891,29 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     );
   }
 
-  IconData _iconFor(String iconName) {
-    switch (iconName) {
-      case 'catching_pokemon':
-        return Icons.catching_pokemon;
-      case 'auto_awesome':
-        return Icons.auto_awesome;
-      case 'sailing':
-        return Icons.sailing;
-      default:
-        return Icons.style;
-    }
-  }
+}
+
+// ── Data classes for stepper UI ────────────────────────────────────────────
+
+class _CatalogDef {
+  final String key;
+  final String name;
+  final IconData icon;
+  final Color color;
+  const _CatalogDef({
+    required this.key,
+    required this.name,
+    required this.icon,
+    required this.color,
+  });
+}
+
+class _StepDef {
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+  final VoidCallback? onTap;
+  const _StepDef(this.icon, this.label, this.subtitle, this.onTap);
 }
 
 // ── Admin Pro Page ─────────────────────────────────────────────────────────

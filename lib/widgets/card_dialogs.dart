@@ -52,8 +52,6 @@ class CardDialogs {
                   Text('Album: $albumName', style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Text('Quantità: ${card.quantity}'),
-                Text('Valore unitario: €${card.value.toStringAsFixed(2)}'),
-                Text('Valore totale: €${(card.value * card.quantity).toStringAsFixed(2)}'),
                 if (card.serialNumber.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   CardtraderPriceBadge(

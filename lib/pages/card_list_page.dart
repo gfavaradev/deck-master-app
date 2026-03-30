@@ -51,7 +51,7 @@ class _CardListPageState extends State<CardListPage> {
     _syncSub = SyncService().onRemoteChange.listen((_) {
       if (mounted) _refreshCards();
     });
-    LanguageService.getPreferredLanguage().then((lang) {
+    LanguageService.getPreferredLanguageForCollection(widget.collectionKey).then((lang) {
       if (mounted) setState(() => _preferredLanguage = lang);
     });
   }
@@ -184,8 +184,8 @@ class _CardListPageState extends State<CardListPage> {
       return;
     }
 
-    // Minimum quantity is 1 — use the delete button to remove a card
-    if (card.quantity + delta < 1) return;
+    // In album view: floor at 1. In general view, adjustCardQuantity drains doppioni first.
+    if (widget.albumId != null && card.quantity + delta < 1) return;
 
     // Capacity check for non-doppioni increments in album view
     final album = _availableAlbums.firstWhere(

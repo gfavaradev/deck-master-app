@@ -13,6 +13,8 @@ const _kLastSeenVersionYugioh = 'notif_last_seen_catalog_version_yugioh';
 const _kPrevTotalYugioh = 'notif_prev_total_cards_yugioh';
 const _kLastSeenVersionOnepiece = 'notif_last_seen_catalog_version_onepiece';
 const _kPrevTotalOnepiece = 'notif_prev_total_cards_onepiece';
+const _kLastSeenVersionPokemon = 'notif_last_seen_catalog_version_pokemon';
+const _kPrevTotalPokemon = 'notif_prev_total_cards_pokemon';
 const _kPendingUpdatesCount = 'notif_pending_updates_count';
 
 // ─── Model ────────────────────────────────────────────────────────────────────
@@ -174,6 +176,38 @@ Future<List<_NotifEntry>> _detectAndPersistNewNotifs(
       await prefs.setInt(_kPrevTotalOnepiece, currentTotal);
     }
     await prefs.setInt(_kLastSeenVersionOnepiece, remoteV);
+  }
+
+  // ── Catalogo Pokémon ────────────────────────────────────────────────────────
+  final pokemonMeta = await db.getCatalogMetadata('pokemon');
+  if (pokemonMeta != null) {
+    final remoteV = pokemonMeta['version'] as int? ?? 0;
+    final seenV = prefs.getInt(_kLastSeenVersionPokemon) ?? 0;
+    if (remoteV > seenV) {
+      final prevTotal = prefs.getInt(_kPrevTotalPokemon) ?? 0;
+      final currentTotal = pokemonMeta['total_cards'] as int? ?? 0;
+      final id = 'catalog_pokemon_v$remoteV';
+      if (!existingIds.contains(id)) {
+        history.insert(
+          0,
+          _NotifEntry(
+            id: id,
+            type: 'catalog_update',
+            detectedAt: now,
+            isRead: false,
+            data: {
+              'catalog': 'pokemon',
+              'version': remoteV,
+              'newCards': currentTotal - prevTotal,
+              'lastUpdated': pokemonMeta['last_updated'] ?? '',
+            },
+          ),
+        );
+        existingIds.add(id);
+      }
+      await prefs.setInt(_kPrevTotalPokemon, currentTotal);
+    }
+    await prefs.setInt(_kLastSeenVersionPokemon, remoteV);
   }
 
   await _saveHistory(prefs, history);

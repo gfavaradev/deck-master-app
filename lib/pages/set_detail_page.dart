@@ -43,7 +43,7 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadCards();
-    LanguageService.getPreferredLanguage().then((l) {
+    LanguageService.getPreferredLanguageForCollection(widget.collectionKey).then((l) {
       if (mounted && l.toLowerCase() != _lang) {
         _lang = l.toLowerCase();
         _loadCards();

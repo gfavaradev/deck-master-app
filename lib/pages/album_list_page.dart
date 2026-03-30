@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
 import '../services/sync_service.dart';
+import '../theme/app_colors.dart';
 import 'card_list_page.dart';
 
 class AlbumListPage extends StatefulWidget {
@@ -22,6 +23,7 @@ class AlbumListPage extends StatefulWidget {
 class _AlbumListPageState extends State<AlbumListPage> {
   final DataRepository _dbHelper = DataRepository();
   List<AlbumModel> _albums = [];
+  bool _loading = true;
   StreamSubscription<String>? _syncSub;
 
   @override
@@ -41,14 +43,18 @@ class _AlbumListPageState extends State<AlbumListPage> {
 
   Future<void> _refreshAlbums() async {
     final data = await _dbHelper.getAlbumsByCollection(widget.collectionKey);
+    if (!mounted) return;
     setState(() {
       _albums = data;
+      _loading = false;
     });
   }
 
   void _showAddAlbumDialog({AlbumModel? album}) {
     final nameController = TextEditingController(text: album?.name);
-    final capacityController = TextEditingController(text: album?.maxCapacity.toString() ?? '100');
+    final capacityController = TextEditingController(
+      text: album?.maxCapacity.toString() ?? '100',
+    );
     String? nameError;
 
     showDialog(
@@ -104,7 +110,10 @@ class _AlbumListPageState extends State<AlbumListPage> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      nameController.dispose();
+      capacityController.dispose();
+    });
   }
 
   void _showDeleteConfirmation(AlbumModel album) {
@@ -145,55 +154,63 @@ class _AlbumListPageState extends State<AlbumListPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _albums.isEmpty
-          ? const Center(child: Text('Nessun album creato.'))
-          : ListView.builder(
-              itemCount: _albums.length,
-              itemBuilder: (_, index) {
-                final album = _albums[index];
-                return ListTile(
-                  leading: const Icon(Icons.book),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (ctx) => Scaffold(
-                          appBar: AppBar(
-                            title: Text(album.name),
-                            backgroundColor: Theme.of(ctx).colorScheme.inversePrimary,
-                          ),
-                          body: CardListPage(
-                            collectionName: widget.collectionName,
-                            collectionKey: widget.collectionKey,
-                            albumId: album.id,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  title: Row(
-                    children: [
-                      Text(album.name),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${album.currentCount}/${album.maxCapacity}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                    ],
+    Widget body;
+    if (_loading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_albums.isEmpty) {
+      body = const Center(child: Text('Nessun album creato.'));
+    } else {
+      body = ListView.builder(
+        itemCount: _albums.length,
+        itemBuilder: (_, index) {
+          final album = _albums[index];
+          return ListTile(
+            leading: const Icon(Icons.book),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (ctx) => Scaffold(
+                    appBar: AppBar(
+                      title: Text(album.name),
+                      backgroundColor: AppColors.bgMedium,
+                      foregroundColor: AppColors.textPrimary,
+                    ),
+                    body: CardListPage(
+                      collectionName: widget.collectionName,
+                      collectionKey: widget.collectionKey,
+                      albumId: album.id,
+                    ),
                   ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(icon: const Icon(Icons.edit), onPressed: () => _showAddAlbumDialog(album: album)),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _showDeleteConfirmation(album),
-                      ),
-                    ],
-                  ),
-                );
-              },
+                ),
+              );
+            },
+            title: Row(
+              children: [
+                Text(album.name),
+                const SizedBox(width: 8),
+                Text(
+                  '${album.currentCount}/${album.maxCapacity}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
             ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(icon: const Icon(Icons.edit), onPressed: () => _showAddAlbumDialog(album: album)),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: () => _showDeleteConfirmation(album),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    }
+
+    return Scaffold(
+      body: body,
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddAlbumDialog(),
         child: const Icon(Icons.add),

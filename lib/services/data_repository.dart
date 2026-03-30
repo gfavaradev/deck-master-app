@@ -346,8 +346,8 @@ class DataRepository {
       }
     }
 
-    // Step 4: aggiorna i valori delle carte in collezione con i prezzi del nuovo catalogo.
-    await _dbHelper.refreshCardValuesFromCatalog('yugioh');
+    // Step 4: rebuild espansioni/rarità dedicate.
+    await _dbHelper.rebuildExpansionsAndRarities('yugioh');
   }
 
   // ============================================================
@@ -1217,7 +1217,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    await _dbHelper.refreshCardValuesFromCatalog('onepiece');
+    await _dbHelper.rebuildExpansionsAndRarities('onepiece');
   }
 
   Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
@@ -1357,7 +1357,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    await _dbHelper.refreshCardValuesFromCatalog('pokemon');
+    await _dbHelper.rebuildExpansionsAndRarities('pokemon');
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCatalogCards({

@@ -41,13 +41,9 @@ class _CatalogPageState extends State<CatalogPage> {
   // key: "catalogId-serialNumber-rarity" → total quantity owned (all albums)
   Map<String, int> _ownedQuantityMap = {};
   String _preferredLanguage = 'EN';
-  bool _hasUpdate = false;
   bool _isDownloadingUpdate = false;
   bool _isCatalogMissing = false; // true = nessun catalogo locale, bisogna scaricarlo
-  Map<String, dynamic>? _lastUpdateInfo; // usato da _downloadUpdate per l'incrementale YGO
   String? _loadError;
-  double? _downloadProgress;
-  DateTime? _downloadStartTime;
   int? _lastUsedAlbumId;
   // Multi-selection state
   bool _isSelectionMode = false;
@@ -105,21 +101,18 @@ class _CatalogPageState extends State<CatalogPage> {
     await Future.wait([
       _loadCards(),
       _loadAlbumsAndOwned(),
-      _checkForUpdates(),
+      _checkCatalogMissing(),
     ]);
   }
 
-  /// Check if there's a catalog update available.
-  /// Never auto-downloads or shows dialogs — the download flow is managed by
-  /// MainLayout (startup check) and HomePageSimple (post-unlock prompt).
-  /// Here we only set state flags so the UI shows the right inline widget.
-  Future<void> _checkForUpdates() async {
+  /// Controlla se il catalogo locale è assente (primo download).
+  /// Gli aggiornamenti vengono segnalati nelle Notifiche, non qui.
+  Future<void> _checkCatalogMissing() async {
     if (widget.collectionKey != 'yugioh' &&
         widget.collectionKey != 'onepiece' &&
         widget.collectionKey != 'pokemon') {
       return;
     }
-
     try {
       final updateInfo = widget.collectionKey == 'onepiece'
           ? await _dbHelper.checkOnepieceCatalogUpdates()
@@ -127,63 +120,35 @@ class _CatalogPageState extends State<CatalogPage> {
               ? await _dbHelper.checkPokemonCatalogUpdates()
               : await _dbHelper.checkCatalogUpdates();
       if (!mounted) return;
-
-      if (updateInfo['needsUpdate'] == true) {
-        setState(() {
-          _lastUpdateInfo = updateInfo;
-          if (updateInfo['isFirstDownload'] == true) {
-            _isCatalogMissing = true;
-          } else {
-            _hasUpdate = true;
-          }
-        });
+      if (updateInfo['needsUpdate'] == true &&
+          updateInfo['isFirstDownload'] == true) {
+        setState(() => _isCatalogMissing = true);
       }
     } catch (_) {}
   }
 
-  /// Download catalog update
+  /// Download del catalogo (solo per primo download da empty state).
   Future<void> _downloadUpdate() async {
-    setState(() {
-      _isDownloadingUpdate = true;
-      _downloadProgress = null;
-      _downloadStartTime = DateTime.now();
-    });
-
+    setState(() => _isDownloadingUpdate = true);
     try {
       await _dbHelper.downloadCollectionCatalog(
         widget.collectionKey,
-        updateInfo: _lastUpdateInfo,
-        onProgress: (current, total) {
-          if (mounted) setState(() => _downloadProgress = total > 0 ? current / total : null);
-        },
-        onSaveProgress: (progress) {
-          if (mounted) setState(() => _downloadProgress = progress);
-        },
       );
-
       if (mounted) {
         setState(() {
           _isDownloadingUpdate = false;
-          _downloadProgress = null;
-          _hasUpdate = false;
           _isCatalogMissing = false;
         });
-
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Catalogo aggiornato con successo!')),
+          const SnackBar(content: Text('Catalogo scaricato con successo!')),
         );
-
-        // Reload cards after update
         await _loadCards();
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _isDownloadingUpdate = false;
-          _downloadProgress = null;
-        });
+        setState(() => _isDownloadingUpdate = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore aggiornamento: $e')),
+          SnackBar(content: Text('Errore download: $e')),
         );
       }
     }
@@ -468,8 +433,6 @@ class _CatalogPageState extends State<CatalogPage> {
         Column(
           children: [
             if (_isSelectionMode) _buildSelectionBanner(),
-            if (_hasUpdate && !_isDownloadingUpdate) _buildUpdateIcon(),
-            if (_isDownloadingUpdate) _buildDownloadProgress(),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: TextField(
@@ -738,17 +701,64 @@ class _CatalogPageState extends State<CatalogPage> {
         ),
       );
     }
-    return CachedNetworkImage(
-      imageUrl: imageUrl,
-      fit: BoxFit.cover,
-      placeholder: (_, _) => Container(
-        color: Colors.grey.withValues(alpha: 0.08),
-        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+    return GestureDetector(
+      onTap: () => _showFullScreenImage(imageUrl),
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        fit: BoxFit.cover,
+        placeholder: (_, _) => Container(
+          color: Colors.grey.withValues(alpha: 0.08),
+          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+        errorWidget: (_, _, _) => Container(
+          color: Colors.grey.withValues(alpha: 0.08),
+          child: Center(
+            child: Icon(Icons.style, size: 36, color: isOwned ? Colors.green : Colors.grey),
+          ),
+        ),
       ),
-      errorWidget: (_, _, _) => Container(
-        color: Colors.grey.withValues(alpha: 0.08),
-        child: Center(
-          child: Icon(Icons.style, size: 36, color: isOwned ? Colors.green : Colors.grey),
+    );
+  }
+
+  void _showFullScreenImage(String imageUrl) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 48),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: InteractiveViewer(
+                minScale: 1,
+                maxScale: 5,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.contain,
+                    placeholder: (_, _) => const SizedBox(
+                      height: 200,
+                      child: Center(child: CircularProgressIndicator(color: AppColors.gold)),
+                    ),
+                    errorWidget: (_, _, _) =>
+                        const Icon(Icons.broken_image, color: Colors.white, size: 64),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                style: IconButton.styleFrom(backgroundColor: Colors.black45),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1065,95 +1075,4 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
-  /// Barra compatta che indica aggiornamento in attesa
-  Widget _buildUpdateIcon() {
-    return GestureDetector(
-      onTap: _downloadUpdate,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        color: AppColors.gold.withValues(alpha: 0.12),
-        child: Row(
-          children: [
-            const Icon(Icons.system_update, color: AppColors.gold, size: 16),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Aggiornamento catalogo disponibile — tocca per scaricarlo',
-                style: TextStyle(
-                  color: AppColors.gold,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: AppColors.gold, size: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build download progress indicator
-  Widget _buildDownloadProgress() {
-    String? timeLabel;
-    if (_downloadProgress != null && _downloadProgress! > 0.02 && _downloadStartTime != null) {
-      final elapsed = DateTime.now().difference(_downloadStartTime!).inSeconds;
-      final totalEstSec = (elapsed / _downloadProgress!).round();
-      final remaining = totalEstSec - elapsed;
-      if (remaining > 0) {
-        timeLabel = remaining < 60
-            ? '~$remaining sec rimanenti'
-            : '~${(remaining / 60).ceil()} min rimanenti';
-      }
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.bgMedium,
-        border: Border(bottom: BorderSide(color: AppColors.gold.withValues(alpha: 0.2))),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Download catalogo in corso...',
-                  style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
-                ),
-              ),
-              if (_downloadProgress != null)
-                Text(
-                  '${(_downloadProgress! * 100).toInt()}%',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.gold,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: _downloadProgress,
-            backgroundColor: AppColors.bgLight,
-            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.gold),
-            minHeight: 3,
-            borderRadius: BorderRadius.circular(2),
-          ),
-          if (timeLabel != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              timeLabel,
-              style: const TextStyle(fontSize: 11, color: AppColors.textHint),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 }

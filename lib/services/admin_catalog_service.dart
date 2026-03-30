@@ -1059,7 +1059,7 @@ class AdminCatalogService {
             'print_code': setCode,
             'rarity': set['set_rarity']?.toString() ?? '',
             'rarity_code': set['set_rarity_code']?.toString() ?? '',
-            'set_price': _parseDouble(set['set_price']),
+            // set_price intentionally omitted — CardTrader is the price source
             if (imageUrl != null) 'image_url': imageUrl,
           });
         }
@@ -1231,7 +1231,7 @@ class AdminCatalogService {
             'print_code': setCode,
             'rarity': p['rarity']?.toString() ?? '',
             'rarity_code': p['rarity_code']?.toString() ?? '',
-            'set_price': p['set_price'],
+            // set_price intentionally omitted — CardTrader is the price source
           });
         }
       }
