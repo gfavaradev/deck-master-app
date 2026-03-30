@@ -87,7 +87,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _checkOfflineMode() async {
     final offline = await _authService.isOfflineMode();
-    setState(() => _isOffline = offline);
+    if (mounted) setState(() => _isOffline = offline);
   }
 
   Future<void> _checkAdminStatus() async {
@@ -128,7 +128,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _loadLanguagePreference() async {
     final key = widget.collectionKey ?? 'yugioh';
     final lang = await LanguageService.getPreferredLanguageForCollection(key);
-    setState(() => _selectedLanguage = lang);
+    if (mounted) setState(() => _selectedLanguage = lang);
   }
 
   Future<void> _deleteAccount() async {

@@ -355,6 +355,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                     query: query,
                     language: _preferredLanguage,
                   );
+                  if (!mounted) return;
                   if (results.isNotEmpty) {
                     final card = results.first;
                     setState(() {
@@ -409,7 +410,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
                   setState(() {
                     selectedSetCode = val;
                     if (val != null) {
-                      final setToApply = availableSets.firstWhere((s) => _setKey(s) == val);
+                      final setToApply = availableSets.firstWhere((s) => _setKey(s) == val, orElse: () => availableSets.first);
                       _applySet(setToApply);
                     }
                   });
@@ -539,7 +540,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     
     // Save last used album before pop (always the user's real choice, not the auto-doppioni album)
     final prefs = await SharedPreferences.getInstance();
-    prefs.setInt('last_album_id_${widget.collectionKey}', selectedAlbumId!);
+    await prefs.setInt('last_album_id_${widget.collectionKey}', selectedAlbumId!);
 
     if (!mounted) return;
     Navigator.pop(context);

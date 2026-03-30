@@ -63,10 +63,11 @@ class _CatalogPageState extends State<CatalogPage> {
     _syncSub = SyncService().onRemoteChange.listen((_) {
       if (mounted) _loadAlbumsAndOwned();
     });
-    // Reload catalog immediately when the display language changes
-    _langSub = LanguageService.onLanguageChanged.listen((lang) {
-      if (mounted) {
-        _preferredLanguage = lang;
+    // Reload catalog immediately when the display language changes for this collection
+    _langSub = LanguageService.onLanguageChanged.listen((event) {
+      final parts = event.split(':');
+      if (parts.length == 2 && parts[0] == widget.collectionKey && mounted) {
+        _preferredLanguage = parts[1];
         _loadCards();
       }
     });
@@ -95,7 +96,7 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 
   Future<void> _init() async {
-    _preferredLanguage = await LanguageService.getPreferredLanguage();
+    _preferredLanguage = await LanguageService.getPreferredLanguageForCollection(widget.collectionKey);
     final prefs = await SharedPreferences.getInstance();
     _lastUsedAlbumId = prefs.getInt('last_album_id_${widget.collectionKey}');
     await Future.wait([

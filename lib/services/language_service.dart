@@ -60,7 +60,7 @@ class LanguageService {
   static Future<void> setPreferredLanguageForCollection(String collectionKey, String languageCode) async {
     final code = languageCode.toUpperCase();
     _cache[collectionKey] = code;
-    _controller.add(code);
+    _controller.add('$collectionKey:$code');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefKey(collectionKey), code);
   }

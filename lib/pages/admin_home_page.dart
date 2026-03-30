@@ -410,7 +410,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     final lang = selected!;
     final langLabel = langs[lang] ?? lang;
 
-    _confirmAndRun(
+    await _confirmAndRun(
       catalog,
       'Sync Prezzi CardTrader — $langLabel',
       'Sincronizza Prezzi ($langLabel)',

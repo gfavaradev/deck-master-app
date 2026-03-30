@@ -29,6 +29,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
 
   Future<void> _refreshDeckCards() async {
     final data = await _dbHelper.getDeckCards(widget.deckId);
+    if (!mounted) return;
     setState(() {
       _deckCards = data;
     });

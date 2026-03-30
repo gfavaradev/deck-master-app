@@ -38,15 +38,17 @@ class _CameraRecognitionPageState extends State<CameraRecognitionPage> {
         preferredCameraDevice: CameraDevice.rear,
       );
       if (photo == null) {
-        setState(() => _isProcessing = false);
+        if (mounted) setState(() => _isProcessing = false);
         return;
       }
 
       // ML Kit disabled for simulator build
-      setState(() {
-        _isProcessing = false;
-        _lastError = 'OCR non disponibile su simulatore. Usa un dispositivo reale.';
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _lastError = 'OCR non disponibile su simulatore. Usa un dispositivo reale.';
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {

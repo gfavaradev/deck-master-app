@@ -14,7 +14,7 @@ class DatabaseHelper {
 
   DatabaseHelper._internal();
 
-  static const List<String> _validLanguages = ['EN', 'IT', 'FR', 'DE', 'PT'];
+  static const List<String> _validLanguages = ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'];
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -1883,11 +1883,14 @@ class DatabaseHelper {
     List<dynamic> whereArgs = [];
 
     if (!hasQuery) {
-      // No search: show all cards (no language filter)
-      whereClause = '';
+      // No search: when a non-EN language is selected, show only prints that have
+      // a localized version — hides EN-only prints that would appear with EN codes.
+      whereClause = hasLang ? 'WHERE yp.set_code$suffix IS NOT NULL' : '';
     } else {
       final q = '%$query%';
-      // Search by name (localized or EN) + all set codes (all languages)
+      // Search by name (localized or EN) + all set codes (all languages).
+      // EN-only prints are intentionally included in search results so the user
+      // can still find cards that have no localized print.
       if (hasLang) {
         whereClause = '''WHERE (
           $nameCol LIKE ?
@@ -2147,7 +2150,8 @@ class DatabaseHelper {
     List<dynamic> whereArgs = [];
 
     if (!hasQuery) {
-      whereClause = '';
+      // No search: when a non-EN language is selected, show only localized prints.
+      whereClause = hasLang ? 'WHERE pp.set_code$suffix IS NOT NULL' : '';
     } else {
       final q = '%$query%';
       if (hasLang) {

@@ -34,6 +34,7 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
       vsync: this,
       initialIndex: initialIndex < 0 ? 0 : initialIndex,
     );
+    _tabController.addListener(() => setState(() {}));
   }
 
   @override
@@ -77,21 +78,23 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
         actions: [
-          if (_syncing)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          if (_tabController.index == 0) ...[
+            if (_syncing)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                ),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.cloud_upload_outlined),
+                tooltip: 'Sincronizza su Firestore',
+                onPressed: _syncToFirestore,
               ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.cloud_upload_outlined),
-              tooltip: 'Sincronizza su Firestore',
-              onPressed: _syncToFirestore,
-            ),
+          ],
         ],
         bottom: TabBar(
           controller: _tabController,

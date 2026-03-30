@@ -16,6 +16,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   bool _isPurchasing = false;
   Offerings? _offerings;
   late AnimationController _shimmerController;
+  late final Future<bool> _proStatusFuture;
 
   static const double _monthlyPrice = 2.99;
   static const double _annualPrice = 24.99;
@@ -24,6 +25,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _proStatusFuture = SubscriptionService().currentUserHasPro();
     _shimmerController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -309,7 +311,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
         ),
         const SizedBox(height: 10),
         FutureBuilder<bool>(
-          future: SubscriptionService().currentUserHasPro(),
+          future: _proStatusFuture,
           builder: (context, snap) {
             if (snap.data == true) {
               return const Text(
