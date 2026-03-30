@@ -800,7 +800,8 @@ class DataRepository {
 
     var rows = _webCatalogCache[lang]!;
 
-    // Apply search filter
+    // When browsing (no query) with a non-EN language, hide EN-only prints.
+    // When searching, EN-only prints are included so the user can still find them.
     if (query != null && query.isNotEmpty) {
       final q = query.toLowerCase();
       rows = rows.where((r) {
@@ -809,6 +810,8 @@ class DataRepository {
         final setCode = (r['localizedSetCode'] ?? r['setCode'] ?? '').toString().toLowerCase();
         return name.contains(q) || localizedName.contains(q) || setCode.contains(q);
       }).toList();
+    } else if (lang != 'en') {
+      rows = rows.where((r) => r['isLocalizedPrint'] == 1).toList();
     }
 
     if (offset >= rows.length) return [];
