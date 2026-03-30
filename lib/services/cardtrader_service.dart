@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'auth_service.dart';
 import 'database_helper.dart';
+import 'firestore_service.dart';
 import 'sync_service.dart';
 
 /// CardTrader API integration for real marketplace price data.
@@ -159,6 +161,7 @@ class CardtraderService {
     final valuesUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
     if (valuesUpdated > 0) {
       SyncService().notifyLocalChange('cards');
+      await _pushCardValuesToFirestore(catalog);
     }
 
     return {
@@ -209,6 +212,22 @@ class CardtraderService {
     final updated = await _db.syncCollectionValuesFromCardtrader(catalog);
     if (updated > 0) SyncService().notifyLocalChange('cards');
     return updated;
+  }
+
+  Future<void> _pushCardValuesToFirestore(String catalog) async {
+    try {
+      final userId = AuthService().currentUserId;
+      if (userId == null) return;
+      final cards = await _db.getCardsWithValueByCollection(catalog);
+      final firestoreService = FirestoreService();
+      for (final card in cards) {
+        if (card.firestoreId == null) continue;
+        final albumFirestoreId = await _db.getFirestoreId('albums', card.albumId);
+        await firestoreService.updateCard(userId, card.firestoreId!, card, albumFirestoreId: albumFirestoreId);
+      }
+    } catch (e) {
+      debugPrint('[CardTrader] Error pushing values to Firestore: $e');
+    }
   }
 
   // ─── HTTP helpers ──────────────────────────────────────────────────────────
