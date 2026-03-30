@@ -9,6 +9,7 @@ import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../models/subscription_model.dart';
 import '../theme/app_colors.dart';
+import 'admin_collection_page.dart';
 import 'admin_sets_rarities_page.dart';
 
 /// Body riutilizzabile con la lista dei cataloghi da gestire
@@ -580,6 +581,20 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                   cat.name,
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: cat.color),
                 )),
+                // Gestisci Carte shortcut
+                TextButton.icon(
+                  onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => AdminCollectionPage(
+                      collectionKey: cat.key,
+                      collectionName: cat.name,
+                    ))),
+                  icon: Icon(Icons.style, size: 14, color: cat.color),
+                  label: Text('Carte', style: TextStyle(fontSize: 12, color: cat.color)),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
                 // Espansioni & Rarità shortcut
                 TextButton.icon(
                   onPressed: () => Navigator.push(context,

@@ -631,7 +631,7 @@ class DataRepository {
         final name = card['localizedName'] ?? card['name'] ?? 'Unknown';
         final serialNumber = card['localizedSetCode'] ?? card['setCode'] ?? '';
         final rarity = card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'] ?? '';
-        final value = ((card['localizedSetPrice'] ?? card['setPrice'] ?? card['marketPrice']) as num?)?.toDouble() ?? 0.0;
+        const value = 0.0;
 
         final existingAnywhere = await findOwnedInstances(collectionKey, name, serialNumber, rarity);
 
