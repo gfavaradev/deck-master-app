@@ -125,11 +125,19 @@ class CardListItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      '${card.rarity} • Album: $albumName • ${card.value > 0 ? '€${card.value.toStringAsFixed(2)}' : 'N/D'}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            '${card.rarity} • Album: $albumName',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        const Text(' • ', style: TextStyle(fontSize: 12)),
+                        _PriceTrend(value: card.value, previousValue: card.previousValue),
+                      ],
                     ),
                   ],
                 ),
@@ -166,6 +174,39 @@ class CardListItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PriceTrend extends StatelessWidget {
+  final double value;
+  final double? previousValue;
+
+  const _PriceTrend({required this.value, required this.previousValue});
+
+  @override
+  Widget build(BuildContext context) {
+    if (value <= 0) {
+      return const Text('N/D', style: TextStyle(fontSize: 12));
+    }
+
+    final priceText = '€${value.toStringAsFixed(2)}';
+
+    if (previousValue == null || previousValue == 0 || previousValue == value) {
+      return Text(priceText, style: const TextStyle(fontSize: 12));
+    }
+
+    final isUp = value > previousValue!;
+    final color = isUp ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
+    final icon = isUp ? Icons.trending_up : Icons.trending_down;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(priceText, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+        const SizedBox(width: 2),
+        Icon(icon, size: 13, color: color),
+      ],
     );
   }
 }

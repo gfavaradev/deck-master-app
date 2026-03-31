@@ -57,6 +57,17 @@ class CardtraderService {
   static Map<String, String> languagesForCatalog(String catalog) =>
       _catalogLanguages[catalog] ?? {};
 
+  /// Normalizes CardTrader API language codes to internal codes.
+  /// CT uses 'jp' for Japanese, 'kr' for Korean, 'zh-CN' for Chinese.
+  static String _normalizeLang(String ctLang) {
+    switch (ctLang.toLowerCase()) {
+      case 'jp': return 'ja';
+      case 'kr': return 'ko';
+      case 'zh-cn': return 'zh';
+      default: return ctLang.toLowerCase();
+    }
+  }
+
   String get _jwt => dotenv.env['CARDTRADER_JWT'] ?? '';
 
   Map<String, String> get _headers => {
@@ -335,7 +346,7 @@ class CardtraderService {
       final props = (b['fixed_properties'] as Map<String, dynamic>?) ??
           (b['properties_hash'] as Map<String, dynamic>?) ??
           {};
-      final bpLang = (props[langKey] as String? ?? 'en').toLowerCase();
+      final bpLang = _normalizeLang(props[langKey] as String? ?? 'en');
       return bpLang == language;
     }).toList();
   }
@@ -434,7 +445,7 @@ class CardtraderService {
 
       for (final listing in listings) {
         final ph = listing['properties_hash'] as Map<String, dynamic>? ?? {};
-        final lang = (ph[langKey] as String? ?? 'en').toLowerCase();
+        final lang = _normalizeLang(ph[langKey] as String? ?? 'en');
         if (lang != language) continue; // only process target language
         final isFirst = (ph['first_edition'] as bool?) == true ? 1 : 0;
         final rarity = (ph[rarityKey] as String? ?? '').toLowerCase();

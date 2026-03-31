@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 18,
+      version: 19,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -263,6 +263,12 @@ class DatabaseHelper {
       await _populateRaritiesFromPrints(db, 'yugioh');
       await _populateRaritiesFromPrints(db, 'pokemon');
       await _populateRaritiesFromPrints(db, 'onepiece');
+    }
+    if (oldVersion < 19) {
+      // Track previous CT price to show trend arrow in the UI.
+      await db.execute(
+        'ALTER TABLE cards ADD COLUMN previous_value REAL',
+      );
     }
   }
 
@@ -591,6 +597,7 @@ class DatabaseHelper {
         rarity TEXT,
         quantity INTEGER,
         value REAL,
+        previous_value REAL,
         firestoreId TEXT,
         added_at TEXT,
         FOREIGN KEY (albumId) REFERENCES albums (id)
@@ -3275,7 +3282,7 @@ class DatabaseHelper {
   Future<int> syncCollectionValuesFromCardtrader(String catalog) async {
     final db = await database;
 
-    // Build the catalog-specific join to get the English name
+    // ── Pass 1: cards with catalogId → match by expansion + name + language ──
     String joinSql;
     switch (catalog) {
       case 'yugioh':
@@ -3310,10 +3317,10 @@ class DatabaseHelper {
     }
 
     final cards = await db.rawQuery(joinSql);
-    if (cards.isEmpty) return 0;
 
     int updated = 0;
     final batch = db.batch();
+    final updatedCardIds = <int>{};
 
     for (final card in cards) {
       final cardId = card['card_id'] as int;
@@ -3325,7 +3332,6 @@ class DatabaseHelper {
 
       final expansionCode = sn.split('-').first.toLowerCase();
 
-      // Extract language from serial (YGO: LOB-IT001 → 'it'; others default to 'en')
       String language = 'en';
       if (catalog == 'yugioh') {
         final match = RegExp(r'-([A-Za-z]{2})\d').firstMatch(sn);
@@ -3335,7 +3341,6 @@ class DatabaseHelper {
         }
       }
 
-      // Collector number from serial for artwork-level matching (e.g. "EN006")
       final collectorNumber =
           sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
 
@@ -3348,7 +3353,6 @@ class DatabaseHelper {
         baseArgs.add(rarityLower);
       }
 
-      // Try with collector_number first for precise artwork match, then fall back
       List<Map<String, dynamic>> priceRows = [];
       if (collectorNumber.isNotEmpty) {
         priceRows = await db.query(
@@ -3376,11 +3380,66 @@ class DatabaseHelper {
       final priceCents = nm ?? any;
       if (priceCents == null || priceCents <= 0) continue;
 
-      batch.update(
-        'cards',
-        {'value': double.parse((priceCents / 100.0).toStringAsFixed(2))},
-        where: 'id = ?',
-        whereArgs: [cardId],
+      final newValue = double.parse((priceCents / 100.0).toStringAsFixed(2));
+      batch.rawUpdate(
+        'UPDATE cards SET previous_value = value, value = ? WHERE id = ?',
+        [newValue, cardId],
+      );
+      updatedCardIds.add(cardId);
+      updated++;
+    }
+
+    // ── Pass 2: cards without catalogId → match by expansion + collector_number ──
+    // These are cards added manually or from old app versions that lack a catalogId.
+    // The collector number (e.g. "EN001") combined with expansion_code and language
+    // is specific enough to find the correct price without the card name.
+    final orphans = await db.rawQuery('''
+      SELECT id AS card_id, serialNumber, rarity
+      FROM cards
+      WHERE collection = ?
+        AND serialNumber IS NOT NULL AND serialNumber != ''
+        AND (catalogId IS NULL OR catalogId = '')
+    ''', [catalog]);
+
+    for (final card in orphans) {
+      final cardId = card['card_id'] as int;
+      if (updatedCardIds.contains(cardId)) continue;
+
+      final sn = (card['serialNumber'] as String? ?? '').trim();
+      if (sn.isEmpty || !sn.contains('-')) continue;
+
+      final expansionCode = sn.split('-').first.toLowerCase();
+      final collectorNumber = sn.substring(sn.indexOf('-') + 1);
+
+      String language = 'en';
+      if (catalog == 'yugioh') {
+        final match = RegExp(r'-([A-Za-z]{2})\d').firstMatch(sn);
+        if (match != null) {
+          final code = match.group(1)!.toLowerCase();
+          language = code == 'sp' ? 'es' : code;
+        }
+      }
+
+      final priceRows = await db.query(
+        'cardtrader_prices',
+        where: 'catalog = ? AND expansion_code = ? AND language = ?'
+            ' AND LOWER(collector_number) = ? AND min_price_any_cents IS NOT NULL',
+        whereArgs: [catalog, expansionCode, language, collectorNumber.toLowerCase()],
+        orderBy: 'min_price_nm_cents IS NULL, min_price_any_cents ASC',
+        limit: 1,
+      );
+
+      if (priceRows.isEmpty) continue;
+
+      final nm = priceRows.first['min_price_nm_cents'] as int?;
+      final any = priceRows.first['min_price_any_cents'] as int?;
+      final priceCents = nm ?? any;
+      if (priceCents == null || priceCents <= 0) continue;
+
+      final newValue = double.parse((priceCents / 100.0).toStringAsFixed(2));
+      batch.rawUpdate(
+        'UPDATE cards SET previous_value = value, value = ? WHERE id = ?',
+        [newValue, cardId],
       );
       updated++;
     }
