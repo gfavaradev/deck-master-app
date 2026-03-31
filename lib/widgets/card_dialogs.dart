@@ -5,7 +5,7 @@ import '../models/album_model.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import '../pages/album_list_page.dart';
-import 'cardtrader_price_badge.dart';
+import 'cardtrader_price_badge.dart' show CardtraderAllPricesSection;
 
 class CardDialogs {
   static void showDetails({
@@ -54,7 +54,7 @@ class CardDialogs {
                 Text('Quantità: ${card.quantity}'),
                 if (card.serialNumber.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  CardtraderPriceBadge(
+                  CardtraderAllPricesSection(
                     collection: card.collection,
                     serialNumber: card.serialNumber,
                     cardName: card.name,

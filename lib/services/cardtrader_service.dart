@@ -205,6 +205,26 @@ class CardtraderService {
     return CardtraderPrice.fromMap(row as Map<String, dynamic>);
   }
 
+  /// Returns all cached CardTrader prices for a card across every language.
+  ///
+  /// One [CardtraderPrice] per language — best (cheapest) price for each.
+  Future<List<CardtraderPrice>> getAllPricesForCard({
+    required String catalog,
+    required String expansionCode,
+    required String cardName,
+    String? rarity,
+    String? collectorNumber,
+  }) async {
+    final rows = await _db.getPricesForCardAllLanguages(
+      catalog: catalog,
+      expansionCode: expansionCode.toLowerCase(),
+      cardName: cardName,
+      rarity: rarity,
+      collectorNumber: collectorNumber,
+    );
+    return rows.map(CardtraderPrice.fromMap).toList();
+  }
+
   /// Ricalcola `cards.value` dai prezzi CT già in cache locale senza chiamate API.
   /// Utile dopo un riavvio o un sync Firestore che ha azzerato i valori.
   Future<int> applyLocalPricesToCollection(String catalog) async {

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'auth_service.dart';
+import 'notification_service.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
@@ -283,6 +284,12 @@ class SyncService {
     }
   }
 
+  static const _catalogNames = {
+    'yugioh': 'Yu-Gi-Oh!',
+    'pokemon': 'Pokémon',
+    'onepiece': 'One Piece',
+  };
+
   Future<void> _syncCardtraderPrices() async {
     try {
       for (final catalog in ['yugioh', 'pokemon', 'onepiece']) {
@@ -302,9 +309,21 @@ class SyncService {
         if (prices.isEmpty) continue;
 
         await _dbHelper.upsertCardtraderPrices(prices);
-        await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
+        final updated = await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
         await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
         debugPrint('[SyncService] CT prices applied for $catalog: ${prices.length} rows');
+
+        // Notify user only if they have this collection unlocked
+        if (updated > 0) {
+          final collections = await _dbHelper.getCollections();
+          final isUnlocked = collections.any((c) => c.key == catalog && c.isUnlocked);
+          if (isUnlocked) {
+            await NotificationService().showPricesSyncedNotification(
+              collectionName: _catalogNames[catalog] ?? catalog,
+              updatedCount: updated,
+            );
+          }
+        }
       }
     } catch (e) {
       debugPrint('[SyncService] Error syncing CT prices: $e');

@@ -19,7 +19,7 @@ class _DonationsPageState extends State<DonationsPage> {
   bool _loading = true;
   List<Map<String, String>> _wallOfFame = [];
 
-  static const String _paypalUrl = 'https://paypal.me/clashkiller97';
+  static const String _kofiUrl = 'https://ko-fi.com/deckmaster';
 
   static const List<_DonationAmount> _amounts = [
     _DonationAmount(1.99, 'Una carta comune', '☆'),
@@ -47,7 +47,7 @@ class _DonationsPageState extends State<DonationsPage> {
   }
 
   Future<void> _openDonation(double amount) async {
-    final uri = Uri.parse(_paypalUrl);
+    final uri = Uri.parse(_kofiUrl);
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {

@@ -307,6 +307,45 @@ class NotificationService {
     await _local.cancel(id: _catalogUpdateNotifId);
   }
 
+  // ── Notifiche prezzi CardTrader ───────────────────────────────────────────────
+
+  static const int _pricesSyncedNotifId = 2003;
+  static const String _pricesSyncChannel = 'price_updates';
+
+  /// Mostra una notifica locale quando i prezzi CardTrader vengono aggiornati.
+  /// Da chiamare solo per utenti con la collezione sbloccata.
+  Future<void> showPricesSyncedNotification({
+    required String collectionName,
+    required int updatedCount,
+  }) async {
+    if (kIsWeb) return;
+    const channel = AndroidNotificationChannel(
+      _pricesSyncChannel,
+      'Prezzi di Mercato',
+      description: 'Notifiche aggiornamento valori CardTrader',
+      importance: Importance.defaultImportance,
+    );
+    await _local
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    await _local.show(
+      id: _pricesSyncedNotifId,
+      title: 'Valori di mercato aggiornati',
+      body: '$updatedCount carte di $collectionName hanno nuovi prezzi CardTrader.',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _pricesSyncChannel,
+          'Prezzi di Mercato',
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: const DarwinNotificationDetails(),
+      ),
+    );
+  }
+
   Future<void> _updateFirestorePreferences() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;

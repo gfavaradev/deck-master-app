@@ -3212,6 +3212,61 @@ class DatabaseHelper {
     return rows.first;
   }
 
+  /// Returns all CardTrader prices for a card across every available language.
+  ///
+  /// Matches by expansion_code + card_name_en. If [collectorNumber] is provided
+  /// it first tries an exact artwork match, then falls back to any artwork.
+  /// Returns one row per language (best price for that language).
+  Future<List<Map<String, dynamic>>> getPricesForCardAllLanguages({
+    required String catalog,
+    required String expansionCode,
+    required String cardName,
+    String? rarity,
+    String? collectorNumber,
+  }) async {
+    final db = await database;
+    final nameLower = cardName.toLowerCase();
+
+    String where = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?'
+        ' AND min_price_any_cents IS NOT NULL';
+    final args = <dynamic>[catalog, expansionCode.toLowerCase(), nameLower];
+
+    if (rarity != null && rarity.isNotEmpty) {
+      where += ' AND LOWER(rarity) = ?';
+      args.add(rarity.toLowerCase());
+    }
+
+    List<Map<String, dynamic>> rows;
+
+    if (collectorNumber != null && collectorNumber.isNotEmpty) {
+      rows = await db.query(
+        'cardtrader_prices',
+        where: '$where AND LOWER(collector_number) = ?',
+        whereArgs: [...args, collectorNumber.toLowerCase()],
+        orderBy: 'language ASC, min_price_any_cents ASC',
+      );
+      if (rows.isEmpty) {
+        rows = await db.query(
+          'cardtrader_prices',
+          where: where,
+          whereArgs: args,
+          orderBy: 'language ASC, min_price_any_cents ASC',
+        );
+      }
+    } else {
+      rows = await db.query(
+        'cardtrader_prices',
+        where: where,
+        whereArgs: args,
+        orderBy: 'language ASC, min_price_any_cents ASC',
+      );
+    }
+
+    // Keep one row per language (the first = cheapest due to ORDER BY)
+    final seen = <String>{};
+    return rows.where((r) => seen.add(r['language'] as String)).toList();
+  }
+
   /// Updates `cards.value` for every card that has a matching CardTrader price.
   ///
   /// Joins `cards` with the catalog table to resolve the English card name,

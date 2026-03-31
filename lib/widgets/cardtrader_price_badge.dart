@@ -3,6 +3,205 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
 
+// ─── Multi-language prices section ────────────────────────────────────────────
+
+/// Shows all available CardTrader prices for a card, one row per language.
+/// Intended for use in card detail dialogs/sheets.
+class CardtraderAllPricesSection extends StatefulWidget {
+  final String collection;
+  final String serialNumber;
+  final String cardName;
+  final String? rarity;
+
+  const CardtraderAllPricesSection({
+    super.key,
+    required this.collection,
+    required this.serialNumber,
+    required this.cardName,
+    this.rarity,
+  });
+
+  @override
+  State<CardtraderAllPricesSection> createState() =>
+      _CardtraderAllPricesSectionState();
+}
+
+class _CardtraderAllPricesSectionState
+    extends State<CardtraderAllPricesSection> {
+  final _service = CardtraderService();
+  late final Future<List<CardtraderPrice>> _future;
+
+  static String _expansionCode(String sn) =>
+      sn.isEmpty ? '' : sn.split('-').first.toLowerCase();
+
+  static String _collectorNumber(String sn) {
+    final idx = sn.indexOf('-');
+    return idx < 0 ? '' : sn.substring(idx + 1);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _service.getAllPricesForCard(
+      catalog: widget.collection,
+      expansionCode: _expansionCode(widget.serialNumber),
+      cardName: widget.cardName,
+      rarity: widget.rarity,
+      collectorNumber: _collectorNumber(widget.serialNumber),
+    );
+  }
+
+  static const _langLabels = <String, String>{
+    'en': 'EN', 'it': 'IT', 'fr': 'FR', 'de': 'DE',
+    'es': 'ES', 'pt': 'PT', 'ja': 'JA', 'ko': 'KO', 'zh': 'ZH',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<CardtraderPrice>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final prices = snapshot.data!;
+        return Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppColors.cardtraderBg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: AppColors.cardtraderBorder.withValues(alpha: 0.7),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.storefront_outlined,
+                      size: 13, color: AppColors.cardtraderTeal),
+                  const SizedBox(width: 5),
+                  const Text(
+                    'Prezzi CardTrader',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.cardtraderTeal,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ...prices.map(
+                (p) => _PriceRow(
+                  price: p,
+                  langLabel: _langLabels[p.language] ?? p.language.toUpperCase(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PriceRow extends StatelessWidget {
+  final CardtraderPrice price;
+  final String langLabel;
+
+  const _PriceRow({required this.price, required this.langLabel});
+
+  static String _formatDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/'
+      '${d.month.toString().padLeft(2, '0')}/'
+      '${d.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    final isHistorical = price.listingCount == 0;
+    final priceColor =
+        isHistorical ? Colors.orange : AppColors.cardtraderTeal;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: Text(
+              langLabel,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Text(
+            price.displayPrice,
+            style: TextStyle(
+              color: priceColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(width: 4),
+          if (!isHistorical)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              decoration: BoxDecoration(
+                color: price.hasNmPrice
+                    ? const Color(0xFF1A6B5A).withValues(alpha: 0.5)
+                    : Colors.orange.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                price.hasNmPrice ? 'NM' : 'ANY',
+                style: TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.bold,
+                  color: price.hasNmPrice
+                      ? AppColors.cardtraderTeal
+                      : Colors.orange,
+                ),
+              ),
+            ),
+          if (price.firstEdition) ...[
+            const SizedBox(width: 3),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.gold.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: const Text(
+                '1st',
+                style: TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.gold,
+                ),
+              ),
+            ),
+          ],
+          if (isHistorical) ...[
+            const SizedBox(width: 4),
+            Text(
+              _formatDate(price.syncedAtDate),
+              style: TextStyle(
+                fontSize: 9,
+                color: Colors.orange.withValues(alpha: 0.8),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Displays a cached CardTrader price badge for a card.
 ///
 /// Automatically extracts language and expansion code from [serialNumber].
