@@ -136,7 +136,16 @@ class CardListItem extends StatelessWidget {
                           ),
                         ),
                         const Text(' • ', style: TextStyle(fontSize: 12)),
-                        _PriceTrend(value: card.value, previousValue: card.previousValue),
+                        card.cardtraderValue != null && card.cardtraderValue! > 0
+                            ? Text(
+                                '€${card.cardtraderValue!.toStringAsFixed(2)} CT',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF2E7D32),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              )
+                            : _PriceTrend(value: card.value, previousValue: card.previousValue),
                       ],
                     ),
                   ],
@@ -315,9 +324,33 @@ class CardGridItem extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   // Album + Value
-                  Text(
-                    '$albumName • ${card.value > 0 ? '€${card.value.toStringAsFixed(2)}' : 'N/D'}',
-                    style: const TextStyle(fontSize: 8, color: AppColors.textHint),
+                  RichText(
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: albumName,
+                          style: const TextStyle(fontSize: 8, color: AppColors.textHint),
+                        ),
+                        const TextSpan(
+                          text: ' • ',
+                          style: TextStyle(fontSize: 8, color: AppColors.textHint),
+                        ),
+                        if (card.cardtraderValue != null && card.cardtraderValue! > 0) ...[
+                          TextSpan(
+                            text: '€${card.cardtraderValue!.toStringAsFixed(2)} (CT)',
+                            style: const TextStyle(
+                              fontSize: 8,
+                              color: Color(0xFF2E7D32),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ] else
+                          TextSpan(
+                            text: card.value > 0 ? '€${card.value.toStringAsFixed(2)}' : 'N/D',
+                            style: const TextStyle(fontSize: 8, color: AppColors.textHint),
+                          ),
+                      ],
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

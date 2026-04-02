@@ -343,14 +343,20 @@ class _CardListPageState extends State<CardListPage> {
   @override
   Widget build(BuildContext context) {
     final mainCount = _filteredCards.fold(0, (sum, item) => sum + item.quantity);
-    final mainValue = _filteredCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
+    final mainValue = _filteredCards.fold(0.0, (sum, item) {
+      final effectivePrice = _getEffectiveValue(item);
+      return sum + (effectivePrice * item.quantity);
+    });
     // In album view doppioni belong to a different album — exclude them from summary
     final doppioniCount = widget.albumId != null
         ? 0
         : _filteredDoppioniCards.fold(0, (sum, item) => sum + item.quantity);
     final doppioniValue = widget.albumId != null
         ? 0.0
-        : _filteredDoppioniCards.fold(0.0, (sum, item) => sum + (item.value * item.quantity));
+        : _filteredDoppioniCards.fold(0.0, (sum, item) {
+          final effectivePrice = _getEffectiveValue(item);
+          return sum + (effectivePrice * item.quantity);
+        });
     final uniqueCards = mainCount;
     final duplicates = doppioniCount;
     final totalCards = mainCount + doppioniCount;
@@ -581,6 +587,13 @@ class _CardListPageState extends State<CardListPage> {
         );
       },
     );
+  }
+
+  double _getEffectiveValue(CardModel card) {
+    if (card.cardtraderValue != null && card.cardtraderValue! > 0) {
+      return card.cardtraderValue!;
+    }
+    return card.value;
   }
 }
 

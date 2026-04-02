@@ -12,6 +12,7 @@ class CardModel {
   final int quantity;
   final double value;
   final double? previousValue;
+  final double? cardtraderValue;
   final String? imageUrl; // Added to simplify UI
 
   CardModel({
@@ -28,6 +29,7 @@ class CardModel {
     this.quantity = 1,
     this.value = 0.0,
     this.previousValue,
+    this.cardtraderValue,
     this.imageUrl,
   });
 
@@ -46,6 +48,7 @@ class CardModel {
       'quantity': quantity,
       'value': value,
       'previous_value': previousValue,
+      'cardtrader_value': cardtraderValue,
       'added_at': DateTime.now().toIso8601String(),
     };
   }
@@ -65,6 +68,7 @@ class CardModel {
       quantity: map['quantity'] ?? 1,
       value: (map['value'] as num?)?.toDouble() ?? 0.0,
       previousValue: (map['previous_value'] as num?)?.toDouble(),
+      cardtraderValue: (map['cardtrader_value'] as num?)?.toDouble(),
       imageUrl: map['imageUrl'],
     );
   }
@@ -82,6 +86,7 @@ class CardModel {
       'description': description,
       'quantity': quantity,
       'value': value,
+      'cardtraderValue': cardtraderValue,
       'imageUrl': imageUrl,
     };
   }
@@ -99,6 +104,7 @@ class CardModel {
       description: data['description'] ?? '',
       quantity: data['quantity'] ?? 1,
       value: (data['value'] as num?)?.toDouble() ?? 0.0,
+      cardtraderValue: (data['cardtraderValue'] as num?)?.toDouble(),
       imageUrl: data['imageUrl'],
     );
   }
@@ -117,6 +123,7 @@ class CardModel {
     int? quantity,
     double? value,
     double? previousValue,
+    double? cardtraderValue,
     String? imageUrl,
     bool resetId = false,
   }) {
@@ -134,6 +141,7 @@ class CardModel {
       quantity: quantity ?? this.quantity,
       value: value ?? this.value,
       previousValue: previousValue ?? this.previousValue,
+      cardtraderValue: cardtraderValue ?? this.cardtraderValue,
       imageUrl: imageUrl ?? this.imageUrl,
     );
   }
