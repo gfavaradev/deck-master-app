@@ -1,7 +1,7 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
 import '../models/album_model.dart';
@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 19,
+      version: 20,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -269,6 +269,11 @@ class DatabaseHelper {
       await db.execute(
         'ALTER TABLE cards ADD COLUMN previous_value REAL',
       );
+    }
+    if (oldVersion < 20) {
+      // Colonna cardtrader_value mancante dalla migration — aggiunta al modello
+      // senza ALTER TABLE corrispondente.
+      await _addColumnIfMissing(db, 'cards', 'cardtrader_value', 'REAL');
     }
   }
 
@@ -598,6 +603,7 @@ class DatabaseHelper {
         quantity INTEGER,
         value REAL,
         previous_value REAL,
+        cardtrader_value REAL,
         firestoreId TEXT,
         added_at TEXT,
         FOREIGN KEY (albumId) REFERENCES albums (id)
@@ -2745,19 +2751,11 @@ class DatabaseHelper {
   /// These are orphaned rows (sync was lost) — they would duplicate remote items
   /// when pullFromCloud() inserts them with a firestoreId.
   Future<void> deleteOrphanedItems() async {
-    final db = await database;
-    await db.rawDelete('''
-      DELETE FROM cards WHERE firestoreId IS NULL
-        AND id NOT IN (
-          SELECT local_id FROM pending_sync WHERE table_name = 'cards'
-        )
-    ''');
-    await db.rawDelete('''
-      DELETE FROM albums WHERE firestoreId IS NULL
-        AND id NOT IN (
-          SELECT local_id FROM pending_sync WHERE table_name = 'albums'
-        )
-    ''');
+    // Intentionally a no-op: deleting cards/albums without a firestoreId is
+    // too aggressive — those records are valid local data that hasn't been
+    // pushed to Firestore yet (e.g. added offline or before sync was implemented).
+    // Removing them would silently wipe the user's collection on every startup
+    // if the Firestore pull returns 0 results (permission error, offline, etc).
   }
 
   /// Delete albums that have a firestoreId but it's NOT in [keepIds].
@@ -3287,7 +3285,7 @@ class DatabaseHelper {
     switch (catalog) {
       case 'yugioh':
         joinSql = '''
-          SELECT c.id AS card_id, yc.name AS name_en, c.serialNumber, c.rarity
+          SELECT c.id AS card_id, yc.name AS name_en, c.serialNumber
           FROM cards c
           JOIN yugioh_cards yc ON yc.id = CAST(c.catalogId AS INTEGER)
           WHERE c.collection = 'yugioh'
@@ -3296,7 +3294,7 @@ class DatabaseHelper {
         ''';
       case 'pokemon':
         joinSql = '''
-          SELECT c.id AS card_id, pk.name AS name_en, c.serialNumber, c.rarity
+          SELECT c.id AS card_id, pk.name AS name_en, c.serialNumber
           FROM cards c
           JOIN pokemon_cards pk ON pk.id = CAST(c.catalogId AS INTEGER)
           WHERE c.collection = 'pokemon'
@@ -3305,7 +3303,7 @@ class DatabaseHelper {
         ''';
       case 'onepiece':
         joinSql = '''
-          SELECT c.id AS card_id, oc.name AS name_en, c.serialNumber, c.rarity
+          SELECT c.id AS card_id, oc.name AS name_en, c.serialNumber
           FROM cards c
           JOIN onepiece_cards oc ON oc.id = CAST(c.catalogId AS INTEGER)
           WHERE c.collection = 'onepiece'
@@ -3318,6 +3316,32 @@ class DatabaseHelper {
 
     final cards = await db.rawQuery(joinSql);
 
+    // Diagnosi sempre visibile: totale carte vs JOIN riuscite
+    final totalCards = (await db.rawQuery(
+        'SELECT COUNT(*) as cnt FROM cards WHERE collection = ?', [catalog]))
+        .first['cnt'];
+    final withCatalogId = (await db.rawQuery(
+        'SELECT COUNT(*) as cnt FROM cards WHERE collection = ? AND catalogId IS NOT NULL AND catalogId != ""', [catalog]))
+        .first['cnt'];
+    debugPrint('[CT sync] $catalog: total=$totalCards withCatalogId=$withCatalogId joined=${cards.length}');
+
+    if (cards.isEmpty && totalCards != 0) {
+      final sample = await db.rawQuery(
+          'SELECT id, catalogId, serialNumber, collection FROM cards WHERE collection = ? LIMIT 3', [catalog]);
+      for (final r in sample) {
+        debugPrint('[CT diag] id=${r['id']} catalogId=${r['catalogId']} sn=${r['serialNumber']}');
+      }
+    }
+
+    // Debug: sample dei prezzi in cache
+    final samplePrices = await db.query('cardtrader_prices',
+        where: 'catalog = ?', whereArgs: [catalog], limit: 3);
+    for (final p in samplePrices) {
+      debugPrint('[CT cache sample] exp=${p['expansion_code']} '
+          'name=${p['card_name_en']} lang=${p['language']} '
+          'cn=${p['collector_number']} price=${p['min_price_any_cents']}');
+    }
+
     int updated = 0;
     final batch = db.batch();
     final updatedCardIds = <int>{};
@@ -3326,7 +3350,6 @@ class DatabaseHelper {
       final cardId = card['card_id'] as int;
       final nameEn = (card['name_en'] as String? ?? '').trim();
       final sn = (card['serialNumber'] as String? ?? '').trim();
-      final rarity = (card['rarity'] as String? ?? '').trim();
 
       if (nameEn.isEmpty || sn.isEmpty) continue;
 
@@ -3341,17 +3364,19 @@ class DatabaseHelper {
         }
       }
 
-      final collectorNumber =
-          sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+      // YGO: "LOB-EN001" → CT collector_number is "#001" (hash + trailing digits).
+      final collectorNumber = catalog == 'yugioh'
+          ? () {
+              final digits = RegExp(r'\d+$').firstMatch(sn)?.group(0) ?? '';
+              return digits.isNotEmpty ? '#$digits' : '';
+            }()
+          : sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
 
-      final rarityLower = rarity.toLowerCase();
-      String baseWhere = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?'
+      // Rarity NOT used as filter: local rarity strings don't match CT format.
+      // collector_number is the correct disambiguator for alternate-art cards.
+      const baseWhere = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?'
           ' AND language = ? AND min_price_any_cents IS NOT NULL';
       final baseArgs = <dynamic>[catalog, expansionCode, nameEn.toLowerCase(), language];
-      if (rarityLower.isNotEmpty) {
-        baseWhere += ' AND LOWER(rarity) = ?';
-        baseArgs.add(rarityLower);
-      }
 
       List<Map<String, dynamic>> priceRows = [];
       if (collectorNumber.isNotEmpty) {
@@ -3371,6 +3396,12 @@ class DatabaseHelper {
           orderBy: 'min_price_nm_cents IS NULL, min_price_any_cents ASC',
           limit: 1,
         );
+      }
+
+      // Debug first card that fails to match
+      if (priceRows.isEmpty && updated == 0 && updatedCardIds.isEmpty) {
+        debugPrint('[CT no match] sn=$sn exp=$expansionCode '
+            'name=$nameEn lang=$language cn=$collectorNumber');
       }
 
       if (priceRows.isEmpty) continue;
@@ -3409,7 +3440,13 @@ class DatabaseHelper {
       if (sn.isEmpty || !sn.contains('-')) continue;
 
       final expansionCode = sn.split('-').first.toLowerCase();
-      final collectorNumber = sn.substring(sn.indexOf('-') + 1);
+      // YGO: "LOB-EN001" → CT collector_number is "#001" (hash + trailing digits).
+      final collectorNumber = catalog == 'yugioh'
+          ? () {
+              final digits = RegExp(r'\d+$').firstMatch(sn)?.group(0) ?? '';
+              return digits.isNotEmpty ? '#$digits' : '';
+            }()
+          : sn.substring(sn.indexOf('-') + 1);
 
       String language = 'en';
       if (catalog == 'yugioh') {
@@ -3446,5 +3483,128 @@ class DatabaseHelper {
 
     if (updated > 0) await batch.commit(noResult: true);
     return updated;
+  }
+
+  /// Aggiorna i prezzi nelle tabelle del catalogo (yugioh_prints, pokemon_prints,
+  /// onepiece_prints) leggendo i prezzi CT già in cache locale.
+  /// Questo rende i prezzi CT visibili a TUTTE le carte del catalogo,
+  /// non solo a quelle possedute.
+  ///
+  /// Returns the total number of print rows updated.
+  Future<int> syncCatalogPricesFromCardtrader(String catalog) async {
+    final db = await database;
+    int total = 0;
+
+    switch (catalog) {
+      case 'yugioh':
+        // YGO language → set_price column
+        const ygoLangCols = <String, String>{
+          'en': 'set_price',
+          'it': 'set_price_it',
+          'fr': 'set_price_fr',
+          'de': 'set_price_de',
+          'pt': 'set_price_pt',
+          'es': 'set_price_sp',
+        };
+        for (final entry in ygoLangCols.entries) {
+          final lang = entry.key;
+          final col = entry.value;
+          final n = await db.rawUpdate('''
+            UPDATE yugioh_prints
+            SET $col = (
+              SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+              FROM cardtrader_prices cp
+              JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
+              WHERE cp.catalog = 'yugioh'
+                AND cp.expansion_code = LOWER(yugioh_prints.set_id)
+                AND LOWER(cp.card_name_en) = LOWER(yc.name)
+                AND cp.language = ?
+                AND cp.min_price_any_cents IS NOT NULL
+              ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+              LIMIT 1
+            )
+            WHERE yugioh_prints.set_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM cardtrader_prices cp
+                JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
+                WHERE cp.catalog = 'yugioh'
+                  AND cp.expansion_code = LOWER(yugioh_prints.set_id)
+                  AND LOWER(cp.card_name_en) = LOWER(yc.name)
+                  AND cp.language = ?
+                  AND cp.min_price_any_cents IS NOT NULL
+              )
+          ''', [lang, lang]);
+          total += n;
+        }
+
+      case 'pokemon':
+        const pokeLangCols = <String, String>{
+          'en': 'set_price',
+          'it': 'set_price_it',
+          'fr': 'set_price_fr',
+          'de': 'set_price_de',
+          'pt': 'set_price_pt',
+        };
+        for (final entry in pokeLangCols.entries) {
+          final lang = entry.key;
+          final col = entry.value;
+          final n = await db.rawUpdate('''
+            UPDATE pokemon_prints
+            SET $col = (
+              SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+              FROM cardtrader_prices cp
+              JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
+              WHERE cp.catalog = 'pokemon'
+                AND cp.expansion_code = LOWER(pc.set_id)
+                AND LOWER(cp.card_name_en) = LOWER(pc.name)
+                AND cp.language = ?
+                AND cp.min_price_any_cents IS NOT NULL
+              ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+              LIMIT 1
+            )
+            WHERE EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
+              WHERE cp.catalog = 'pokemon'
+                AND cp.expansion_code = LOWER(pc.set_id)
+                AND LOWER(cp.card_name_en) = LOWER(pc.name)
+                AND cp.language = ?
+                AND cp.min_price_any_cents IS NOT NULL
+            )
+          ''', [lang, lang]);
+          total += n;
+        }
+
+      case 'onepiece':
+        // One Piece has a single market_price column — use best EN price
+        final n = await db.rawUpdate('''
+          UPDATE onepiece_prints
+          SET market_price = (
+            SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+            FROM cardtrader_prices cp
+            JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
+            WHERE cp.catalog = 'onepiece'
+              AND cp.expansion_code = LOWER(onepiece_prints.set_id)
+              AND LOWER(cp.card_name_en) = LOWER(oc.name)
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.language != 'en'), (cp.min_price_nm_cents IS NULL),
+                     cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE onepiece_prints.set_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
+              WHERE cp.catalog = 'onepiece'
+                AND cp.expansion_code = LOWER(onepiece_prints.set_id)
+                AND LOWER(cp.card_name_en) = LOWER(oc.name)
+                AND cp.min_price_any_cents IS NOT NULL
+            )
+        ''');
+        total += n;
+    }
+
+    debugPrint('[CT catalog sync] $catalog: $total print rows aggiornati');
+    return total;
   }
 }

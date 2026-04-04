@@ -6,9 +6,11 @@ import '../services/data_repository.dart';
 import '../services/sync_service.dart';
 import '../widgets/card_item.dart';
 import '../widgets/collection_summary.dart';
+import '../widgets/full_screen_gallery.dart';
 import '../widgets/card_dialogs.dart';
 import '../theme/app_colors.dart';
 import 'support_page.dart';
+import 'card_detail_page.dart';
 import '../services/language_service.dart';
 
 class CardListPage extends StatefulWidget {
@@ -265,14 +267,30 @@ class _CardListPageState extends State<CardListPage> {
         ? await _repo.getDecksForCard(card.id!)
         : <Map<String, dynamic>>[];
     if (!mounted) return;
-    CardDialogs.showDetails(
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CardDetailPage(
+          card: card,
+          albumName: _getAlbumName(card.albumId),
+          onDelete: _confirmDelete,
+          availableAlbums: _availableAlbums,
+          onAlbumChanged: _refreshCards,
+          cardDecks: decks,
+        ),
+      ),
+    );
+  }
+
+  void _showGallery(List<CardModel> cards, int initialIndex) {
+    showDialog<void>(
       context: context,
-      card: card,
-      albumName: _getAlbumName(card.albumId),
-      onDelete: _confirmDelete,
-      availableAlbums: _availableAlbums,
-      onAlbumChanged: _refreshCards,
-      cardDecks: decks,
+      barrierColor: Colors.black87,
+      builder: (_) => FullScreenGallery(
+        imageUrls: cards.map((c) => c.imageUrl).toList(),
+        names: cards.map((c) => c.name).toList(),
+        initialIndex: initialIndex,
+      ),
     );
   }
 
@@ -445,6 +463,7 @@ class _CardListPageState extends State<CardListPage> {
           onUpdateQuantity: _updateQuantity,
           onDelete: _confirmDelete,
           onTap: _showDetails,
+          onImageTap: () => _showGallery(_filteredCards, index),
         );
       },
     );
@@ -584,6 +603,7 @@ class _CardListPageState extends State<CardListPage> {
           showControls: !inAlbum,
           onUpdateQuantity: _updateQuantity,
           onTap: _showDetails,
+          onImageTap: () => _showGallery(_filteredCards, index),
         );
       },
     );

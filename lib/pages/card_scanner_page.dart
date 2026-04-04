@@ -55,7 +55,9 @@ class _CardScannerPageState extends State<CardScannerPage> {
     });
 
     try {
-      final result = await _scanner.scanFromCamera();
+      final result = await _scanner.scanFromCamera(
+        collectionHint: widget.collectionKey,
+      );
       if (!mounted) return;
 
       if (result == null) {

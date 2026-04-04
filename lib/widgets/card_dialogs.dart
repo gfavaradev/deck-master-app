@@ -474,6 +474,43 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       return;
     }
 
+    if (selectedAlbumId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Seleziona un album')),
+      );
+      return;
+    }
+
+    // Capacity check: block if the selected album is full (skip Doppioni)
+    final targetAlbum = widget.availableAlbums.firstWhere(
+      (a) => a.id == selectedAlbumId,
+      orElse: () => AlbumModel(name: '', collection: '', maxCapacity: 0),
+    );
+    if (targetAlbum.maxCapacity > 0 && targetAlbum.name != 'Doppioni') {
+      final freshCount = await _dbHelper.getCardCountByAlbum(selectedAlbumId!);
+      if (freshCount >= targetAlbum.maxCapacity) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Album pieno'),
+            content: Text(
+              '${targetAlbum.name} ha raggiunto la capacità massima '
+              '($freshCount/${targetAlbum.maxCapacity}).\n\n'
+              'Aumenta la capacità dell\'album oppure seleziona un altro album.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    }
+
     final String name = nameController.text;
     final String serialNumber = serialController.text;
     final int quantity = int.tryParse(quantityController.text) ?? 1;

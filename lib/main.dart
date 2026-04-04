@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'pages/splash_page.dart';
 import 'theme/app_colors.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,6 +13,17 @@ import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Rendering edge-to-edge: il contenuto si estende sotto status bar e nav bar.
+  // Funziona sia con gesture navigation che con la barra 3 pulsanti.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarContrastEnforced: false,
+  ));
 
   await dotenv.load(fileName: ".env");
 

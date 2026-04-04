@@ -82,14 +82,14 @@ class CardtraderService {
 
   // ─── Public sync API ───────────────────────────────────────────────────────
 
-  /// Syncs prices for the given [catalog] and [language].
+  /// Syncs prices for the given [catalog] across ALL available languages.
   ///
   /// Steps:
   ///   1. Fetch all CT expansions for this game.
   ///   2. Match against locally-known set codes (set_id column).
   ///   3. For each matched expansion:
-  ///      a. Fetch all /blueprints → seed DB rows for [language] (no price yet).
-  ///      b. Fetch /marketplace/products → upsert prices for active listings.
+  ///      a. Fetch all /blueprints → seed DB rows for every language present.
+  ///      b. Fetch /marketplace/products → upsert prices for all languages.
   ///   4. Update card collection values from the new prices.
   ///
   /// Returns a summary map: {expansions, blueprints, pricedBlueprints, skipped, errors}.
@@ -97,15 +97,12 @@ class CardtraderService {
     required String catalog,
     required String adminUid,
     required void Function(String msg, double? progress) onProgress,
-    required String language,
   }) async {
     final gameId = gameIds[catalog];
     if (gameId == null) throw Exception('Catalogo non supportato: $catalog');
     if (_jwt.isEmpty) {
       throw Exception('CARDTRADER_JWT non configurato nel file .env');
     }
-
-    final langLower = language.toLowerCase();
 
     onProgress('Caricamento espansioni CardTrader…', null);
     final ctExpansions = await _fetchExpansions(gameId);
@@ -121,7 +118,7 @@ class CardtraderService {
 
     debugPrint('[CardTrader] ${ctExpansions.length} CT expansions, '
         '${localCodes.length} local codes, ${matched.length} matched, '
-        'language=$langLower');
+        'all languages');
 
     int totalBlueprints = 0;  // blueprints seeded (from /blueprints endpoint)
     int pricedBlueprints = 0; // blueprints with active marketplace listings
@@ -140,24 +137,24 @@ class CardtraderService {
       );
 
       try {
-        // ── Step a: seed all blueprints for this language ─────────────────
+        // ── Step a: seed blueprints for every language present ────────────
         final blueprints = await _fetchBlueprints(expId);
-        final langBlueprints = _filterBlueprintsByLanguage(
-            blueprints, catalog, langLower);
-        if (langBlueprints.isNotEmpty) {
-          await _db.insertBlueprintsIfAbsent(
-              _buildBlueprintMaps(catalog, expCode, langBlueprints, langLower));
-          totalBlueprints += langBlueprints.length;
+        final byLang = _groupBlueprintsByLanguage(blueprints, catalog);
+        for (final entry in byLang.entries) {
+          final rows = _buildBlueprintMaps(catalog, expCode, entry.value, entry.key);
+          if (rows.isNotEmpty) {
+            await _db.insertBlueprintsIfAbsent(rows);
+            totalBlueprints += rows.length;
+          }
         }
         await Future.delayed(const Duration(milliseconds: 150));
 
-        // ── Step b: fetch marketplace listings and update prices ───────────
+        // ── Step b: fetch marketplace listings for ALL languages ───────────
         final products = await _fetchMarketplaceProducts(expId);
         if (products.isEmpty) {
           skipped++;
         } else {
-          final priced = await _storePrices(
-              catalog, expCode, products, language: langLower);
+          final priced = await _storePrices(catalog, expCode, products);
           pricedBlueprints += priced;
         }
         await Future.delayed(const Duration(milliseconds: 100));
@@ -174,6 +171,9 @@ class CardtraderService {
       await _pushCardValuesToFirestore(catalog);
     }
 
+    onProgress('Aggiornamento prezzi catalogo…', null);
+    final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
+
     return {
       'success': true,
       'expansions': matched.length,
@@ -182,8 +182,8 @@ class CardtraderService {
       'skipped': skipped,
       'errors': errors,
       'catalog': catalog,
-      'language': langLower,
       'valuesUpdated': valuesUpdated,
+      'catalogUpdated': catalogUpdated,
     };
   }
 
@@ -236,12 +236,14 @@ class CardtraderService {
     return rows.map(CardtraderPrice.fromMap).toList();
   }
 
-  /// Ricalcola `cards.value` dai prezzi CT già in cache locale senza chiamate API.
+  /// Ricalcola `cards.value` e aggiorna i prezzi del catalogo dai prezzi CT in cache locale.
   /// Utile dopo un riavvio o un sync Firestore che ha azzerato i valori.
-  Future<int> applyLocalPricesToCollection(String catalog) async {
-    final updated = await _db.syncCollectionValuesFromCardtrader(catalog);
-    if (updated > 0) SyncService().notifyLocalChange('cards');
-    return updated;
+  /// Returns a map with 'collectionUpdated' and 'catalogUpdated' counts.
+  Future<Map<String, int>> applyLocalPricesToCollection(String catalog) async {
+    final collectionUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
+    if (collectionUpdated > 0) SyncService().notifyLocalChange('cards');
+    final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
+    return {'collectionUpdated': collectionUpdated, 'catalogUpdated': catalogUpdated};
   }
 
   Future<void> _pushCardValuesToFirestore(String catalog) async {
@@ -264,6 +266,10 @@ class CardtraderService {
 
     if (response.statusCode != 200) {
       throw Exception('Errore fetch espansioni: HTTP ${response.statusCode}\n${response.body.substring(0, response.body.length.clamp(0, 200))}');
+    }
+
+    if (response.body.trimLeft().startsWith('<')) {
+      throw Exception('CardTrader non disponibile (manutenzione in corso). Riprova più tardi.');
     }
 
     dynamic all;
@@ -333,22 +339,24 @@ class CardtraderService {
     return raw.cast<Map<String, dynamic>>();
   }
 
-  /// Filters [blueprints] to only those matching [language] for [catalog].
+  /// Groups [blueprints] by their language code.
   /// CardTrader stores language in `fixed_properties` (blueprints endpoint)
   /// or `properties_hash` (products endpoint).
-  List<Map<String, dynamic>> _filterBlueprintsByLanguage(
+  /// Returns a map of language_code → list of blueprints for that language.
+  Map<String, List<Map<String, dynamic>>> _groupBlueprintsByLanguage(
     List<Map<String, dynamic>> blueprints,
     String catalog,
-    String language,
   ) {
     final langKey = _langKeys[catalog] ?? 'yugioh_language';
-    return blueprints.where((b) {
-      final props = (b['fixed_properties'] as Map<String, dynamic>?) ??
-          (b['properties_hash'] as Map<String, dynamic>?) ??
+    final result = <String, List<Map<String, dynamic>>>{};
+    for (final bp in blueprints) {
+      final props = (bp['fixed_properties'] as Map<String, dynamic>?) ??
+          (bp['properties_hash'] as Map<String, dynamic>?) ??
           {};
-      final bpLang = _normalizeLang(props[langKey] as String? ?? 'en');
-      return bpLang == language;
-    }).toList();
+      final lang = _normalizeLang(props[langKey] as String? ?? 'en');
+      result.putIfAbsent(lang, () => []).add(bp);
+    }
+    return result;
   }
 
   /// Converts a list of blueprint objects to `cardtrader_prices` row maps
@@ -406,14 +414,13 @@ class CardtraderService {
   // ─── Price processing ──────────────────────────────────────────────────────
 
   /// Processes [products] (blueprint_id → listings map) from the marketplace
-  /// endpoint, filtered to [language]. Upserts price rows and returns the
-  /// number of blueprints that had at least one listing.
+  /// endpoint across ALL languages. Upserts price rows and returns the
+  /// number of distinct blueprint+language combinations with at least one listing.
   Future<int> _storePrices(
     String catalog,
     String expansionCode,
-    Map<String, List<Map<String, dynamic>>> products, {
-    required String language,
-  }) async {
+    Map<String, List<Map<String, dynamic>>> products,
+  ) async {
     final langKey = _langKeys[catalog] ?? 'yugioh_language';
     final rarityKey = _rarityKeys[catalog] ?? 'yugioh_rarity';
     final prices = <CardtraderPrice>[];
@@ -438,7 +445,7 @@ class CardtraderService {
           (firstPh['number'] as String?)?.trim() ??
           '';
 
-      // Group listings: key = 'lang|first_edition(0|1)|rarity'
+      // Group listings by: lang|first_edition(0|1)|rarity — no language filter
       final nmPrices = <String, List<int>>{};
       final anyPrices = <String, List<int>>{};
       final rarityByKey = <String, String>{};
@@ -446,7 +453,6 @@ class CardtraderService {
       for (final listing in listings) {
         final ph = listing['properties_hash'] as Map<String, dynamic>? ?? {};
         final lang = _normalizeLang(ph[langKey] as String? ?? 'en');
-        if (lang != language) continue; // only process target language
         final isFirst = (ph['first_edition'] as bool?) == true ? 1 : 0;
         final rarity = (ph[rarityKey] as String? ?? '').toLowerCase();
         final condition = ph['condition'] as String? ?? '';

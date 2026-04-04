@@ -223,8 +223,10 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       final updates = await _repo.checkAllUnlockedCatalogUpdates();
       if (!mounted || updates.isEmpty) return;
       setState(() => _pendingUpdates = updates);
-      // Nessun popup immediato: aggiorna solo il badge con il conteggio pending
       await setPendingUpdatesCount(updates.length);
+      // Rileva e salva notifiche una volta sola qui — unreadNotificationCount()
+      // legge solo lo storico già salvato, senza query DB aggiuntive.
+      await detectAndSaveNotifications();
       if (mounted) _checkUnreadNotifications();
     } catch (_) {}
   }
@@ -488,7 +490,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';
     }
 
-    return Scaffold(
+    return PopScope(
+      // Quando si è dentro una collezione, il tasto back (gesture o 3-pulsanti)
+      // torna alla home invece di chiudere l'app.
+      canPop: !inCollection,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && inCollection) _exitCollection();
+      },
+      child: Scaffold(
       appBar: AppBar(
         leading: inCollection
             ? IconButton(
@@ -712,6 +721,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               onTap: _onNavTap,
             )
           : null,
+      ),
     );
   }
 }

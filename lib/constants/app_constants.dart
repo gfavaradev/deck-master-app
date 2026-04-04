@@ -280,8 +280,57 @@ class AppChangelog {
   /// Aggiungere nuove versioni in testa alla lista.
   static const List<Map<String, dynamic>> entries = [
     {
+      'version': '1.2.2',
+      'date': '2026-04-02',
+      'changes': [
+        'Sincronizzazione valori carta con Firestore',
+        'Prezzi CardTrader disponibili in tutte le lingue (EN/IT/FR/DE/PT)',
+        'Indicatore trend prezzi con freccia su/giù',
+        'Prezzo CardTrader mostrato come prezzo effettivo nelle carte',
+      ],
+    },
+    {
+      'version': '1.2.1',
+      'date': '2026-03-30',
+      'changes': [
+        'Integrazione prezzi CardTrader sulle carte',
+        'Aggiunto supporto lingua spagnola per i set',
+        'Correzioni stabilità: prevenuti errori su widget smontati',
+        'Migliorato il servizio catalogo per prezzi e rarità',
+      ],
+    },
+    {
+      'version': '1.2.0',
+      'date': '2026-03-14',
+      'changes': [
+        'Nuove pagine di completamento set per ogni album',
+        'Carte possedute visibili direttamente nel catalogo',
+        'Filtri di ricerca unificati su tutte le collezioni',
+        'Corretti bug sui prezzi delle carte nella collezione',
+      ],
+    },
+    {
+      'version': '1.1.0',
+      'date': '2026-03-05',
+      'changes': [
+        'Catalogo Pokémon disponibile',
+        'Nuova pagina di login con profilo personalizzabile',
+        'Modalità offline migliorata',
+        'Notifiche push aggiunte',
+        'Aggiunta possibilità di contattare lo sviluppatore',
+      ],
+    },
+    {
+      'version': '1.0.1',
+      'date': '2026-02-27',
+      'changes': [
+        'Sistemata la grafica nella schermata di aggiunta carte',
+        'Aggiornata palette colori dell\'app',
+      ],
+    },
+    {
       'version': '1.0.0',
-      'date': '2025-03-05',
+      'date': '2026-03-05',
       'changes': [
         'Catalogo One Piece TCG disponibile',
         'Sistemata visualizzazione immagini nella propria collezione',

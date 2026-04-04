@@ -352,77 +352,21 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
   // ─── CardTrader sync handlers ──────────────────────────────────────────────
 
-  /// Shows a language-picker dialog for [catalog], then runs the CT sync for
-  /// the selected language. Returns without doing anything if cancelled.
+  /// Mostra una dialog di conferma e avvia il sync CT per [catalog].
+  /// Il sync scarica prezzi per TUTTE le lingue in un'unica passata.
   Future<void> _syncCardtraderWithLanguagePicker(String catalog) async {
-    final langs = CardtraderService.languagesForCatalog(catalog);
-    if (langs.isEmpty) return;
-
-    // Default selection: first language in the map
-    String? selected = langs.keys.first;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          title: Text('Sync Prezzi CardTrader — ${_catalogDisplayName(catalog)}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Seleziona la lingua da sincronizzare.\n'
-                'Verranno scaricati tutti i blueprint noti e i prezzi '
-                'delle carte con listing attivi.',
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: selected,
-                decoration: const InputDecoration(
-                  labelText: 'Lingua',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                items: langs.entries
-                    .map((e) => DropdownMenuItem(
-                          value: e.key,
-                          child: Text('${e.value} (${e.key})'),
-                        ))
-                    .toList(),
-                onChanged: (v) => setS(() => selected = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Annulla'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Avvia Sync'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed != true || selected == null) return;
-    final lang = selected!;
-    final langLabel = langs[lang] ?? lang;
-
+    final displayName = _catalogDisplayName(catalog);
     await _confirmAndRun(
       catalog,
-      'Sync Prezzi CardTrader — $langLabel',
-      'Sincronizza Prezzi ($langLabel)',
-      'Verranno scaricati tutti i blueprint per la lingua "$langLabel" '
-          'e i prezzi per le carte con listing attivi su CardTrader.\n\n'
+      'Sync Prezzi CardTrader — $displayName',
+      'Sincronizza Prezzi',
+      'Verranno scaricati tutti i blueprint e i prezzi per ogni lingua '
+          'disponibile su CardTrader ($displayName).\n\n'
           'Può richiedere diversi minuti. Continuare?',
       (uid) => _cardtraderService.syncPrices(
         catalog: catalog,
         adminUid: uid,
         onProgress: _onProgress,
-        language: lang,
       ),
       (r) {
         final total = r['blueprints'] as int? ?? 0;
@@ -430,7 +374,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         final exps = r['expansions'] as int? ?? 0;
         final err = r['errors'] as int? ?? 0;
         return '$total blueprint in $exps espansioni · $priced con prezzo'
-            ' · ${r['valuesUpdated'] ?? 0} valori aggiornati'
+            ' · ${r['valuesUpdated'] ?? 0} carte · ${r['catalogUpdated'] ?? 0} catalogo'
             '${err > 0 ? " ($err errori)" : ""}.';
       },
     );
@@ -452,18 +396,21 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   Future<void> _syncCardtraderOnePiece() =>
       _syncCardtraderWithLanguagePicker('onepiece');
 
-  /// Ricalcola `cards.value` dai prezzi CT già in cache locale (senza API call).
+  /// Ricalcola `cards.value` e aggiorna prezzi catalogo dai prezzi CT in cache locale.
   Future<void> _applyCtPricesToCollection() => _run(
         'cardtrader',
         'Applica Prezzi CT',
         (_) async {
-          int total = 0;
+          int totalCollection = 0;
+          int totalCatalog = 0;
           for (final cat in ['yugioh', 'pokemon', 'onepiece']) {
-            total += await _cardtraderService.applyLocalPricesToCollection(cat);
+            final r = await _cardtraderService.applyLocalPricesToCollection(cat);
+            totalCollection += r['collectionUpdated'] ?? 0;
+            totalCatalog += r['catalogUpdated'] ?? 0;
           }
-          return {'valuesUpdated': total};
+          return {'collectionUpdated': totalCollection, 'catalogUpdated': totalCatalog};
         },
-        (r) => '${r['valuesUpdated']} valori aggiornati dalla cache CT locale.',
+        (r) => '${r['collectionUpdated']} carte aggiornate · ${r['catalogUpdated']} prezzi catalogo aggiornati.',
       );
 
   // ─── UI ───────────────────────────────────────────────────────────────────

@@ -622,7 +622,40 @@ class DataRepository {
     void Function(int done, int total)? onProgress,
   }) async {
     int added = 0, updated = 0, doppioni = 0;
+
+    // Pre-load all existing cards for this collection in one query
+    // instead of N×(findOwnedInstances + findCardInAlbum) queries.
+    final existingCards = await getCardsByCollection(collectionKey);
+
+    // "serialNumber|rarity" → any owned instance (for doppioni check)
+    final Map<String, List<CardModel>> ownedByKey = {};
+    // "catalogId|serialNumber|rarity" → card in target album (for update check)
+    final Map<String, CardModel> inTargetAlbum = {};
+
+    for (final c in existingCards) {
+      final anyKey = '${c.serialNumber}|${c.rarity}';
+      ownedByKey.putIfAbsent(anyKey, () => []).add(c);
+      if (c.albumId == album.id) {
+        inTargetAlbum['${c.catalogId}|${c.serialNumber}|${c.rarity}'] = c;
+      }
+    }
+
+    // Pre-resolve doppioni album once if any card will need it
     int? doppioniAlbumId;
+    final Map<String, CardModel> inDoppioniAlbum = {};
+    final needsDoppioni = catalogCards.any((card) {
+      final sn = card['localizedSetCode'] ?? card['setCode'] ?? '';
+      final r = card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'] ?? '';
+      return ownedByKey.containsKey('$sn|$r');
+    });
+    if (needsDoppioni) {
+      doppioniAlbumId = await getOrCreateDoppioniAlbum(collectionKey);
+      for (final c in existingCards) {
+        if (c.albumId == doppioniAlbumId) {
+          inDoppioniAlbum['${c.serialNumber}|${c.rarity}'] = c;
+        }
+      }
+    }
 
     for (int i = 0; i < catalogCards.length; i++) {
       final card = catalogCards[i];
@@ -631,17 +664,18 @@ class DataRepository {
         final name = card['localizedName'] ?? card['name'] ?? 'Unknown';
         final serialNumber = card['localizedSetCode'] ?? card['setCode'] ?? '';
         final rarity = card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'] ?? '';
-        const value = 0.0;
+        final anyKey = '$serialNumber|$rarity';
 
-        final existingAnywhere = await findOwnedInstances(collectionKey, name, serialNumber, rarity);
-
-        if (existingAnywhere.isNotEmpty) {
+        if (ownedByKey.containsKey(anyKey)) {
+          // Already owned somewhere → doppioni
           doppioniAlbumId ??= await getOrCreateDoppioniAlbum(collectionKey);
-          final existingInDoppioni = existingAnywhere.where((c) => c.albumId == doppioniAlbumId).toList();
-          if (existingInDoppioni.isNotEmpty) {
-            await updateCard(existingInDoppioni.first.copyWith(quantity: existingInDoppioni.first.quantity + 1));
+          final existingInDoppioni = inDoppioniAlbum[anyKey];
+          if (existingInDoppioni != null) {
+            final upd = existingInDoppioni.copyWith(quantity: existingInDoppioni.quantity + 1);
+            await updateCard(upd);
+            inDoppioniAlbum[anyKey] = upd;
           } else {
-            await insertCard(CardModel(
+            final newCard = CardModel(
               catalogId: catalogId,
               name: name,
               serialNumber: serialNumber,
@@ -651,18 +685,23 @@ class DataRepository {
               rarity: rarity,
               description: card['localizedDescription'] ?? card['description'] ?? '',
               imageUrl: card['artwork'] ?? card['imageUrl'],
-              value: value,
-            ));
+              value: 0.0,
+            );
+            final newId = await insertCard(newCard);
+            inDoppioniAlbum[anyKey] = newCard.copyWith(id: newId);
           }
           doppioni++;
           XpService().awardXp(XpService.xpForRarity(rarity)).catchError((_) {});
         } else {
-          final existingInAlbum = await findCardInAlbum(album.id!, catalogId, serialNumber, rarity);
+          final albumKey = '$catalogId|$serialNumber|$rarity';
+          final existingInAlbum = inTargetAlbum[albumKey];
           if (existingInAlbum != null) {
-            await updateCard(existingInAlbum.copyWith(quantity: existingInAlbum.quantity + 1));
+            final upd = existingInAlbum.copyWith(quantity: existingInAlbum.quantity + 1);
+            await updateCard(upd);
+            inTargetAlbum[albumKey] = upd;
             updated++;
           } else {
-            await insertCard(CardModel(
+            final newCard = CardModel(
               catalogId: catalogId,
               name: name,
               serialNumber: serialNumber,
@@ -672,8 +711,12 @@ class DataRepository {
               rarity: rarity,
               description: card['localizedDescription'] ?? card['description'] ?? '',
               imageUrl: card['artwork'] ?? card['imageUrl'],
-              value: value,
-            ));
+              value: 0.0,
+            );
+            final newId = await insertCard(newCard);
+            final inserted = newCard.copyWith(id: newId);
+            inTargetAlbum[albumKey] = inserted;
+            ownedByKey[anyKey] = [inserted];
             added++;
           }
           XpService().awardXp(XpService.xpForRarity(rarity)).catchError((_) {});

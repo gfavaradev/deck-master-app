@@ -56,6 +56,7 @@ class CardListItem extends StatelessWidget {
   final Function(CardModel, int) onUpdateQuantity;
   final Function(CardModel) onDelete;
   final Function(CardModel) onTap;
+  final VoidCallback? onImageTap;
 
   const CardListItem({
     super.key,
@@ -66,6 +67,7 @@ class CardListItem extends StatelessWidget {
     required this.onUpdateQuantity,
     required this.onDelete,
     required this.onTap,
+    this.onImageTap,
   });
 
   @override
@@ -92,9 +94,10 @@ class CardListItem extends StatelessWidget {
             children: [
               // Immagine / icona
               GestureDetector(
-                onTap: card.imageUrl != null && card.imageUrl!.isNotEmpty
-                    ? () => _showFullScreenImage(context, card.imageUrl!)
-                    : null,
+                onTap: onImageTap ??
+                    (card.imageUrl != null && card.imageUrl!.isNotEmpty
+                        ? () => _showFullScreenImage(context, card.imageUrl!)
+                        : null),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: SizedBox(
@@ -227,6 +230,7 @@ class CardGridItem extends StatelessWidget {
   final bool showControls;
   final Function(CardModel, int) onUpdateQuantity;
   final Function(CardModel) onTap;
+  final VoidCallback? onImageTap;
 
   const CardGridItem({
     super.key,
@@ -236,6 +240,7 @@ class CardGridItem extends StatelessWidget {
     this.showControls = true,
     required this.onUpdateQuantity,
     required this.onTap,
+    this.onImageTap,
   });
 
   @override
@@ -251,9 +256,10 @@ class CardGridItem extends StatelessWidget {
             // Card image with quantity badge overlay
             Expanded(
               child: GestureDetector(
-                onTap: card.imageUrl != null && card.imageUrl!.isNotEmpty
-                    ? () => _showFullScreenImage(context, card.imageUrl!)
-                    : null,
+                onTap: onImageTap ??
+                    (card.imageUrl != null && card.imageUrl!.isNotEmpty
+                        ? () => _showFullScreenImage(context, card.imageUrl!)
+                        : null),
                 child: card.imageUrl != null && card.imageUrl!.isNotEmpty
                     ? CachedNetworkImage(
                         imageUrl: card.imageUrl!,

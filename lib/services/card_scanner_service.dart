@@ -39,53 +39,58 @@ class CardScannerService {
   final DataRepository _repo = DataRepository();
   final ImagePicker _picker = ImagePicker();
 
-  // ─── Serial patterns ───────────────────────────────────────────────────────
+  // ─── Serial patterns (used in OCR and Pokémon catalog search) ───────────────
 
-  // Yu-Gi-Oh con codice lingua: LOB-EN001  RA01-EN001  MAZE-EN111  TN19-EN014
-  // Supporta set con cifre nel codice (RA01, TN19) e 3-4 digit nel numero.
-  static final _ygoSerial = RegExp(r'[A-Z0-9]{2,6}-[A-Z]{2}\d{3,4}');
-
-  // One Piece: OP01-001  ST01-001  EB01-001
-  static final _opSerial = RegExp(r'(?:OP|ST|EB)\d{2}-\d{3}');
+  // Pokémon: numero stampato sulla carta  025/202  001/264
+  static final _pokemonNumber = RegExp(r'\b(\d{1,3})/\d{2,3}\b');
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
   /// Opens the device camera, captures a photo, then attempts to identify
   /// the card. Returns null if cancelled or unidentifiable.
-  Future<CardScanResult?> scanFromCamera() async {
+  ///
+  /// Pass [collectionHint] (e.g. 'pokemon', 'yugioh') when the current context
+  /// is known — Gemini will be biased toward that game for better accuracy.
+  Future<CardScanResult?> scanFromCamera({String? collectionHint}) async {
     final image = await _picker.pickImage(
       source: ImageSource.camera,
       imageQuality: 90,
       preferredCameraDevice: CameraDevice.rear,
     );
     if (image == null) return null;
-    return _processImage(image);
+    return _processImage(image, collectionHint: collectionHint);
   }
 
   /// Processes an already-captured [XFile] image.
-  Future<CardScanResult?> processImage(XFile image) => _processImage(image);
+  Future<CardScanResult?> processImage(XFile image, {String? collectionHint}) =>
+      _processImage(image, collectionHint: collectionHint);
 
   // ─── Internal processing ──────────────────────────────────────────────────
 
-  Future<CardScanResult?> _processImage(XFile image) async {
+  Future<CardScanResult?> _processImage(XFile image,
+      {String? collectionHint}) async {
     // Step 1 — ML Kit OCR
-    final ocrResult = await _tryOcr(image);
+    final ocrResult = await _tryOcr(image, collectionHint: collectionHint);
     if (ocrResult != null) return ocrResult;
 
     // Step 2 — Gemini Vision fallback
-    return _tryGemini(image);
+    return _tryGemini(image, collectionHint: collectionHint);
   }
 
-  Future<CardScanResult?> _tryOcr(XFile image) async {
+  Future<CardScanResult?> _tryOcr(XFile image,
+      {String? collectionHint}) async {
     // ML Kit disabled for simulator build (iOS 26 incompatibility)
+    // When re-enabled, use: _ygoSerial, _opSerial, _pokemonNumber patterns
     debugPrint('[CardScanner OCR] disabled on simulator — skipping to Gemini');
     return null;
   }
 
-  Future<CardScanResult?> _tryGemini(XFile image) async {
+  Future<CardScanResult?> _tryGemini(XFile image,
+      {String? collectionHint}) async {
     final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
     if (apiKey.isEmpty || apiKey == 'your_gemini_api_key_here') {
-      debugPrint('[CardScanner] GEMINI_API_KEY non configurata — fallback disabilitato');
+      debugPrint(
+          '[CardScanner] GEMINI_API_KEY non configurata — fallback disabilitato');
       return null;
     }
 
@@ -96,11 +101,20 @@ class CardScannerService {
       );
 
       final bytes = await image.readAsBytes();
-      const prompt = '''You are a trading card game expert. Look at this card image and identify it.
-Return ONLY a raw JSON object (no markdown, no explanation):
-{"name":"exact english card name","serial":"set code printed on card e.g. LOB-EN001 or swsh1-1","collection":"yugioh or pokemon or onepiece"}
+
+      final hintLine = collectionHint != null
+          ? 'Note: this card is likely from ${_collectionDisplayName(collectionHint)}.\n'
+          : '';
+
+      final prompt =
+          '''You are a trading card game expert. Look at this card image and identify it.
+${hintLine}Return ONLY a raw JSON object (no markdown, no explanation):
+{"name":"exact english card name","serial":"identifier printed on card","collection":"yugioh or pokemon or onepiece","set_name":"set/expansion name (Pokemon only)"}
 If you cannot identify the card with confidence return: {"error":"not_found"}
-Important: "serial" for Yu-Gi-Oh looks like SETCODE-LANG###, for Pokemon like SET-### or ###/###, for One Piece like OP##-###.''';
+Serial format per game:
+- Yu-Gi-Oh!: SETCODE-LANG### e.g. LOB-EN001, RA01-EN001
+- Pokémon: the number printed at the bottom e.g. 025/202 (include the /total)
+- One Piece TCG: OP##-### or ST##-### e.g. OP01-001''';
 
       final response = await model.generateContent([
         Content.multi([
@@ -119,31 +133,32 @@ Important: "serial" for Yu-Gi-Oh looks like SETCODE-LANG###, for Pokemon like SE
           .trim();
 
       // Cerca il primo oggetto JSON nel testo ripulito
-      final jsonMatch = RegExp(r'\{.*?\}', dotAll: true).firstMatch(stripped);
+      final jsonMatch =
+          RegExp(r'\{.*?\}', dotAll: true).firstMatch(stripped);
       if (jsonMatch == null) return null;
 
       Map<String, dynamic> data;
       try {
         data = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
       } catch (_) {
-        debugPrint('[CardScanner Gemini] JSON parse error for: ${jsonMatch.group(0)}');
+        debugPrint(
+            '[CardScanner Gemini] JSON parse error for: ${jsonMatch.group(0)}');
         return null;
       }
       if (data.containsKey('error')) return null;
 
       final name = (data['name'] as String? ?? '').trim();
       final serial = (data['serial'] as String? ?? '').trim();
-      final collection = (data['collection'] as String? ?? '').trim().toLowerCase();
+      final collection =
+          (data['collection'] as String? ?? '').trim().toLowerCase();
+      final setName = (data['set_name'] as String? ?? '').trim();
 
       if (name.isEmpty || collection.isEmpty) return null;
       if (!['yugioh', 'pokemon', 'onepiece'].contains(collection)) return null;
 
-      // Try to find in local catalog
-      Map<String, dynamic>? catalogCard;
-      if (serial.isNotEmpty) {
-        catalogCard = await _searchCatalog(collection, serial);
-      }
-      catalogCard ??= await _searchCatalog(collection, name);
+      // Try to find in local catalog (collection-aware strategy)
+      final catalogCard =
+          await _searchCatalogSmart(collection, name, serial, setName: setName);
 
       return CardScanResult(
         cardName: name,
@@ -156,6 +171,85 @@ Important: "serial" for Yu-Gi-Oh looks like SETCODE-LANG###, for Pokemon like SE
       debugPrint('[CardScanner Gemini] error: $e');
       return null;
     }
+  }
+
+  // ─── Catalog search helpers ───────────────────────────────────────────────
+
+  static String _collectionDisplayName(String key) => switch (key) {
+        'yugioh' => 'Yu-Gi-Oh!',
+        'pokemon' => 'Pokémon',
+        'onepiece' => 'One Piece TCG',
+        _ => key,
+      };
+
+  /// Collection-aware catalog lookup.
+  Future<Map<String, dynamic>?> _searchCatalogSmart(
+    String collection,
+    String name,
+    String serial, {
+    String setName = '',
+  }) async {
+    if (collection == 'pokemon') {
+      return _searchPokemonCatalog(name, serial, setName);
+    }
+    // YGO and OP: serial is the primary lookup key
+    if (serial.isNotEmpty) {
+      final bySerial = await _searchCatalog(collection, serial);
+      if (bySerial != null) return bySerial;
+    }
+    if (name.isNotEmpty) {
+      return _searchCatalog(collection, name);
+    }
+    return null;
+  }
+
+  /// Pokémon-specific search: name first, then narrow by card number.
+  ///
+  /// Pokémon serials are printed as "025/202" — we extract the number part
+  /// and compare against the `number` field in pokemon_cards.
+  Future<Map<String, dynamic>?> _searchPokemonCatalog(
+      String name, String serial, String setName) async {
+    if (name.isEmpty) return null;
+
+    final results = await _repo.getCatalogCardsByCollection(
+      'pokemon',
+      query: name,
+      limit: 50,
+    );
+    if (results.isEmpty) return null;
+    if (results.length == 1) return results.first;
+
+    // Try to narrow by card number extracted from serial (e.g. "025/202" → "025" → 25)
+    final numberMatch = _pokemonNumber.firstMatch(serial);
+    if (numberMatch != null) {
+      final raw = numberMatch.group(1)!; // e.g. "025"
+      final parsed = int.tryParse(raw);
+      final candidate = results.firstWhere(
+        (r) {
+          final n = (r['number'] as String? ?? '');
+          return n == raw ||
+              n == parsed?.toString() ||
+              n.padLeft(3, '0') == raw.padLeft(3, '0');
+        },
+        orElse: () => <String, dynamic>{},
+      );
+      if (candidate.isNotEmpty) return candidate;
+    }
+
+    // Try to narrow by set name
+    if (setName.isNotEmpty) {
+      final lc = setName.toLowerCase();
+      final candidate = results.firstWhere(
+        (r) {
+          final sn = (r['setName'] as String? ?? '').toLowerCase();
+          return sn.contains(lc) || lc.contains(sn);
+        },
+        orElse: () => <String, dynamic>{},
+      );
+      if (candidate.isNotEmpty) return candidate;
+    }
+
+    return results.first;
   }
 
   Future<Map<String, dynamic>?> _searchCatalog(

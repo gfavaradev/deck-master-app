@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,6 +17,43 @@ const _kPrevTotalOnepiece = 'notif_prev_total_cards_onepiece';
 const _kLastSeenVersionPokemon = 'notif_last_seen_catalog_version_pokemon';
 const _kPrevTotalPokemon = 'notif_prev_total_cards_pokemon';
 const _kPendingUpdatesCount = 'notif_pending_updates_count';
+const _kCachedChangelog = 'notif_cached_changelog';
+
+// ─── Firestore changelog fetch ────────────────────────────────────────────────
+
+/// Scarica il changelog da Firestore (doc: app_config/changelog, campo: entries).
+/// In caso di errore/offline restituisce null → si usa il fallback hardcoded.
+/// Salva in cache SharedPreferences per uso offline futuro.
+Future<List<Map<String, dynamic>>?> _fetchRemoteChangelog(
+    SharedPreferences prefs) async {
+  try {
+    final doc = await FirebaseFirestore.instance
+        .collection('app_config')
+        .doc('changelog')
+        .get()
+        .timeout(const Duration(seconds: 5));
+    if (!doc.exists) return null;
+    final raw = doc.data()?['entries'];
+    if (raw is! List) return null;
+    final entries = raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    // Salva cache per uso offline
+    await prefs.setString(_kCachedChangelog, jsonEncode(entries));
+    return entries;
+  } catch (_) {
+    // Offline o errore: prova la cache locale
+    final cached = prefs.getString(_kCachedChangelog);
+    if (cached != null) {
+      try {
+        final list = jsonDecode(cached) as List;
+        return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      } catch (_) {}
+    }
+    return null;
+  }
+}
 
 // ─── Model ────────────────────────────────────────────────────────────────────
 
@@ -91,13 +129,18 @@ Future<List<_NotifEntry>> _detectAndPersistNewNotifs(
   // ── App update ──────────────────────────────────────────────────────────────
   final info = await PackageInfo.fromPlatform();
   final currentVersion = info.version;
-  final lastSeenVersion = prefs.getString(_kLastSeenAppVersion) ?? '';
 
-  for (final entry in AppChangelog.entries) {
+  // Usa changelog remoto (Firestore) con fallback all'hardcoded
+  final remoteEntries = await _fetchRemoteChangelog(prefs);
+  final changelogEntries = remoteEntries ?? AppChangelog.entries;
+
+  for (final entry in changelogEntries) {
     final v = entry['version'] as String;
     final id = 'app_$v';
-    if (!existingIds.contains(id) &&
-        (lastSeenVersion.isEmpty || _versionGt(v, lastSeenVersion))) {
+    // Mostra tutte le entries <= versione corrente non ancora in storico.
+    // Non usare lastSeenVersion per filtrare: se un entry viene aggiunta
+    // retroattivamente al changelog va comunque mostrata.
+    if (!existingIds.contains(id) && !_versionGt(v, currentVersion)) {
       history.insert(
         0,
         _NotifEntry(
@@ -222,10 +265,19 @@ Future<void> setPendingUpdatesCount(int count) async {
   await prefs.setInt(_kPendingUpdatesCount, count);
 }
 
-/// Numero totale di notifiche non lette (storico + aggiornamenti in attesa)
+/// Rileva nuove notifiche (app update + catalog update) e le salva nello storico.
+/// Da chiamare quando si sa che potrebbero esserci aggiornamenti (es. dopo
+/// _checkCatalogUpdate), NON ad ogni aggiornamento del badge.
+Future<void> detectAndSaveNotifications() async {
+  final prefs = await SharedPreferences.getInstance();
+  await _detectAndPersistNewNotifs(prefs);
+}
+
+/// Numero totale di notifiche non lette (storico + aggiornamenti in attesa).
+/// Legge solo lo storico già salvato — non fa query DB né rilevazione.
 Future<int> unreadNotificationCount() async {
   final prefs = await SharedPreferences.getInstance();
-  final history = await _detectAndPersistNewNotifs(prefs);
+  final history = await _loadHistory(prefs);
   final historyUnread = history.where((e) => !e.isRead).length;
   final pendingCount = prefs.getInt(_kPendingUpdatesCount) ?? 0;
   return historyUnread + pendingCount;
@@ -669,9 +721,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final lastUpdated = entry.data['lastUpdated'] as String? ?? '';
 
     final isYugioh = catalog == 'yugioh';
-    final color = isYugioh ? AppColors.gold : const Color(0xFF4CAF50);
-    final icon = isYugioh ? Icons.auto_awesome : Icons.sailing;
-    final name = isYugioh ? 'Yu-Gi-Oh!' : 'One Piece TCG';
+    final isPokemon = catalog == 'pokemon';
+    final color = isYugioh
+        ? AppColors.gold
+        : isPokemon
+            ? const Color(0xFFEE1515)
+            : const Color(0xFF4CAF50);
+    final icon = isYugioh
+        ? Icons.auto_awesome
+        : isPokemon
+            ? Icons.catching_pokemon
+            : Icons.sailing;
+    final name = isYugioh ? 'Yu-Gi-Oh!' : isPokemon ? 'Pokémon' : 'One Piece TCG';
 
     final List<String> details = ['Prezzi di mercato aggiornati'];
     if (newCards > 0) details.insert(0, '+$newCards nuove carte aggiunte');

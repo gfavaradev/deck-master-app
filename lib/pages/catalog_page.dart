@@ -7,6 +7,7 @@ import '../services/language_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/card_dialogs.dart';
+import '../widgets/full_screen_gallery.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 
@@ -556,7 +557,7 @@ class _CatalogPageState extends State<CatalogPage> {
                                         child: Stack(
                                           fit: StackFit.expand,
                                           children: [
-                                            _buildCardImage(card, isYugioh),
+                                            _buildCardImage(card, isYugioh, index),
                                             if (ownedQty > 0)
                                               Positioned(
                                                 bottom: 4,
@@ -691,7 +692,7 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
-  Widget _buildCardImage(Map<String, dynamic> card, bool isYugioh) {
+  Widget _buildCardImage(Map<String, dynamic> card, bool isYugioh, int cardIndex) {
     final imageUrl = card['artwork'] as String?;
     final isOwned = card['isOwned'] == 1;
     if (imageUrl == null || imageUrl.isEmpty) {
@@ -703,7 +704,7 @@ class _CatalogPageState extends State<CatalogPage> {
       );
     }
     return GestureDetector(
-      onTap: () => _showFullScreenImage(imageUrl),
+      onTap: _isSelectionMode ? null : () => _showFullScreenImage(cardIndex),
       child: CachedNetworkImage(
         imageUrl: imageUrl,
         fit: BoxFit.cover,
@@ -721,46 +722,16 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
-  void _showFullScreenImage(String imageUrl) {
+  void _showFullScreenImage(int initialIndex) {
     showDialog<void>(
       context: context,
       barrierColor: Colors.black87,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 48),
-        child: Stack(
-          alignment: Alignment.topRight,
-          children: [
-            GestureDetector(
-              onTap: () => Navigator.pop(ctx),
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 5,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.contain,
-                    placeholder: (_, _) => const SizedBox(
-                      height: 200,
-                      child: Center(child: CircularProgressIndicator(color: AppColors.gold)),
-                    ),
-                    errorWidget: (_, _, _) =>
-                        const Icon(Icons.broken_image, color: Colors.white, size: 64),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(4),
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                style: IconButton.styleFrom(backgroundColor: Colors.black45),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ),
-          ],
-        ),
+      builder: (_) => FullScreenGallery(
+        imageUrls: _catalogCards.map((c) => c['artwork'] as String?).toList(),
+        names: _catalogCards
+            .map((c) => (c['localizedName'] ?? c['name'] ?? '') as String)
+            .toList(),
+        initialIndex: initialIndex,
       ),
     );
   }
