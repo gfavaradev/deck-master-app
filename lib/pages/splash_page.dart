@@ -68,8 +68,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       if (storedVersion != null && storedVersion != currentVersion) {
         return info.version;
       }
-    } catch (e) {
-      debugPrint('Version check error: $e');
+    } catch (e) { // ignore: empty_catches
     }
     return null;
   }

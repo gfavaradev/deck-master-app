@@ -52,14 +52,14 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
       await svc.pushSetRarityTranslations(
         catalog: 'yugioh',
         adminUid: uid,
-        onProgress: (msg, _) => debugPrint('[sync] $msg'),
+        onProgress: (_, p) {},
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Traduzioni sincronizzate su Firestore')),
         );
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore: $e')),

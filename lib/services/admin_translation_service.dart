@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'database_helper.dart';
 
@@ -141,9 +140,6 @@ class AdminTranslationService {
               .timeout(const Duration(seconds: 30));
 
           if (response.statusCode != 200) {
-            debugPrint(
-              'YGOPRODeck error ${response.statusCode} for lang=$apiLang',
-            );
             errorCards += chunk.length;
             await Future.delayed(const Duration(milliseconds: 500));
             continue;
@@ -182,8 +178,7 @@ class AdminTranslationService {
               modifiedChunkIds.add(loc.chunkId);
             }
           }
-        } catch (e) {
-          debugPrint('Errore fetch YGOPRODeck lang=$apiLang batch=$b: $e');
+        } catch (e) { // ignore: empty_catches
           errorCards += chunk.length;
         }
 

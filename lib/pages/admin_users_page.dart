@@ -40,7 +40,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -346,7 +346,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           );
           _loadUsers();
         }
-      } catch (e) {
+      } catch (e) { // ignore: empty_catches
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Errore: $e')),
@@ -392,7 +392,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           );
           _loadUsers();
         }
-      } catch (e) {
+      } catch (e) { // ignore: empty_catches
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Errore: $e')),
@@ -434,7 +434,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           );
           _loadUsers();
         }
-      } catch (e) {
+      } catch (e) { // ignore: empty_catches
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Errore: $e')),

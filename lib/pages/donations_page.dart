@@ -50,7 +50,7 @@ class _DonationsPageState extends State<DonationsPage> {
     final uri = Uri.parse(_kofiUrl);
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Impossibile aprire il link')),

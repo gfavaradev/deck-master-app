@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 // google_mlkit_text_recognition disabled for simulator build
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
@@ -81,7 +80,7 @@ class CardScannerService {
       {String? collectionHint}) async {
     // ML Kit disabled for simulator build (iOS 26 incompatibility)
     // When re-enabled, use: _ygoSerial, _opSerial, _pokemonNumber patterns
-    debugPrint('[CardScanner OCR] disabled on simulator — skipping to Gemini');
+
     return null;
   }
 
@@ -89,8 +88,7 @@ class CardScannerService {
       {String? collectionHint}) async {
     final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
     if (apiKey.isEmpty || apiKey == 'your_gemini_api_key_here') {
-      debugPrint(
-          '[CardScanner] GEMINI_API_KEY non configurata — fallback disabilitato');
+
       return null;
     }
 
@@ -124,7 +122,7 @@ Serial format per game:
       ]).timeout(const Duration(seconds: 30));
 
       final text = response.text ?? '';
-      debugPrint('[CardScanner Gemini] response: $text');
+
 
       // Gemini può wrappare la risposta in ```json ... ``` — rimuoviamo il markdown
       final stripped = text
@@ -140,9 +138,8 @@ Serial format per game:
       Map<String, dynamic> data;
       try {
         data = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
-      } catch (_) {
-        debugPrint(
-            '[CardScanner Gemini] JSON parse error for: ${jsonMatch.group(0)}');
+      } catch (_) { // ignore: empty_catches
+
         return null;
       }
       if (data.containsKey('error')) return null;
@@ -167,8 +164,8 @@ Serial format per game:
         catalogCard: catalogCard,
         source: 'gemini',
       );
-    } catch (e) {
-      debugPrint('[CardScanner Gemini] error: $e');
+    } catch (e) { // ignore: empty_catches
+
       return null;
     }
   }

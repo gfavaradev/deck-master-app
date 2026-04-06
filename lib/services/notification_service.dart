@@ -16,7 +16,7 @@ const _kCatalogUpdates = 'notif_catalog_updates';
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Non serve fare nulla qui — FCM su Android mostra la notifica automaticamente
   // se c'è un campo "notification" nel payload. Per payload data-only, elaborare qui.
-  debugPrint('[FCM] Background message: ${message.messageId}');
+
 }
 
 // ─── NotificationService ──────────────────────────────────────────────────────
@@ -161,8 +161,8 @@ class NotificationService {
       }
       final token = await _fcm.getToken();
       if (token != null) await _saveTokenToFirestore(token);
-    } catch (e) {
-      debugPrint('[FCM] Token refresh failed: $e');
+    } catch (e) { // ignore: empty_catches
+
     }
   }
 
@@ -174,8 +174,8 @@ class NotificationService {
         {'fcmToken': token, 'notificationsEnabled': true},
         SetOptions(merge: true),
       );
-    } catch (e) {
-      debugPrint('[FCM] Firestore token save failed: $e');
+    } catch (e) { // ignore: empty_catches
+
     }
   }
 
@@ -188,8 +188,8 @@ class NotificationService {
         {'fcmToken': FieldValue.delete(), 'notificationsEnabled': false},
         SetOptions(merge: true),
       );
-    } catch (e) {
-      debugPrint('[FCM] Firestore token delete failed: $e');
+    } catch (e) { // ignore: empty_catches
+
     }
   }
 
@@ -361,8 +361,8 @@ class NotificationService {
         },
         SetOptions(merge: true),
       );
-    } catch (e) {
-      debugPrint('[FCM] Preferences update failed: $e');
+    } catch (e) { // ignore: empty_catches
+
     }
   }
 }

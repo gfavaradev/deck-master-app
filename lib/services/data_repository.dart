@@ -89,7 +89,7 @@ class DataRepository {
         'totalCards': localTotalCards,
         'lastUpdated': localMetadata['last_updated'],
       };
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       return {'needsUpdate': false, 'error': e.toString()};
     }
   }
@@ -244,8 +244,8 @@ class DataRepository {
           totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
           lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
         );
-      } catch (e) {
-        debugPrint('Warning: failed to save catalog metadata: $e');
+      } catch (e) { // ignore: empty_catches
+
       }
     }
   }
@@ -294,8 +294,8 @@ class DataRepository {
           totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
           lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
         );
-      } catch (e) {
-        debugPrint('Warning: failed to save catalog metadata after incremental update: $e');
+      } catch (e) { // ignore: empty_catches
+
       }
     }
   }
@@ -339,10 +339,10 @@ class DataRepository {
           lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ??
               DateTime.now().toIso8601String(),
         );
-      } catch (e) {
+      } catch (e) { // ignore: empty_catches
         // Catalog data is already saved; metadata failure only causes an
         // unnecessary re-download on the next launch — not a data-loss risk.
-        debugPrint('Warning: failed to save catalog metadata: $e');
+
       }
     }
 
@@ -371,8 +371,8 @@ class DataRepository {
         try {
           final remote = await _firestoreService.getCollections(userId);
           unlockedKeys = remote.where((c) => c.isUnlocked).map((c) => c.key).toSet();
-        } catch (e) {
-          debugPrint('Web getCollections Firestore error: $e');
+        } catch (e) { // ignore: empty_catches
+
         }
       }
       return _staticCollections.map((c) => CollectionModel(
@@ -721,8 +721,8 @@ class DataRepository {
           }
           XpService().awardXp(XpService.xpForRarity(rarity)).catchError((_) {});
         }
-      } catch (e) {
-        debugPrint('Error adding card: $e');
+      } catch (e) { // ignore: empty_catches
+
       }
       onProgress?.call(i + 1, catalogCards.length);
     }
@@ -767,7 +767,7 @@ class DataRepository {
     void Function(double)? onSaveProgress,
   }) async {
     if (_isDownloadingCatalog) {
-      debugPrint('downloadCollectionCatalog: download già in corso, skip.');
+
       return;
     }
     _isDownloadingCatalog = true;
@@ -999,15 +999,15 @@ class DataRepository {
             final firestoreId = await _firestoreService.insertDeck(userId, name, collection);
             await _dbHelper.updateFirestoreId('decks', localId, firestoreId);
           }
-        } catch (e) {
-          debugPrint('Error syncing deck insert: $e');
+        } catch (e) { // ignore: empty_catches
+
           await _dbHelper.addPendingSync('decks', localId, 'insert');
         }
       } else {
         await _dbHelper.addPendingSync('decks', localId, 'insert');
       }
-    } catch (e) {
-      debugPrint('Error in deck sync flow: $e');
+    } catch (e) { // ignore: empty_catches
+
     }
     return localId;
   }
@@ -1036,8 +1036,8 @@ class DataRepository {
         if (userId != null && firestoreId != null) {
           await _firestoreService.addCardToDeck(userId, firestoreId, cardId, quantity);
         }
-      } catch (e) {
-        debugPrint('Error syncing deck card add: $e');
+      } catch (e) { // ignore: empty_catches
+
       }
     }
   }
@@ -1060,8 +1060,8 @@ class DataRepository {
         if (userId != null && firestoreId != null) {
           await _firestoreService.removeCardFromDeck(userId, firestoreId, cardId);
         }
-      } catch (e) {
-        debugPrint('Error syncing deck card remove: $e');
+      } catch (e) { // ignore: empty_catches
+
       }
     }
   }
@@ -1165,7 +1165,7 @@ class DataRepository {
         'totalCards': localTotalCards,
         'lastUpdated': localMetadata['last_updated'],
       };
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       return {'needsUpdate': false, 'error': e.toString()};
     }
   }
@@ -1323,7 +1323,7 @@ class DataRepository {
         'totalCards': localTotalCards,
         'lastUpdated': localMetadata['last_updated'],
       };
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       return {'needsUpdate': false, 'error': e.toString()};
     }
   }

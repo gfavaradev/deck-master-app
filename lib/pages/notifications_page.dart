@@ -42,7 +42,7 @@ Future<List<Map<String, dynamic>>?> _fetchRemoteChangelog(
     // Salva cache per uso offline
     await prefs.setString(_kCachedChangelog, jsonEncode(entries));
     return entries;
-  } catch (_) {
+  } catch (_) { // ignore: empty_catches
     // Offline o errore: prova la cache locale
     final cached = prefs.getString(_kCachedChangelog);
     if (cached != null) {
@@ -107,7 +107,7 @@ Future<List<_NotifEntry>> _loadHistory(SharedPreferences prefs) async {
     return list
         .map((e) => _NotifEntry.fromJson(e as Map<String, dynamic>))
         .toList();
-  } catch (_) {
+  } catch (_) { // ignore: empty_catches
     return [];
   }
 }
@@ -313,7 +313,7 @@ String _formatDate(String iso) {
     final m = int.tryParse(parts[1]) ?? 0;
     final day = parts[2].split('T').first;
     return '$day ${months[m]} ${parts[0]}';
-  } catch (_) {
+  } catch (_) { // ignore: empty_catches
     return iso;
   }
 }

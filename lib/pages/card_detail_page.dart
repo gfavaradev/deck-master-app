@@ -3,8 +3,24 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/cardtrader_price_badge.dart' show CardtraderAllPricesSection;
+
+/// Extracts the CT language code from a serial number.
+/// YGO "LOB-IT001" → "it", "LDK2-ITJ03" → "it", "LOB-SP001" → "es"
+/// Pokémon / One Piece: always "en" (no lang suffix in serial)
+String _langFromSerial(String sn, String collection) {
+  if (collection == 'yugioh') {
+    // Match 2 alpha chars after the last '-', followed by any alphanumeric
+    final m = RegExp(r'-([A-Za-z]{2})[A-Za-z0-9]').firstMatch(sn);
+    if (m != null) {
+      final code = m.group(1)!.toLowerCase();
+      return code == 'sp' ? 'es' : code;
+    }
+  }
+  return 'en';
+}
 
 class CardDetailPage extends StatefulWidget {
   final CardModel card;
@@ -152,10 +168,6 @@ class _CardDetailPageState extends State<CardDetailPage> {
                   _InfoSection(card: card),
                   const SizedBox(height: 12),
 
-                  // ── Valore ──────────────────────────────────────────────────
-                  _ValueSection(card: card),
-                  const SizedBox(height: 12),
-
                   // ── Album ────────────────────────────────────────────────────
                   _SectionCard(
                     title: 'Album',
@@ -203,6 +215,11 @@ class _CardDetailPageState extends State<CardDetailPage> {
                         serialNumber: card.serialNumber,
                         cardName: card.name,
                         rarity: card.rarity.isNotEmpty ? card.rarity : null,
+                        highlightLanguage: _langFromSerial(
+                          card.serialNumber,
+                          card.collection,
+                        ),
+                        catalogId: card.catalogId,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -371,84 +388,6 @@ class _InfoRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ─── Value section ────────────────────────────────────────────────────────────
-
-class _ValueSection extends StatelessWidget {
-  final CardModel card;
-  const _ValueSection({required this.card});
-
-  @override
-  Widget build(BuildContext context) {
-    final hasCt = card.cardtraderValue != null && card.cardtraderValue! > 0;
-    final hasVal = card.value > 0;
-    if (!hasCt && !hasVal) return const SizedBox.shrink();
-
-    return _SectionCard(
-      title: 'Valore',
-      child: Row(
-        children: [
-          if (hasCt) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.cardtraderBg,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppColors.cardtraderBorder),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.store, size: 13, color: AppColors.cardtraderTeal),
-                  const SizedBox(width: 4),
-                  Text(
-                    'CT  €${card.cardtraderValue!.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      color: AppColors.cardtraderTeal,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-          ],
-          if (hasVal)
-            _PriceTrendWidget(value: card.value, previousValue: card.previousValue),
-        ],
-      ),
-    );
-  }
-}
-
-class _PriceTrendWidget extends StatelessWidget {
-  final double value;
-  final double? previousValue;
-  const _PriceTrendWidget({required this.value, this.previousValue});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = '€${value.toStringAsFixed(2)}';
-    if (previousValue == null || previousValue == 0 || previousValue == value) {
-      return Text(text,
-          style: const TextStyle(
-              color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600));
-    }
-    final isUp = value > previousValue!;
-    final color = isUp ? const Color(0xFF4CAF50) : const Color(0xFFE53935);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(text,
-            style:
-                TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w600)),
-        const SizedBox(width: 3),
-        Icon(isUp ? Icons.trending_up : Icons.trending_down, size: 16, color: color),
-      ],
     );
   }
 }

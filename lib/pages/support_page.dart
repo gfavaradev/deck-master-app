@@ -16,7 +16,7 @@ class SupportPage extends StatelessWidget {
     );
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Nessun client email trovato')),
@@ -156,7 +156,7 @@ class _DonateCard extends StatelessWidget {
     final uri = Uri.parse(_donationUrl);
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Impossibile aprire il link')),

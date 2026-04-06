@@ -1,7 +1,7 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
 import '../models/album_model.dart';
@@ -1520,37 +1520,8 @@ class DatabaseHelper {
     final uniqueCards = await db.rawQuery('SELECT COUNT(DISTINCT catalogId) as total FROM cards WHERE catalogId IS NOT NULL');
     final totalValue = await db.rawQuery('''
       SELECT SUM(
-        CASE
-          WHEN c.collection = 'yugioh' THEN
-            COALESCE(
-              NULLIF(c.value, 0),
-              (SELECT set_price FROM yugioh_prints
-               WHERE card_id = CAST(c.catalogId AS INTEGER)
-                 AND (set_code = c.serialNumber OR set_code_it = c.serialNumber
-                   OR set_code_fr = c.serialNumber OR set_code_de = c.serialNumber
-                   OR set_code_pt = c.serialNumber OR set_code_sp = c.serialNumber)
-               LIMIT 1)
-            )
-          WHEN c.collection = 'onepiece' THEN
-            COALESCE(
-              NULLIF(c.value, 0),
-              (SELECT market_price FROM onepiece_prints
-               WHERE card_id = CAST(c.catalogId AS INTEGER)
-                 AND card_set_id = c.serialNumber
-               LIMIT 1)
-            )
-          WHEN c.collection = 'pokemon' THEN
-            COALESCE(
-              NULLIF(c.value, 0),
-              (SELECT set_price FROM pokemon_prints
-               WHERE card_id = CAST(c.catalogId AS INTEGER)
-                 AND (set_code = c.serialNumber OR set_code_it = c.serialNumber
-                   OR set_code_fr = c.serialNumber OR set_code_de = c.serialNumber
-                   OR set_code_pt = c.serialNumber)
-               LIMIT 1)
-            )
-          ELSE c.value
-        END * c.quantity
+        COALESCE(NULLIF(c.cardtrader_value, 0), NULLIF(c.value, 0), 0)
+        * c.quantity
       ) as total
       FROM cards c
     ''');
@@ -1569,7 +1540,7 @@ class DatabaseHelper {
     return await db.rawQuery('''
       SELECT collection,
              SUM(quantity) as totalCards,
-             SUM(value * quantity) as totalValue
+             SUM(COALESCE(NULLIF(cardtrader_value, 0), NULLIF(value, 0), 0) * quantity) as totalValue
       FROM cards
       GROUP BY collection
       ORDER BY totalValue DESC
@@ -1581,7 +1552,7 @@ class DatabaseHelper {
     return await db.rawQuery('''
       SELECT rarity,
              SUM(quantity) as count,
-             SUM(value * quantity) as totalValue
+             SUM(COALESCE(NULLIF(cardtrader_value, 0), NULLIF(value, 0), 0) * quantity) as totalValue
       FROM cards
       WHERE rarity != ''
       GROUP BY rarity
@@ -3228,48 +3199,84 @@ class DatabaseHelper {
     required String cardName,
     String? rarity,
     String? collectorNumber,
+    String? catalogId,
   }) async {
     final db = await database;
-    final nameLower = cardName.toLowerCase();
+    final exp = expansionCode.toLowerCase();
+    // Order: priced rows first (min_price_any_cents DESC NULLS LAST), then lang
+    const orderBy = '(min_price_any_cents IS NOT NULL) DESC, language ASC, min_price_any_cents ASC';
 
-    String where = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?'
-        ' AND min_price_any_cents IS NOT NULL';
-    final args = <dynamic>[catalog, expansionCode.toLowerCase(), nameLower];
+    List<Map<String, dynamic>> rows = [];
 
-    if (rarity != null && rarity.isNotEmpty) {
-      where += ' AND LOWER(rarity) = ?';
-      args.add(rarity.toLowerCase());
+    // ── Helper to dedup by language ──────────────────────────────────────────
+    List<Map<String, dynamic>> dedup(List<Map<String, dynamic>> r) {
+      final seen = <String>{};
+      return r.where((row) => seen.add(row['language'] as String)).toList();
     }
 
-    List<Map<String, dynamic>> rows;
+    // ── Resolve English name via catalog JOIN (bypasses localized card.name) ─
+    String? nameEn;
+    if (catalogId != null && catalogId.isNotEmpty) {
+      final idInt = int.tryParse(catalogId);
+      if (idInt != null) {
+        final table = switch (catalog) {
+          'yugioh'   => 'yugioh_cards',
+          'pokemon'  => 'pokemon_cards',
+          'onepiece' => 'onepiece_cards',
+          _ => null,
+        };
+        if (table != null) {
+          final r = await db.query(table, columns: ['name'], where: 'id = ?', whereArgs: [idInt], limit: 1);
+          if (r.isNotEmpty) nameEn = (r.first['name'] as String?)?.toLowerCase();
+        }
+      }
+    }
+    // Fall back to the passed name if catalog lookup failed
+    final nameLower = nameEn ?? cardName.toLowerCase();
 
+    // ── Normalize collector number: strip leading lang prefix (IT, EN, FR…) ─
+    // "ITJ03" → "J03", "IT001" → "001", "EN006" → "006", "1" → "1"
+    String? cnNorm;
     if (collectorNumber != null && collectorNumber.isNotEmpty) {
-      rows = await db.query(
-        'cardtrader_prices',
-        where: '$where AND LOWER(collector_number) = ?',
-        whereArgs: [...args, collectorNumber.toLowerCase()],
-        orderBy: 'language ASC, min_price_any_cents ASC',
-      );
+      cnNorm = collectorNumber.replaceFirst(RegExp(r'^[A-Za-z]{2}(?=[A-Za-z0-9])'), '');
+    }
+
+    // ── 1. expansion + name (all languages, priced or not) ──────────────────
+    if (rows.isEmpty) {
+      String w = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?';
+      final a = <dynamic>[catalog, exp, nameLower];
+      if (cnNorm != null && cnNorm.isNotEmpty) {
+        rows = await db.query('cardtrader_prices',
+            where: '$w AND LOWER(collector_number) = ?',
+            whereArgs: [...a, cnNorm.toLowerCase()], orderBy: orderBy);
+      }
       if (rows.isEmpty) {
+        rows = await db.query('cardtrader_prices', where: w, whereArgs: a, orderBy: orderBy);
+      }
+    }
+
+    // ── 2. Fallback: expansion + collector_number only ───────────────────────
+    if (rows.isEmpty && cnNorm != null && cnNorm.isNotEmpty) {
+      final digits = RegExp(r'\d+$').firstMatch(cnNorm)?.group(0) ?? '';
+      final candidates = <String>{
+        if (digits.isNotEmpty) '#$digits',
+        if (digits.isNotEmpty) digits,
+        cnNorm,
+      };
+      for (final cn in candidates) {
         rows = await db.query(
           'cardtrader_prices',
-          where: where,
-          whereArgs: args,
-          orderBy: 'language ASC, min_price_any_cents ASC',
+          where: 'catalog = ? AND expansion_code = ? AND LOWER(collector_number) = ?',
+          whereArgs: [catalog, exp, cn.toLowerCase()],
+          orderBy: orderBy,
         );
+        if (rows.isNotEmpty) break;
       }
-    } else {
-      rows = await db.query(
-        'cardtrader_prices',
-        where: where,
-        whereArgs: args,
-        orderBy: 'language ASC, min_price_any_cents ASC',
-      );
     }
 
-    // Keep one row per language (the first = cheapest due to ORDER BY)
-    final seen = <String>{};
-    return rows.where((r) => seen.add(r['language'] as String)).toList();
+    final result = dedup(rows);
+
+    return result;
   }
 
   /// Updates `cards.value` for every card that has a matching CardTrader price.
@@ -3285,7 +3292,7 @@ class DatabaseHelper {
     switch (catalog) {
       case 'yugioh':
         joinSql = '''
-          SELECT c.id AS card_id, yc.name AS name_en, c.serialNumber
+          SELECT c.id AS card_id, yc.name AS name_en, c.serialNumber, c.rarity
           FROM cards c
           JOIN yugioh_cards yc ON yc.id = CAST(c.catalogId AS INTEGER)
           WHERE c.collection = 'yugioh'
@@ -3294,7 +3301,7 @@ class DatabaseHelper {
         ''';
       case 'pokemon':
         joinSql = '''
-          SELECT c.id AS card_id, pk.name AS name_en, c.serialNumber
+          SELECT c.id AS card_id, pk.name AS name_en, c.serialNumber, c.rarity
           FROM cards c
           JOIN pokemon_cards pk ON pk.id = CAST(c.catalogId AS INTEGER)
           WHERE c.collection = 'pokemon'
@@ -3303,7 +3310,7 @@ class DatabaseHelper {
         ''';
       case 'onepiece':
         joinSql = '''
-          SELECT c.id AS card_id, oc.name AS name_en, c.serialNumber
+          SELECT c.id AS card_id, oc.name AS name_en, c.serialNumber, c.rarity
           FROM cards c
           JOIN onepiece_cards oc ON oc.id = CAST(c.catalogId AS INTEGER)
           WHERE c.collection = 'onepiece'
@@ -3315,32 +3322,6 @@ class DatabaseHelper {
     }
 
     final cards = await db.rawQuery(joinSql);
-
-    // Diagnosi sempre visibile: totale carte vs JOIN riuscite
-    final totalCards = (await db.rawQuery(
-        'SELECT COUNT(*) as cnt FROM cards WHERE collection = ?', [catalog]))
-        .first['cnt'];
-    final withCatalogId = (await db.rawQuery(
-        'SELECT COUNT(*) as cnt FROM cards WHERE collection = ? AND catalogId IS NOT NULL AND catalogId != ""', [catalog]))
-        .first['cnt'];
-    debugPrint('[CT sync] $catalog: total=$totalCards withCatalogId=$withCatalogId joined=${cards.length}');
-
-    if (cards.isEmpty && totalCards != 0) {
-      final sample = await db.rawQuery(
-          'SELECT id, catalogId, serialNumber, collection FROM cards WHERE collection = ? LIMIT 3', [catalog]);
-      for (final r in sample) {
-        debugPrint('[CT diag] id=${r['id']} catalogId=${r['catalogId']} sn=${r['serialNumber']}');
-      }
-    }
-
-    // Debug: sample dei prezzi in cache
-    final samplePrices = await db.query('cardtrader_prices',
-        where: 'catalog = ?', whereArgs: [catalog], limit: 3);
-    for (final p in samplePrices) {
-      debugPrint('[CT cache sample] exp=${p['expansion_code']} '
-          'name=${p['card_name_en']} lang=${p['language']} '
-          'cn=${p['collector_number']} price=${p['min_price_any_cents']}');
-    }
 
     int updated = 0;
     final batch = db.batch();
@@ -3355,31 +3336,48 @@ class DatabaseHelper {
 
       final expansionCode = sn.split('-').first.toLowerCase();
 
+      // Fixed regex: accept any alphanumeric after the 2-letter lang code
+      // so "LDK2-ITJ03" → "it", "LOB-EN001" → "en", "LOB-SP001" → "es"
       String language = 'en';
       if (catalog == 'yugioh') {
-        final match = RegExp(r'-([A-Za-z]{2})\d').firstMatch(sn);
+        final match = RegExp(r'-([A-Za-z]{2})[A-Za-z0-9]').firstMatch(sn);
         if (match != null) {
           final code = match.group(1)!.toLowerCase();
           language = code == 'sp' ? 'es' : code;
         }
       }
 
-      // YGO: "LOB-EN001" → CT collector_number is "#001" (hash + trailing digits).
-      final collectorNumber = catalog == 'yugioh'
-          ? () {
-              final digits = RegExp(r'\d+$').firstMatch(sn)?.group(0) ?? '';
-              return digits.isNotEmpty ? '#$digits' : '';
-            }()
-          : sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+      // Collector number: strip lang prefix then use trailing digits as "#NNN"
+      // "LOB-EN001" → raw "EN001" → strip → "001" → "#001"
+      // "LDK2-ITJ03" → raw "ITJ03" → strip → "J03" → digits "03" → "#03"
+      String collectorNumber = '';
+      if (catalog == 'yugioh') {
+        final rawCn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+        final stripped = rawCn.replaceFirst(RegExp(r'^[A-Za-z]{2}(?=[A-Za-z0-9])'), '');
+        final digits = RegExp(r'\d+$').firstMatch(stripped)?.group(0) ?? '';
+        collectorNumber = digits.isNotEmpty ? '#$digits' : '';
+      } else {
+        collectorNumber = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+      }
 
-      // Rarity NOT used as filter: local rarity strings don't match CT format.
-      // collector_number is the correct disambiguator for alternate-art cards.
+      final rarity = (card['rarity'] as String? ?? '').trim().toLowerCase();
       const baseWhere = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?'
           ' AND language = ? AND min_price_any_cents IS NOT NULL';
       final baseArgs = <dynamic>[catalog, expansionCode, nameEn.toLowerCase(), language];
 
       List<Map<String, dynamic>> priceRows = [];
-      if (collectorNumber.isNotEmpty) {
+      // Try matching with collector_number + rarity first (most precise)
+      if (collectorNumber.isNotEmpty && rarity.isNotEmpty) {
+        priceRows = await db.query(
+          'cardtrader_prices',
+          where: '$baseWhere AND LOWER(collector_number) = ? AND LOWER(rarity) = ?',
+          whereArgs: [...baseArgs, collectorNumber.toLowerCase(), rarity],
+          orderBy: 'min_price_nm_cents IS NULL, min_price_any_cents ASC',
+          limit: 1,
+        );
+      }
+      // Fallback: collector_number only
+      if (priceRows.isEmpty && collectorNumber.isNotEmpty) {
         priceRows = await db.query(
           'cardtrader_prices',
           where: '$baseWhere AND LOWER(collector_number) = ?',
@@ -3388,6 +3386,17 @@ class DatabaseHelper {
           limit: 1,
         );
       }
+      // Fallback: rarity only
+      if (priceRows.isEmpty && rarity.isNotEmpty) {
+        priceRows = await db.query(
+          'cardtrader_prices',
+          where: '$baseWhere AND LOWER(rarity) = ?',
+          whereArgs: [...baseArgs, rarity],
+          orderBy: 'min_price_nm_cents IS NULL, min_price_any_cents ASC',
+          limit: 1,
+        );
+      }
+      // Last fallback: name + language only
       if (priceRows.isEmpty) {
         priceRows = await db.query(
           'cardtrader_prices',
@@ -3398,12 +3407,6 @@ class DatabaseHelper {
         );
       }
 
-      // Debug first card that fails to match
-      if (priceRows.isEmpty && updated == 0 && updatedCardIds.isEmpty) {
-        debugPrint('[CT no match] sn=$sn exp=$expansionCode '
-            'name=$nameEn lang=$language cn=$collectorNumber');
-      }
-
       if (priceRows.isEmpty) continue;
 
       final nm = priceRows.first['min_price_nm_cents'] as int?;
@@ -3412,8 +3415,9 @@ class DatabaseHelper {
       if (priceCents == null || priceCents <= 0) continue;
 
       final newValue = double.parse((priceCents / 100.0).toStringAsFixed(2));
+      // Write to cardtrader_value (not value) so CT price is tracked separately
       batch.rawUpdate(
-        'UPDATE cards SET previous_value = value, value = ? WHERE id = ?',
+        'UPDATE cards SET cardtrader_value = ? WHERE id = ?',
         [newValue, cardId],
       );
       updatedCardIds.add(cardId);
@@ -3440,21 +3444,24 @@ class DatabaseHelper {
       if (sn.isEmpty || !sn.contains('-')) continue;
 
       final expansionCode = sn.split('-').first.toLowerCase();
-      // YGO: "LOB-EN001" → CT collector_number is "#001" (hash + trailing digits).
-      final collectorNumber = catalog == 'yugioh'
-          ? () {
-              final digits = RegExp(r'\d+$').firstMatch(sn)?.group(0) ?? '';
-              return digits.isNotEmpty ? '#$digits' : '';
-            }()
-          : sn.substring(sn.indexOf('-') + 1);
 
       String language = 'en';
       if (catalog == 'yugioh') {
-        final match = RegExp(r'-([A-Za-z]{2})\d').firstMatch(sn);
+        final match = RegExp(r'-([A-Za-z]{2})[A-Za-z0-9]').firstMatch(sn);
         if (match != null) {
           final code = match.group(1)!.toLowerCase();
           language = code == 'sp' ? 'es' : code;
         }
+      }
+
+      String collectorNumber = '';
+      if (catalog == 'yugioh') {
+        final rawCn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+        final stripped = rawCn.replaceFirst(RegExp(r'^[A-Za-z]{2}(?=[A-Za-z0-9])'), '');
+        final digits = RegExp(r'\d+$').firstMatch(stripped)?.group(0) ?? '';
+        collectorNumber = digits.isNotEmpty ? '#$digits' : '';
+      } else {
+        collectorNumber = sn.substring(sn.indexOf('-') + 1);
       }
 
       final priceRows = await db.query(
@@ -3475,9 +3482,10 @@ class DatabaseHelper {
 
       final newValue = double.parse((priceCents / 100.0).toStringAsFixed(2));
       batch.rawUpdate(
-        'UPDATE cards SET previous_value = value, value = ? WHERE id = ?',
+        'UPDATE cards SET cardtrader_value = ? WHERE id = ?',
         [newValue, cardId],
       );
+      updatedCardIds.add(cardId);
       updated++;
     }
 
@@ -3604,7 +3612,7 @@ class DatabaseHelper {
         total += n;
     }
 
-    debugPrint('[CT catalog sync] $catalog: $total print rows aggiornati');
+
     return total;
   }
 }

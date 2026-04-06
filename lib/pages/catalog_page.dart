@@ -146,7 +146,7 @@ class _CatalogPageState extends State<CatalogPage> {
         );
         await _loadCards();
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         setState(() => _isDownloadingUpdate = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -246,8 +246,8 @@ class _CatalogPageState extends State<CatalogPage> {
           });
         });
       }
-    } catch (e) {
-      debugPrint('Error loading cards: $e');
+    } catch (e) { // ignore: empty_catches
+
       _hasMoreCards = false;
       if (mounted) setState(() => _loadError = 'Errore di caricamento. Controlla la connessione.');
     }

@@ -19,6 +19,7 @@ import '../services/data_repository.dart';
 import '../services/notification_service.dart';
 import '../services/sync_service.dart';
 import '../services/xp_service.dart';
+import '../widgets/banner_ad_widget.dart';
 import '../widgets/user_avatar_widget.dart';
 import 'notifications_page.dart';
 import 'card_scanner_page.dart';
@@ -161,7 +162,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   Future<void> _flushOnBackground() async {
     try {
       await _repo.fullSync();
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       // Sync best-effort: se fallisce viene ritentata all'apertura successiva
     }
   }
@@ -331,7 +332,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             },
           );
           successCount++;
-        } catch (e) {
+        } catch (e) { // ignore: empty_catches
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Errore aggiornamento ${info['collectionName'] ?? key}: $e')),
@@ -702,7 +703,12 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: currentPage,
+      body: Column(
+        children: [
+          Expanded(child: currentPage),
+          const BannerAdWidget(),
+        ],
+      ),
       // Bottom nav only shown when inside a collection (Home, Carte, Catalogo, Album, Deck)
       bottomNavigationBar: inCollection
           ? BottomNavigationBar(

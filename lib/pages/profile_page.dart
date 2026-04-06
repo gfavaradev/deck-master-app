@@ -98,7 +98,7 @@ class _ProfilePageState extends State<ProfilePage> {
           const SnackBar(content: Text('Nickname aggiornato!')),
         );
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore: $e')),

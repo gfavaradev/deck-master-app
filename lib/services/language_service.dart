@@ -72,7 +72,7 @@ class LanguageService {
       final String locale = Platform.localeName;
       final String code = locale.split('_')[0].toUpperCase();
       return langs.contains(code) ? code : 'EN';
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       return 'EN';
     }
   }

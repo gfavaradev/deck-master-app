@@ -26,7 +26,7 @@ class FirestoreService {
           .doc(FirestoreConstants.catalogMetadata)
           .get();
       return doc.exists ? doc.data() : null;
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       AppLogger.error(
         'Error getting catalog metadata',
         tag: 'FirestoreService',
@@ -82,7 +82,7 @@ class FirestoreService {
         tag: 'FirestoreService',
       );
       return allCards;
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       AppLogger.error(
         'Error fetching catalog $catalogName',
         tag: 'FirestoreService',
@@ -127,7 +127,7 @@ class FirestoreService {
         tag: 'FirestoreService',
       );
       return allCards;
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       AppLogger.error(
         'Error fetching catalog chunks for $catalogName',
         tag: 'FirestoreService',
@@ -161,7 +161,7 @@ class FirestoreService {
       }
       await batch.commit();
       AppLogger.sync('Set ${collections.length} collections for user $userId');
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       AppLogger.error('Error setting collections', tag: 'FirestoreService', error: e);
       rethrow;
     }
@@ -174,7 +174,7 @@ class FirestoreService {
         SetOptions(merge: true),
       );
       AppLogger.sync('Collection $collectionKey unlocked: $unlocked');
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       AppLogger.error('Error unlocking collection', tag: 'FirestoreService', error: e);
       rethrow;
     }
@@ -191,7 +191,7 @@ class FirestoreService {
           isUnlocked: data['isUnlocked'] ?? false,
         );
       }).toList();
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       AppLogger.error('Error getting collections', tag: 'FirestoreService', error: e);
       return [];
     }
@@ -276,7 +276,6 @@ class FirestoreService {
       'rarity': card.rarity,
       'description': card.description,
       'quantity': card.quantity,
-      'value': card.value,
       'imageUrl': card.imageUrl,
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -300,7 +299,6 @@ class FirestoreService {
       'rarity': card.rarity,
       'description': card.description,
       'quantity': card.quantity,
-      'value': card.value,
       'imageUrl': card.imageUrl,
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -473,7 +471,7 @@ class FirestoreService {
           .get()
           .timeout(const Duration(seconds: 8));
       return cards.docs.isNotEmpty;
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       // Offline o timeout → assume che i dati remoti esistano se c'è cache locale
       return false;
     }
@@ -526,7 +524,7 @@ class FirestoreService {
         result.addAll(rows.cast<Map<String, dynamic>>());
       }
       return result;
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       return [];
     }
   }

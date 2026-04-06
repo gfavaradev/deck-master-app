@@ -49,7 +49,7 @@ class _CameraRecognitionPageState extends State<CameraRecognitionPage> {
           _lastError = 'OCR non disponibile su simulatore. Usa un dispositivo reale.';
         });
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         setState(() {
           _isProcessing = false;

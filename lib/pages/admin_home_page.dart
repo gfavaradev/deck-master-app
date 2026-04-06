@@ -60,8 +60,8 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           duration: const Duration(seconds: 5),
         ),
       );
-    } catch (e, stack) {
-      debugPrint('[$_currentOp] ERROR: $e\n$stack');
+    } catch (e) {
+
       if (mounted) {
         setState(() { _isRunning = false; });
         showDialog(
@@ -396,22 +396,6 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   Future<void> _syncCardtraderOnePiece() =>
       _syncCardtraderWithLanguagePicker('onepiece');
 
-  /// Ricalcola `cards.value` e aggiorna prezzi catalogo dai prezzi CT in cache locale.
-  Future<void> _applyCtPricesToCollection() => _run(
-        'cardtrader',
-        'Applica Prezzi CT',
-        (_) async {
-          int totalCollection = 0;
-          int totalCatalog = 0;
-          for (final cat in ['yugioh', 'pokemon', 'onepiece']) {
-            final r = await _cardtraderService.applyLocalPricesToCollection(cat);
-            totalCollection += r['collectionUpdated'] ?? 0;
-            totalCatalog += r['catalogUpdated'] ?? 0;
-          }
-          return {'collectionUpdated': totalCollection, 'catalogUpdated': totalCatalog};
-        },
-        (r) => '${r['collectionUpdated']} carte aggiornate · ${r['catalogUpdated']} prezzi catalogo aggiornati.',
-      );
 
   // ─── UI ───────────────────────────────────────────────────────────────────
 
@@ -838,13 +822,6 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                   onTap: _syncCardtraderOnePiece,
                   tooltip: 'Sincronizza prezzi One Piece',
                 ),
-                _opButton(
-                  icon: Icons.calculate_outlined,
-                  label: 'Applica prezzi',
-                  color: Colors.teal,
-                  onTap: _applyCtPricesToCollection,
-                  tooltip: 'Ricalcola valori collezione dai prezzi CT già in cache (senza API)',
-                ),
               ],
             ),
           ],
@@ -918,7 +895,7 @@ class _AdminProPageState extends State<AdminProPage> {
         _filtered = all;
         _loading = false;
       });
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -954,7 +931,7 @@ class _AdminProPageState extends State<AdminProPage> {
               : 'Pro attivato per ${user.displayName ?? user.email}'),
         ),
       );
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
     }
@@ -1023,7 +1000,7 @@ class _AdminProPageState extends State<AdminProPage> {
           ),
         ),
       );
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
     }

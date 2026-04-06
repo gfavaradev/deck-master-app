@@ -40,7 +40,7 @@ class _LoginPageState extends State<LoginPage> {
       if (result.isEmpty || result[0].rawAddress.isEmpty) {
         if (mounted) setState(() => _showOfflineButton = true);
       }
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       if (mounted) setState(() => _showOfflineButton = true);
     }
   }
@@ -59,8 +59,7 @@ class _LoginPageState extends State<LoginPage> {
       if (result != null || signInMethod.toString().contains('signInOffline')) {
         try {
           await _repo.syncOnLogin();
-        } catch (e) {
-          debugPrint('Sync on login failed: $e');
+        } catch (e) { // ignore: empty_catches
         }
         if (mounted) {
           Navigator.pushReplacement(
@@ -75,7 +74,7 @@ class _LoginPageState extends State<LoginPage> {
           );
         }
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         String errorMessage;
         final msg = e.toString();

@@ -74,7 +74,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
         _isLoading = false;
         _loadStatus = '';
       });
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -138,7 +138,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Modifica in attesa di pubblicazione'), duration: Duration(seconds: 2)),
       );
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Errore salvataggio: $e'), backgroundColor: Colors.red),
@@ -173,7 +173,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Carta aggiunta — in attesa di pubblicazione'), duration: Duration(seconds: 2)),
       );
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Errore salvataggio: $e'), backgroundColor: Colors.red),
@@ -216,7 +216,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
         _pendingChanges = [..._pendingChanges, change];
         _filterCards(_searchController.text);
       });
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Errore eliminazione: $e'), backgroundColor: Colors.red),
@@ -263,7 +263,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Modifiche pubblicate con successo!'), backgroundColor: Colors.green),
       );
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(

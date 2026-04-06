@@ -50,8 +50,7 @@ class RevenueCatService {
     if (kIsWeb || !_initialized) return null;
     try {
       return await Purchases.getOfferings();
-    } catch (e) {
-      debugPrint('[RevenueCat] getOfferings error: $e');
+    } catch (e) { // ignore: empty_catches
       return null;
     }
   }
@@ -65,10 +64,8 @@ class RevenueCatService {
       return result.customerInfo.entitlements.active.containsKey(_kProEntitlement);
     } on PurchasesErrorCode catch (e) {
       if (e == PurchasesErrorCode.purchaseCancelledError) return false;
-      debugPrint('[RevenueCat] purchasePackage error: $e');
       return false;
-    } catch (e) {
-      debugPrint('[RevenueCat] purchasePackage unexpected error: $e');
+    } catch (e) { // ignore: empty_catches
       return false;
     }
   }
@@ -79,8 +76,7 @@ class RevenueCatService {
     try {
       final info = await Purchases.getCustomerInfo();
       return info.entitlements.active.containsKey(_kProEntitlement);
-    } catch (e) {
-      debugPrint('[RevenueCat] hasPro error: $e');
+    } catch (e) { // ignore: empty_catches
       return false;
     }
   }
@@ -92,8 +88,7 @@ class RevenueCatService {
     try {
       final info = await Purchases.restorePurchases();
       return info.entitlements.active.containsKey(_kProEntitlement);
-    } catch (e) {
-      debugPrint('[RevenueCat] restorePurchases error: $e');
+    } catch (e) { // ignore: empty_catches
       return false;
     }
   }

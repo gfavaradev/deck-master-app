@@ -86,18 +86,15 @@ class AuthService {
       }
 
       return userCredential;
-    } on FirebaseAuthException catch (e) {
-      debugPrint('Firebase Auth Error: [${e.code}] ${e.message}');
+    } on FirebaseAuthException {
       rethrow;
-    } catch (e) {
-      debugPrint('Google Sign-In Error: $e');
+    } catch (e) { // ignore: empty_catches
       rethrow;
     }
   }
 
   Future<UserCredential?> signInWithFacebook() async {
     if (!isFacebookAuthSupported) {
-      debugPrint('Facebook authentication is not supported on this platform (${kIsWeb ? 'Web' : Platform.operatingSystem})');
       return null;
     }
 
@@ -127,8 +124,7 @@ class AuthService {
         return userCredential;
       }
       return null;
-    } catch (e) {
-      debugPrint('Error signing in with Facebook: $e');
+    } catch (e) { // ignore: empty_catches
       return null;
     }
   }
@@ -152,11 +148,9 @@ class AuthService {
       }
 
       return userCredential;
-    } on FirebaseAuthException catch (e) {
-      debugPrint('Firebase Auth Error: [${e.code}] ${e.message}');
+    } on FirebaseAuthException {
       rethrow;
-    } catch (e) {
-      debugPrint('Sign-In Error: $e');
+    } catch (e) { // ignore: empty_catches
       rethrow;
     }
   }
@@ -178,11 +172,9 @@ class AuthService {
       }
 
       return userCredential;
-    } on FirebaseAuthException catch (e) {
-      debugPrint('Firebase Auth Error: [${e.code}] ${e.message}');
+    } on FirebaseAuthException {
       rethrow;
-    } catch (e) {
-      debugPrint('Registration Error: $e');
+    } catch (e) { // ignore: empty_catches
       rethrow;
     }
   }
@@ -194,23 +186,20 @@ class AuthService {
     if (!kIsWeb) {
       try {
         await _googleSignIn.signOut();
-      } catch (e) {
-        debugPrint('Error during Google signOut: $e');
+      } catch (e) { // ignore: empty_catches
       }
     }
 
     if (isFacebookAuthSupported) {
       try {
         await FacebookAuth.instance.logOut();
-      } catch (e) {
-        debugPrint('Error during Facebook logOut: $e');
+      } catch (e) { // ignore: empty_catches
       }
     }
 
     try {
       await _auth.signOut();
-    } catch (e) {
-      debugPrint('Error during Firebase signOut: $e');
+    } catch (e) { // ignore: empty_catches
     }
 
     // SQLite is not available on web — skip local data clear
@@ -218,9 +207,7 @@ class AuthService {
       try {
         final dbHelper = DatabaseHelper();
         await dbHelper.clearUserData();
-        debugPrint('User personal data cleared on logout (albums, cards, decks)');
-      } catch (e) {
-        debugPrint('Error clearing user data: $e');
+      } catch (e) { // ignore: empty_catches
       }
     }
 
@@ -255,8 +242,7 @@ class AuthService {
         }
       }
       await _userService.deleteUser(uid);
-    } catch (e) {
-      debugPrint('Error deleting Firestore data: $e');
+    } catch (e) { // ignore: empty_catches
     }
 
     // Clear local SQLite data
@@ -264,8 +250,7 @@ class AuthService {
       try {
         final dbHelper = DatabaseHelper();
         await dbHelper.clearUserData();
-      } catch (e) {
-        debugPrint('Error clearing local data: $e');
+      } catch (e) { // ignore: empty_catches
       }
     }
 

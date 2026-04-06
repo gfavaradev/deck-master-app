@@ -129,9 +129,9 @@ class SyncService {
       await _firestoreService.updateLastSync(userId);
       await _dbHelper.clearPendingSync();
 
-      debugPrint('Initial upload completed successfully');
-    } catch (e) {
-      debugPrint('Error during initial upload: $e');
+
+    } catch (e) { // ignore: empty_catches
+
       rethrow;
     }
   }
@@ -238,7 +238,11 @@ class SyncService {
         if (existing != null) {
           // Preserve local value — CT prices come from shared Firestore collection,
           // not from per-user card documents.
-          await _dbHelper.updateCard(card.copyWith(id: existing.id, value: existing.value));
+          await _dbHelper.updateCard(card.copyWith(
+            id: existing.id,
+            value: existing.value,
+            cardtraderValue: existing.cardtraderValue,
+          ));
         } else {
           final localId = await _dbHelper.insertCard(card);
           await _dbHelper.updateFirestoreId('cards', localId, firestoreId);
@@ -272,14 +276,14 @@ class SyncService {
       }
 
       await _dbHelper.clearPendingSync();
-      debugPrint('Pull from cloud completed (merge) — albums: ${remoteAlbums.length}, cards: ${remoteCards.length}');
+
 
       // Sync CardTrader prices from shared Firestore collection
       await _syncCardtraderPrices();
 
       _remoteChangeController.add('cards');
-    } catch (e) {
-      debugPrint('Error during pull from cloud: $e');
+    } catch (e) { // ignore: empty_catches
+
       rethrow;
     }
   }
@@ -311,7 +315,7 @@ class SyncService {
         await _dbHelper.upsertCardtraderPrices(prices);
         final updated = await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
         await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
-        debugPrint('[SyncService] CT prices applied for $catalog: ${prices.length} rows');
+
 
         // Notify user only if they have this collection unlocked
         if (updated > 0) {
@@ -325,8 +329,8 @@ class SyncService {
           }
         }
       }
-    } catch (e) {
-      debugPrint('[SyncService] Error syncing CT prices: $e');
+    } catch (e) { // ignore: empty_catches
+
     }
   }
 
@@ -351,7 +355,7 @@ class SyncService {
 
     if (!hasPending && _lastSyncTime != null &&
         DateTime.now().difference(_lastSyncTime!) < _syncCooldown) {
-      debugPrint('Sync skipped — last sync was ${DateTime.now().difference(_lastSyncTime!).inMinutes}min ago');
+
       return;
     }
 
@@ -406,8 +410,8 @@ class SyncService {
       final now = DateTime.now();
       _lastSyncTime = now;
       await _saveLocalLastSyncAt(now);
-    } catch (e) {
-      debugPrint('Error during sync on login: $e');
+    } catch (e) { // ignore: empty_catches
+
     } finally {
       _isSyncing = false;
     }
@@ -424,7 +428,7 @@ class SyncService {
       // in caso di errore). Non resettare lo stato locale per evitare di
       // bloccare tutte le collezioni sbloccate dell'utente.
       if (remoteCollections.isEmpty) {
-        debugPrint('Collections sync skipped — empty result (offline?)');
+
         return;
       }
 
@@ -432,9 +436,9 @@ class SyncService {
       for (var col in remoteCollections) {
         if (col.isUnlocked) await _dbHelper.unlockCollection(col.key);
       }
-      debugPrint('Collections synced: ${remoteCollections.length} collections');
-    } catch (e) {
-      debugPrint('Collections sync skipped (offline?): $e');
+
+    } catch (e) { // ignore: empty_catches
+
     }
   }
 
@@ -482,8 +486,8 @@ class SyncService {
           }
           break;
       }
-    } catch (e) {
-      debugPrint('Error pushing album change: $e');
+    } catch (e) { // ignore: empty_catches
+
       if (album.id != null) {
         await _dbHelper.addPendingSync('albums', album.id!, changeType);
       }
@@ -546,8 +550,8 @@ class SyncService {
           }
           break;
       }
-    } catch (e) {
-      debugPrint('Error pushing card change: $e');
+    } catch (e) { // ignore: empty_catches
+
       if (card.id != null) {
         await _dbHelper.addPendingSync('cards', card.id!, changeType);
       }
@@ -573,8 +577,8 @@ class SyncService {
           }
           break;
       }
-    } catch (e) {
-      debugPrint('Error pushing deck change: $e');
+    } catch (e) { // ignore: empty_catches
+
       await _dbHelper.addPendingSync('decks', deckId, changeType);
     }
   }
@@ -587,8 +591,8 @@ class SyncService {
     try {
       await _firestoreService.setCollectionUnlocked(userId, collectionKey, true)
           .timeout(const Duration(seconds: 10));
-    } catch (e) {
-      debugPrint('Error pushing collection unlock: $e');
+    } catch (e) { // ignore: empty_catches
+
     }
   }
 
@@ -625,9 +629,9 @@ class SyncService {
       await prefs.remove('$_hasRemoteDataPrefix$userId');
 
       onStatus?.call('Completato!');
-      debugPrint('resetAndResync completed');
-    } catch (e) {
-      debugPrint('Error during resetAndResync: $e');
+
+    } catch (e) { // ignore: empty_catches
+
       rethrow;
     } finally {
       startListening();
@@ -643,7 +647,7 @@ class SyncService {
     final pending = await _dbHelper.getPendingSync();
     if (pending.isEmpty) return;
 
-    debugPrint('Flushing ${pending.length} pending sync operations');
+
 
     for (var item in pending) {
       try {
@@ -681,8 +685,8 @@ class SyncService {
         }
 
         await _dbHelper.clearPendingSync(id: item['id'] as int);
-      } catch (e) {
-        debugPrint('Error flushing pending sync item ${item['id']}: $e');
+      } catch (e) { // ignore: empty_catches
+
         // Keep the item in the queue for next attempt
       }
     }

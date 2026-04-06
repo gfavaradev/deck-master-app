@@ -11,7 +11,6 @@ class CardModel {
   final String description;
   final int quantity;
   final double value;
-  final double? previousValue;
   final double? cardtraderValue;
   final String? imageUrl; // Added to simplify UI
 
@@ -28,7 +27,6 @@ class CardModel {
     required this.description,
     this.quantity = 1,
     this.value = 0.0,
-    this.previousValue,
     this.cardtraderValue,
     this.imageUrl,
   });
@@ -47,7 +45,6 @@ class CardModel {
       'rarity': rarity,
       'quantity': quantity,
       'value': value,
-      'previous_value': previousValue,
       'cardtrader_value': cardtraderValue,
       'added_at': DateTime.now().toIso8601String(),
     };
@@ -67,7 +64,6 @@ class CardModel {
       description: map['description'] ?? '',
       quantity: map['quantity'] ?? 1,
       value: (map['value'] as num?)?.toDouble() ?? 0.0,
-      previousValue: (map['previous_value'] as num?)?.toDouble(),
       cardtraderValue: (map['cardtrader_value'] as num?)?.toDouble(),
       imageUrl: map['imageUrl'],
     );
@@ -85,7 +81,6 @@ class CardModel {
       'rarity': rarity,
       'description': description,
       'quantity': quantity,
-      'value': value,
       'cardtraderValue': cardtraderValue,
       'imageUrl': imageUrl,
     };
@@ -122,7 +117,6 @@ class CardModel {
     String? description,
     int? quantity,
     double? value,
-    double? previousValue,
     double? cardtraderValue,
     String? imageUrl,
     bool resetId = false,
@@ -140,7 +134,6 @@ class CardModel {
       description: description ?? this.description,
       quantity: quantity ?? this.quantity,
       value: value ?? this.value,
-      previousValue: previousValue ?? this.previousValue,
       cardtraderValue: cardtraderValue ?? this.cardtraderValue,
       imageUrl: imageUrl ?? this.imageUrl,
     );

@@ -114,7 +114,7 @@ class _SettingsPageState extends State<SettingsPage> {
           );
         }
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore: $e')),
@@ -179,7 +179,7 @@ class _SettingsPageState extends State<SettingsPage> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: ${e.message}')));
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
     }
@@ -199,7 +199,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${result.cardCount} carte esportate come ${result.format} (negli appunti)')),
       );
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore esportazione: $e')),
@@ -252,7 +252,7 @@ class _SettingsPageState extends State<SettingsPage> {
           backgroundColor: Colors.green,
         ),
       );
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
@@ -321,7 +321,7 @@ class _SettingsPageState extends State<SettingsPage> {
             : '${_catalogLabel(collectionKey)} ripristinato con successo!'),
         backgroundColor: AppColors.success,
       ));
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Errore ripristino: $e'), backgroundColor: AppColors.error),

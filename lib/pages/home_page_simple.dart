@@ -110,7 +110,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(

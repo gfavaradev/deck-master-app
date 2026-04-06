@@ -56,7 +56,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
     try {
       final results = await _catalogService.searchCards(query);
       if (mounted) setState(() { _searchResults = results; _isSearching = false; });
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         setState(() => _isSearching = false);
         messenger.showSnackBar(SnackBar(content: Text('Errore ricerca: $e')));
@@ -428,7 +428,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
       } else {
         messenger.showSnackBar(SnackBar(content: Text('Errore: ${result['error']}')));
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       messenger.showSnackBar(SnackBar(content: Text('Errore pubblicazione: $e')));
     }
   }

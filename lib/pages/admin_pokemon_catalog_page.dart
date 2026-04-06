@@ -33,7 +33,7 @@ class _AdminPokemonCatalogPageState extends State<AdminPokemonCatalogPage> {
     });
     try {
       await task(uid);
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         setState(() => _status = 'Errore: $e');
         _showSnack('Errore: $e');

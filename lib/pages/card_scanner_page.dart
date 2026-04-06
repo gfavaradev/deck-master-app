@@ -71,7 +71,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
           _result = result;
         });
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       setState(() {
         _state = _ScanState.notFound;

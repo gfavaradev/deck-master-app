@@ -12,6 +12,7 @@ import '../theme/app_colors.dart';
 import 'support_page.dart';
 import 'card_detail_page.dart';
 import '../services/language_service.dart';
+import '../services/cardtrader_service.dart';
 
 class CardListPage extends StatefulWidget {
   final String collectionName;
@@ -65,9 +66,18 @@ class _CardListPageState extends State<CardListPage> {
     super.dispose();
   }
 
+  Future<void> _applyCtPricesIfNeeded() async {
+    // Salta se tutte le carte hanno già un prezzo CT
+    final hasMissing = _allCards.any((c) => (c.cardtraderValue ?? 0) <= 0);
+    if (!hasMissing) return;
+    final updated = await CardtraderService().applyLocalPricesToCollection(widget.collectionKey);
+    if ((updated['collectionUpdated'] ?? 0) > 0 && mounted) _refreshCards();
+  }
+
   Future<void> _onRefresh() async {
     await _repo.fullSync();
     await _refreshCards();
+    await _applyCtPricesIfNeeded();
   }
 
   Future<void> _refreshCards() async {
@@ -88,11 +98,11 @@ class _CardListPageState extends State<CardListPage> {
     if (widget.albumId != null) {
       // Se siamo in un album specifico, mostriamo solo le carte di quell'album
       processedCards = data.where((c) => c.albumId == widget.albumId).toList();
-      debugPrint('🔍 Album View - Album ID: ${widget.albumId}, Carte trovate: ${processedCards.length}/${data.length}');
+
     } else {
       // Vista generale: escludi le carte dall'album "Doppioni"
       processedCards = data.where((c) => !doppioniIds.contains(c.albumId)).toList();
-      debugPrint('🔍 Vista Generale - Carte (escluso Doppioni): ${processedCards.length}/${data.length}');
+
     }
 
     setState(() {
@@ -613,7 +623,7 @@ class _CardListPageState extends State<CardListPage> {
     if (card.cardtraderValue != null && card.cardtraderValue! > 0) {
       return card.cardtraderValue!;
     }
-    return card.value;
+    return 0.0;
   }
 }
 

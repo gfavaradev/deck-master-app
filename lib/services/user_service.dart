@@ -40,7 +40,7 @@ class UserService {
       final doc = await _usersCollection.doc(uid).get();
       if (!doc.exists) return null;
       return UserModel.fromFirestore(doc.data() as Map<String, dynamic>);
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       return null;
     }
   }

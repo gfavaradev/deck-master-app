@@ -52,7 +52,7 @@ class CatalogFieldConfig {
   CardFieldDefinition? getField(String key) {
     try {
       return fields.firstWhere((f) => f.key == key);
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       return null;
     }
   }

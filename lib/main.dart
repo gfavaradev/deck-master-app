@@ -10,6 +10,7 @@ import 'firebase_options.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/background_download_service.dart';
 import 'services/notification_service.dart';
+import 'services/ad_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +46,7 @@ void main() async {
   // Avvia in background — non bloccano runApp, errori non critici ignorati
   BackgroundDownloadService.initialize().catchError((_) {});
   NotificationService().initialize().catchError((_) {});
+  AdService.initialize().catchError((_) {});
   // Mostra reminder catalogo se era stato posticipato nella sessione precedente
   NotificationService().checkAndShowPendingCatalogReminder();
 

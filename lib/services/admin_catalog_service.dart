@@ -3,7 +3,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:deck_master/models/pending_catalog_change.dart';
@@ -32,31 +32,31 @@ class AdminCatalogService {
     final ref = _storage.ref('catalog/$catalog/images/$safeId.jpg');
     try {
       return await ref.getDownloadURL(); // already uploaded
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       // Not in storage yet — download from source and upload
       try {
         // Try the primary URL; if 404 fall back to high.png variant
         String fetchUrl = sourceUrl;
-        debugPrint('[IMG] Scaricando: $fetchUrl');
+
         var response = await http.get(Uri.parse(fetchUrl));
         if (response.statusCode == 404 && fetchUrl.endsWith('/high.webp')) {
           fetchUrl = fetchUrl.replaceFirst('/high.webp', '/high.png');
-          debugPrint('[IMG] Fallback PNG: $fetchUrl');
+
           response = await http.get(Uri.parse(fetchUrl));
         }
-        debugPrint('[IMG] HTTP ${response.statusCode} — ${response.bodyBytes.length} bytes');
+
         if (response.statusCode != 200) return null;
         final compressed = await _compressCardImage(response.bodyBytes);
-        debugPrint('[IMG] Compressa: ${compressed.length} bytes — uploading su Storage...');
+
         await ref.putData(
           compressed,
           SettableMetadata(contentType: 'image/jpeg'),
         );
         final url = await ref.getDownloadURL();
-        debugPrint('[IMG] OK: $url');
+
         return url;
-      } catch (e) {
-        debugPrint('[IMG] ERRORE card $cardId ($catalog): $e');
+      } catch (e) { // ignore: empty_catches
+
         return null;
       }
     }
@@ -198,7 +198,7 @@ class AdminCatalogService {
         'message': 'Pubblicate ${changes.length} modifiche con successo',
         'changesCount': changes.length,
       };
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       return {'success': false, 'error': e.toString()};
     }
   }
@@ -652,7 +652,7 @@ class AdminCatalogService {
       for (final item in listResult.items) {
         try { await item.delete(); } catch (_) {}
       }
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       // Cartella non ancora esistente — procedi normalmente
     }
 
@@ -822,8 +822,8 @@ class AdminCatalogService {
       try {
         existingMap = await _getExistingCardsMap('yugioh_catalog')
             .timeout(const Duration(seconds: 60));
-      } catch (e) {
-        debugPrint('Could not load existing catalog for preservation (skipping): $e');
+      } catch (e) { // ignore: empty_catches
+
       }
     }
 
@@ -1008,8 +1008,8 @@ class AdminCatalogService {
   Future<List<dynamic>> _fetchApiForLangSafe(String lang) async {
     try {
       return await _fetchApiForLang(lang);
-    } catch (e) {
-      debugPrint('Traduzioni $lang non disponibili: $e. Continuo senza.');
+    } catch (e) { // ignore: empty_catches
+
       return [];
     }
   }
@@ -1316,7 +1316,7 @@ class AdminCatalogService {
               .collection('items')
               .doc(chunkId)
               .delete();
-        } catch (_) {
+        } catch (_) { // ignore: empty_catches
           // Ignore individual delete failures — the new set() will overwrite anyway
         }
       }
@@ -1382,11 +1382,11 @@ class AdminCatalogService {
       try {
         await ref.set(data);
         return;
-      } catch (e) {
+      } catch (e) { // ignore: empty_catches
         if (attempt == maxAttempts - 1) rethrow;
         // Exponential back-off: 2 s, 4 s
         await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
-        debugPrint('Firestore write retry ${attempt + 2}/$maxAttempts after: $e');
+
       }
     }
   }
@@ -1419,7 +1419,7 @@ class AdminCatalogService {
   Future<List<dynamic>> _fetchOptcgEndpoint(String endpoint, {bool optional = false}) async {
     final response = await http.get(Uri.parse('$_optcgBaseUrl/$endpoint'));
     if (response.statusCode == 404 && optional) {
-      debugPrint('[OPTCG] Endpoint $endpoint not found (404), skipping.');
+
       return [];
     }
     if (response.statusCode != 200) throw Exception('OPTCG API error $endpoint: ${response.statusCode}');
@@ -1579,7 +1579,7 @@ class AdminCatalogService {
         String? storageUrl;
         try {
           storageUrl = await ref.getDownloadURL();
-        } catch (_) {
+        } catch (_) { // ignore: empty_catches
           final response = await http.get(Uri.parse(item.sourceUrl));
           if (response.statusCode == 200) {
             final compressed = await _compressCardImage(response.bodyBytes);
@@ -1604,7 +1604,7 @@ class AdminCatalogService {
         } else {
           failed++;
         }
-      } catch (_) {
+      } catch (_) { // ignore: empty_catches
         failed++;
       }
     }
@@ -1665,12 +1665,12 @@ class AdminCatalogService {
           throw Exception('TCGDex errore permanente: HTTP ${response.statusCode} — $url');
         }
         final wait = backoffs[attempt - 1];
-        debugPrint('TCGDex HTTP ${response.statusCode}, tentativo $attempt/$maxAttempts, attendo ${wait}s...');
+
         await Future.delayed(Duration(seconds: wait));
-      } catch (e) {
+      } catch (e) { // ignore: empty_catches
         if (attempt == maxAttempts) rethrow;
         final wait = backoffs[attempt - 1];
-        debugPrint('TCGDex errore ($e), tentativo $attempt/$maxAttempts, attendo ${wait}s...');
+
         await Future.delayed(Duration(seconds: wait));
       }
     }
@@ -1717,7 +1717,7 @@ class AdminCatalogService {
         completedSetIds: Set<String>.from(map['completedSets'] as List),
         cardCount: map['cardCount'] as int? ?? 0,
       );
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       return null;
     }
   }
@@ -1743,7 +1743,7 @@ class AdminCatalogService {
     final skippedCount = completedSetIds.length;
 
     if (skippedCount > 0) {
-      debugPrint('Pokémon: riprendendo da $skippedCount set già completati, skip...');
+
       onProgress('Riprendo download: $skippedCount/$total set già completati...', skippedCount / total);
     }
 
@@ -1956,7 +1956,7 @@ class AdminCatalogService {
         } else {
           failed++;
         }
-      } catch (_) {
+      } catch (_) { // ignore: empty_catches
         failed++;
       }
     }

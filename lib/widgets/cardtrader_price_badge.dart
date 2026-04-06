@@ -7,11 +7,18 @@ import '../theme/app_colors.dart';
 
 /// Shows all available CardTrader prices for a card, one row per language.
 /// Intended for use in card detail dialogs/sheets.
+///
+/// If [highlightLanguage] is provided, that language row is visually
+/// highlighted as the card's "own" language.
 class CardtraderAllPricesSection extends StatefulWidget {
   final String collection;
   final String serialNumber;
   final String cardName;
   final String? rarity;
+  /// Language code to highlight (e.g. 'it', 'en'). Null = no highlight.
+  final String? highlightLanguage;
+  /// Catalog card ID used to resolve the English name for CT lookup.
+  final String? catalogId;
 
   const CardtraderAllPricesSection({
     super.key,
@@ -19,6 +26,8 @@ class CardtraderAllPricesSection extends StatefulWidget {
     required this.serialNumber,
     required this.cardName,
     this.rarity,
+    this.highlightLanguage,
+    this.catalogId,
   });
 
   @override
@@ -48,12 +57,19 @@ class _CardtraderAllPricesSectionState
       cardName: widget.cardName,
       rarity: widget.rarity,
       collectorNumber: _collectorNumber(widget.serialNumber),
+      catalogId: widget.catalogId,
     );
   }
 
   static const _langLabels = <String, String>{
     'en': 'EN', 'it': 'IT', 'fr': 'FR', 'de': 'DE',
     'es': 'ES', 'pt': 'PT', 'ja': 'JA', 'ko': 'KO', 'zh': 'ZH',
+  };
+
+  static const _langNames = <String, String>{
+    'en': 'Inglese', 'it': 'Italiano', 'fr': 'Francese', 'de': 'Tedesco',
+    'es': 'Spagnolo', 'pt': 'Portoghese', 'ja': 'Giapponese',
+    'ko': 'Coreano', 'zh': 'Cinese',
   };
 
   @override
@@ -64,43 +80,28 @@ class _CardtraderAllPricesSectionState
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const SizedBox.shrink();
         }
+
         final prices = snapshot.data!;
-        return Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppColors.cardtraderBg,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: AppColors.cardtraderBorder.withValues(alpha: 0.7),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.storefront_outlined,
-                      size: 13, color: AppColors.cardtraderTeal),
-                  const SizedBox(width: 5),
-                  const Text(
-                    'Prezzi CardTrader',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.cardtraderTeal,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              ...prices.map(
-                (p) => _PriceRow(
-                  price: p,
-                  langLabel: _langLabels[p.language] ?? p.language.toUpperCase(),
-                ),
-              ),
-            ],
-          ),
+        final hl = widget.highlightLanguage?.toLowerCase();
+
+        // Sort: highlighted language first, then alphabetically
+        final sorted = [...prices]..sort((a, b) {
+            if (a.language == hl) return -1;
+            if (b.language == hl) return 1;
+            return a.language.compareTo(b.language);
+          });
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: sorted.map((p) {
+            final isMain = hl != null && p.language == hl;
+            return _PriceRow(
+              price: p,
+              langLabel: _langLabels[p.language] ?? p.language.toUpperCase(),
+              langName: _langNames[p.language] ?? p.language,
+              isMain: isMain,
+            );
+          }).toList(),
         );
       },
     );
@@ -110,8 +111,15 @@ class _CardtraderAllPricesSectionState
 class _PriceRow extends StatelessWidget {
   final CardtraderPrice price;
   final String langLabel;
+  final String langName;
+  final bool isMain;
 
-  const _PriceRow({required this.price, required this.langLabel});
+  const _PriceRow({
+    required this.price,
+    required this.langLabel,
+    this.langName = '',
+    this.isMain = false,
+  });
 
   static String _formatDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/'
@@ -121,33 +129,65 @@ class _PriceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isHistorical = price.listingCount == 0;
-    final priceColor =
-        isHistorical ? Colors.orange : AppColors.cardtraderTeal;
+    final priceColor = isHistorical ? Colors.orange : AppColors.cardtraderTeal;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      padding: isMain
+          ? const EdgeInsets.symmetric(horizontal: 10, vertical: 7)
+          : const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: isMain
+          ? BoxDecoration(
+              color: AppColors.cardtraderBorder.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: AppColors.cardtraderTeal.withValues(alpha: 0.5)),
+            )
+          : null,
       child: Row(
         children: [
-          SizedBox(
-            width: 28,
+          // Flag badge
+          Container(
+            width: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+            decoration: BoxDecoration(
+              color: isMain
+                  ? AppColors.cardtraderTeal.withValues(alpha: 0.15)
+                  : AppColors.bgMedium,
+              borderRadius: BorderRadius.circular(3),
+            ),
             child: Text(
               langLabel,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textSecondary,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: isMain ? AppColors.cardtraderTeal : AppColors.textHint,
               ),
             ),
           ),
+          const SizedBox(width: 8),
+          // Lang name (only when highlighted)
+          if (isMain) ...[
+            Text(
+              langName,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          // Price
           Text(
             price.displayPrice,
             style: TextStyle(
               color: priceColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
+              fontWeight: isMain ? FontWeight.bold : FontWeight.w600,
+              fontSize: isMain ? 14 : 12,
             ),
           ),
           const SizedBox(width: 4),
+          // NM / ANY badge
           if (!isHistorical)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
@@ -168,6 +208,7 @@ class _PriceRow extends StatelessWidget {
                 ),
               ),
             ),
+          // 1st edition badge
           if (price.firstEdition) ...[
             const SizedBox(width: 3),
             Container(
@@ -186,6 +227,7 @@ class _PriceRow extends StatelessWidget {
               ),
             ),
           ],
+          // Historical date
           if (isHistorical) ...[
             const SizedBox(width: 4),
             Text(
@@ -271,10 +313,11 @@ class _CardtraderPriceBadgeState extends State<CardtraderPriceBadge> {
   /// Pokemon/OnePiece: defaults to "en" (these use set codes without language suffix)
   static String _extractLanguage(String sn, String collection) {
     if (collection == 'yugioh') {
-      final match = RegExp(r'-([A-Za-z]{2})\d').firstMatch(sn);
+      // Match 2 alpha chars after the last '-', followed by any alphanumeric
+      // Handles both LOB-EN001 and LDK2-ITJ03 formats
+      final match = RegExp(r'-([A-Za-z]{2})[A-Za-z0-9]').firstMatch(sn);
       if (match != null) {
         final code = match.group(1)!.toLowerCase();
-        // CardTrader uses "es" for Spanish, YGO uses "sp"
         return code == 'sp' ? 'es' : code;
       }
     }

@@ -141,14 +141,14 @@ class CardListItem extends StatelessWidget {
                         const Text(' • ', style: TextStyle(fontSize: 12)),
                         card.cardtraderValue != null && card.cardtraderValue! > 0
                             ? Text(
-                                '€${card.cardtraderValue!.toStringAsFixed(2)} CT',
+                                '€${card.cardtraderValue!.toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Color(0xFF2E7D32),
                                   fontWeight: FontWeight.w600,
                                 ),
                               )
-                            : _PriceTrend(value: card.value, previousValue: card.previousValue),
+                            : const Text('N/D', style: TextStyle(fontSize: 12)),
                       ],
                     ),
                   ],
@@ -186,39 +186,6 @@ class CardListItem extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _PriceTrend extends StatelessWidget {
-  final double value;
-  final double? previousValue;
-
-  const _PriceTrend({required this.value, required this.previousValue});
-
-  @override
-  Widget build(BuildContext context) {
-    if (value <= 0) {
-      return const Text('N/D', style: TextStyle(fontSize: 12));
-    }
-
-    final priceText = '€${value.toStringAsFixed(2)}';
-
-    if (previousValue == null || previousValue == 0 || previousValue == value) {
-      return Text(priceText, style: const TextStyle(fontSize: 12));
-    }
-
-    final isUp = value > previousValue!;
-    final color = isUp ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
-    final icon = isUp ? Icons.trending_up : Icons.trending_down;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(priceText, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
-        const SizedBox(width: 2),
-        Icon(icon, size: 13, color: color),
-      ],
     );
   }
 }
@@ -341,19 +308,19 @@ class CardGridItem extends StatelessWidget {
                           text: ' • ',
                           style: TextStyle(fontSize: 8, color: AppColors.textHint),
                         ),
-                        if (card.cardtraderValue != null && card.cardtraderValue! > 0) ...[
+                        if (card.cardtraderValue != null && card.cardtraderValue! > 0)
                           TextSpan(
-                            text: '€${card.cardtraderValue!.toStringAsFixed(2)} (CT)',
+                            text: '€${card.cardtraderValue!.toStringAsFixed(2)}',
                             style: const TextStyle(
                               fontSize: 8,
                               color: Color(0xFF2E7D32),
                               fontWeight: FontWeight.bold,
                             ),
-                          ),
-                        ] else
-                          TextSpan(
-                            text: card.value > 0 ? '€${card.value.toStringAsFixed(2)}' : 'N/D',
-                            style: const TextStyle(fontSize: 8, color: AppColors.textHint),
+                          )
+                        else
+                          const TextSpan(
+                            text: 'N/D',
+                            style: TextStyle(fontSize: 8, color: AppColors.textHint),
                           ),
                       ],
                     ),

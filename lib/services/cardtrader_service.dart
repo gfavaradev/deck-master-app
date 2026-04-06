@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'database_helper.dart';
@@ -116,9 +115,7 @@ class CardtraderService {
       return localCodes.contains(code);
     }).toList();
 
-    debugPrint('[CardTrader] ${ctExpansions.length} CT expansions, '
-        '${localCodes.length} local codes, ${matched.length} matched, '
-        'all languages');
+
 
     int totalBlueprints = 0;  // blueprints seeded (from /blueprints endpoint)
     int pricedBlueprints = 0; // blueprints with active marketplace listings
@@ -158,8 +155,8 @@ class CardtraderService {
           pricedBlueprints += priced;
         }
         await Future.delayed(const Duration(milliseconds: 100));
-      } catch (e) {
-        debugPrint('[CardTrader] Error syncing $expCode: $e');
+      } catch (e) { // ignore: empty_catches
+
         errors++;
       }
     }
@@ -219,12 +216,15 @@ class CardtraderService {
   /// Returns all cached CardTrader prices for a card across every language.
   ///
   /// One [CardtraderPrice] per language — best (cheapest) price for each.
+  /// [catalogId] is used as a fallback to resolve the English card name via
+  /// catalog JOIN, bypassing localized card names.
   Future<List<CardtraderPrice>> getAllPricesForCard({
     required String catalog,
     required String expansionCode,
     required String cardName,
     String? rarity,
     String? collectorNumber,
+    String? catalogId,
   }) async {
     final rows = await _db.getPricesForCardAllLanguages(
       catalog: catalog,
@@ -232,6 +232,7 @@ class CardtraderService {
       cardName: cardName,
       rarity: rarity,
       collectorNumber: collectorNumber,
+      catalogId: catalogId,
     );
     return rows.map(CardtraderPrice.fromMap).toList();
   }
@@ -251,9 +252,9 @@ class CardtraderService {
       final prices = await _db.getAllCardtraderPrices(catalog);
       if (prices.isEmpty) return;
       await FirestoreService().saveCardtraderPrices(catalog, prices);
-      debugPrint('[CardTrader] Saved ${prices.length} prices to shared Firestore for $catalog');
-    } catch (e) {
-      debugPrint('[CardTrader] Error pushing prices to Firestore: $e');
+
+    } catch (e) { // ignore: empty_catches
+
     }
   }
 
@@ -275,7 +276,7 @@ class CardtraderService {
     dynamic all;
     try {
       all = json.decode(response.body);
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       throw Exception('Errore parsing espansioni: $e\nBody: ${response.body.substring(0, response.body.length.clamp(0, 200))}');
     }
     if (all is! List) throw Exception('Risposta espansioni non valida: ${all.runtimeType}');
@@ -302,7 +303,7 @@ class CardtraderService {
     dynamic raw;
     try {
       raw = json.decode(response.body);
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       throw Exception('Errore parsing products: $e\nBody: ${response.body.substring(0, response.body.length.clamp(0, 200))}');
     }
     if (raw is! Map) return {};
@@ -332,7 +333,7 @@ class CardtraderService {
     dynamic raw;
     try {
       raw = json.decode(response.body);
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       throw Exception('Errore parsing blueprints: $e');
     }
     if (raw is! List) return [];

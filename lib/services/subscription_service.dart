@@ -20,7 +20,7 @@ class SubscriptionService {
       final doc = await _users.doc(uid).get();
       if (!doc.exists) return null;
       return UserModel.fromFirestore(doc.data() as Map<String, dynamic>);
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       return null;
     }
   }
@@ -123,7 +123,7 @@ class SubscriptionService {
           'uid': d.id,
         };
       }).toList();
-    } catch (_) {
+    } catch (_) { // ignore: empty_catches
       return [];
     }
   }
@@ -141,7 +141,7 @@ class SubscriptionService {
         data.putIfAbsent('email', () => '');
         data.putIfAbsent('createdAt', () => DateTime.now().toIso8601String());
         list.add(UserModel.fromFirestore(data));
-      } catch (_) {
+      } catch (_) { // ignore: empty_catches
         // Documento malformato — skip
       }
     }

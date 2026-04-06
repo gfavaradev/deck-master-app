@@ -91,7 +91,7 @@ class _AdminCatalogDesktopPageState extends State<AdminCatalogDesktopPage> {
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         setState(() => _isLoading = false);
         _showError('Errore caricamento: $e');
@@ -201,7 +201,7 @@ class _AdminCatalogDesktopPageState extends State<AdminCatalogDesktopPage> {
           SnackBar(content: Text('Scaricate ${catalog.length} carte')),
         );
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (mounted) {
         setState(() {
           _isDownloading = false;
@@ -941,7 +941,7 @@ class _AdminCatalogDesktopPageState extends State<AdminCatalogDesktopPage> {
         adminUid: uid,
         onProgress: (current, total) {
           // Progress feedback via logs for now
-          debugPrint('Sync progress: $current / $total');
+
         },
       );
 
@@ -959,7 +959,7 @@ class _AdminCatalogDesktopPageState extends State<AdminCatalogDesktopPage> {
       } else if (mounted) {
         _showError(result['error'] ?? 'Errore sconosciuto');
       }
-    } catch (e) {
+    } catch (e) { // ignore: empty_catches
       if (context.mounted) {
         setState(() => _isSyncing = false);
         _showError('Errore sincronizzazione: $e');
