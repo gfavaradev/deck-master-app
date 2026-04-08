@@ -46,13 +46,15 @@ class _CardListPageState extends State<CardListPage> {
   bool _catalogSearching = false;
   int? _lastUsedAlbumId;
   String _preferredLanguage = 'EN';
+  bool _isApplyingCtPrices = false;
 
   @override
   void initState() {
     super.initState();
     _refreshCards();
+    // Re-apply CT prices whenever the admin pushes a price sync
     _syncSub = SyncService().onRemoteChange.listen((_) {
-      if (mounted) _refreshCards();
+      if (mounted) _refreshCards().then((_) => _applyCtPricesIfNeeded());
     });
     LanguageService.getPreferredLanguageForCollection(widget.collectionKey).then((lang) {
       if (mounted) setState(() => _preferredLanguage = lang);
@@ -67,11 +69,16 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Future<void> _applyCtPricesIfNeeded() async {
-    // Salta se tutte le carte hanno già un prezzo CT
+    if (_isApplyingCtPrices) return;
     final hasMissing = _allCards.any((c) => (c.cardtraderValue ?? 0) <= 0);
     if (!hasMissing) return;
-    final updated = await CardtraderService().applyLocalPricesToCollection(widget.collectionKey);
-    if ((updated['collectionUpdated'] ?? 0) > 0 && mounted) _refreshCards();
+    _isApplyingCtPrices = true;
+    try {
+      final updated = await CardtraderService().applyLocalPricesToCollection(widget.collectionKey);
+      if ((updated['collectionUpdated'] ?? 0) > 0 && mounted) await _refreshCards();
+    } finally {
+      _isApplyingCtPrices = false;
+    }
   }
 
   Future<void> _onRefresh() async {
@@ -167,7 +174,7 @@ class _CardListPageState extends State<CardListPage> {
       initialCatalogCard: catalogCard,
       onCardAdded: (int usedAlbumId, String _) {
         setState(() => _lastUsedAlbumId = usedAlbumId);
-        _refreshCards();
+        _refreshCards().then((_) => _applyCtPricesIfNeeded());
       },
       getOrCreateDuplicatesAlbum: _getOrCreateDuplicatesAlbum,
     );

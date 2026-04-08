@@ -134,8 +134,15 @@ class CardtraderService {
       );
 
       try {
-        // ── Step a: seed blueprints for every language present ────────────
-        final blueprints = await _fetchBlueprints(expId);
+        // ── Fetch blueprints + marketplace in parallel ────────────────────
+        late List<Map<String, dynamic>> blueprints;
+        late Map<String, List<Map<String, dynamic>>> products;
+        await Future.wait([
+          _fetchBlueprints(expId).then((r) => blueprints = r),
+          _fetchMarketplaceProducts(expId).then((r) => products = r),
+        ]);
+
+        // ── Step a: seed blueprint placeholders ───────────────────────────
         final byLang = _groupBlueprintsByLanguage(blueprints, catalog);
         for (final entry in byLang.entries) {
           final rows = _buildBlueprintMaps(catalog, expCode, entry.value, entry.key);
@@ -144,17 +151,15 @@ class CardtraderService {
             totalBlueprints += rows.length;
           }
         }
-        await Future.delayed(const Duration(milliseconds: 150));
 
-        // ── Step b: fetch marketplace listings for ALL languages ───────────
-        final products = await _fetchMarketplaceProducts(expId);
+        // ── Step b: upsert marketplace prices ─────────────────────────────
         if (products.isEmpty) {
           skipped++;
         } else {
           final priced = await _storePrices(catalog, expCode, products);
           pricedBlueprints += priced;
         }
-        await Future.delayed(const Duration(milliseconds: 100));
+        await Future.delayed(const Duration(milliseconds: 150));
       } catch (e) { // ignore: empty_catches
 
         errors++;
@@ -242,7 +247,6 @@ class CardtraderService {
   /// Returns a map with 'collectionUpdated' and 'catalogUpdated' counts.
   Future<Map<String, int>> applyLocalPricesToCollection(String catalog) async {
     final collectionUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
-    if (collectionUpdated > 0) SyncService().notifyLocalChange('cards');
     final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
     return {'collectionUpdated': collectionUpdated, 'catalogUpdated': catalogUpdated};
   }

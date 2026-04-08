@@ -84,21 +84,26 @@ class _CardtraderAllPricesSectionState
         final prices = snapshot.data!;
         final hl = widget.highlightLanguage?.toLowerCase();
 
-        // Sort: highlighted language first, then alphabetically
-        final sorted = [...prices]..sort((a, b) {
-            if (a.language == hl) return -1;
-            if (b.language == hl) return 1;
-            return a.language.compareTo(b.language);
-          });
+        // Index available prices by language for O(1) lookup
+        final byLang = {for (final p in prices) p.language: p};
+
+        // Show ALL catalog languages; use '—' placeholder for missing ones
+        final allLangs =
+            CardtraderService.languagesForCatalog(widget.collection).keys.toList();
+        allLangs.sort((a, b) {
+          if (a == hl) return -1;
+          if (b == hl) return 1;
+          return a.compareTo(b);
+        });
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: sorted.map((p) {
-            final isMain = hl != null && p.language == hl;
+          children: allLangs.map((lang) {
+            final isMain = hl != null && lang == hl;
             return _PriceRow(
-              price: p,
-              langLabel: _langLabels[p.language] ?? p.language.toUpperCase(),
-              langName: _langNames[p.language] ?? p.language,
+              price: byLang[lang],
+              langLabel: _langLabels[lang] ?? lang.toUpperCase(),
+              langName: _langNames[lang] ?? lang,
               isMain: isMain,
             );
           }).toList(),
@@ -109,7 +114,7 @@ class _CardtraderAllPricesSectionState
 }
 
 class _PriceRow extends StatelessWidget {
-  final CardtraderPrice price;
+  final CardtraderPrice? price;
   final String langLabel;
   final String langName;
   final bool isMain;
@@ -128,7 +133,57 @@ class _PriceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isHistorical = price.listingCount == 0;
+    // No price cached for this language — show a muted placeholder row
+    if (price == null) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        padding: isMain
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 7)
+            : const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: isMain
+            ? BoxDecoration(
+                color: AppColors.cardtraderBorder.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: AppColors.border.withValues(alpha: 0.4)),
+              )
+            : null,
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.bgMedium,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                langLabel,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textHint,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (isMain) ...[
+              Text(langName,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textHint)),
+              const SizedBox(width: 6),
+            ],
+            const Text('—',
+                style: TextStyle(
+                    color: AppColors.textHint,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    final isHistorical = price!.listingCount == 0;
     final priceColor = isHistorical ? Colors.orange : AppColors.cardtraderTeal;
 
     return Container(
@@ -179,7 +234,7 @@ class _PriceRow extends StatelessWidget {
           ],
           // Price
           Text(
-            price.displayPrice,
+            price!.displayPrice,
             style: TextStyle(
               color: priceColor,
               fontWeight: isMain ? FontWeight.bold : FontWeight.w600,
@@ -192,24 +247,24 @@ class _PriceRow extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
               decoration: BoxDecoration(
-                color: price.hasNmPrice
+                color: price!.hasNmPrice
                     ? const Color(0xFF1A6B5A).withValues(alpha: 0.5)
                     : Colors.orange.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(3),
               ),
               child: Text(
-                price.hasNmPrice ? 'NM' : 'ANY',
+                price!.hasNmPrice ? 'NM' : 'ANY',
                 style: TextStyle(
                   fontSize: 8,
                   fontWeight: FontWeight.bold,
-                  color: price.hasNmPrice
+                  color: price!.hasNmPrice
                       ? AppColors.cardtraderTeal
                       : Colors.orange,
                 ),
               ),
             ),
           // 1st edition badge
-          if (price.firstEdition) ...[
+          if (price!.firstEdition) ...[
             const SizedBox(width: 3),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
@@ -231,7 +286,7 @@ class _PriceRow extends StatelessWidget {
           if (isHistorical) ...[
             const SizedBox(width: 4),
             Text(
-              _formatDate(price.syncedAtDate),
+              _formatDate(price!.syncedAtDate),
               style: TextStyle(
                 fontSize: 9,
                 color: Colors.orange.withValues(alpha: 0.8),

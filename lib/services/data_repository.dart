@@ -435,6 +435,12 @@ class DataRepository {
 
   Future<int> insertCard(CardModel card) async {
     final localId = await _dbHelper.insertCard(card);
+    // Apply CT price BEFORE notifying the UI so the first refresh already
+    // shows the correct price instead of a blank value.
+    await _dbHelper.applyCtPriceToCard(
+      localId, card.collection, card.serialNumber, card.name, card.rarity,
+      catalogId: card.catalogId?.toString(),
+    ).catchError((_) {});
     final savedCard = card.copyWith(id: localId);
     await _syncService.pushCardChange(savedCard, 'insert');
     _syncService.notifyLocalChange('cards');
