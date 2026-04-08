@@ -12,12 +12,18 @@ import '../widgets/cardtrader_price_badge.dart' show CardtraderAllPricesSection;
 /// Pokémon / One Piece: always "en" (no lang suffix in serial)
 String _langFromSerial(String sn, String collection) {
   if (collection == 'yugioh') {
-    // Match 2 alpha chars after the last '-', followed by any alphanumeric
     final m = RegExp(r'-([A-Za-z]{2})[A-Za-z0-9]').firstMatch(sn);
     if (m != null) {
       final code = m.group(1)!.toLowerCase();
       return code == 'sp' ? 'es' : code;
     }
+  } else if (collection == 'onepiece') {
+    // "OP01-001" → 'ja' (plain number = Japanese)
+    // "OP01-EN001" → 'en', "OP01-FR001" → 'fr'
+    final cn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+    final m = RegExp(r'^([A-Za-z]{2})\d').firstMatch(cn);
+    if (m != null) return m.group(1)!.toLowerCase();
+    return 'ja';
   }
   return 'en';
 }

@@ -47,8 +47,7 @@ class CardtraderService {
       'pt': 'Portoghese', 'ko': 'Coreano',
     },
     'onepiece': {
-      'ja': 'Giapponese', 'en': 'Inglese', 'fr': 'Francese',
-      'zh': 'Cinese', 'ko': 'Coreano',
+      'ja': 'Giapponese', 'en': 'Inglese',
     },
   };
 
@@ -169,12 +168,15 @@ class CardtraderService {
     onProgress('Aggiornamento valori collezione…', null);
     final valuesUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
     if (valuesUpdated > 0) {
-      SyncService().notifyLocalChange('cards');
       await _pushCardValuesToFirestore(catalog);
     }
 
     onProgress('Aggiornamento prezzi catalogo…', null);
     final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
+
+    if (valuesUpdated > 0) {
+      SyncService().notifyLocalChange('cards');
+    }
 
     return {
       'success': true,

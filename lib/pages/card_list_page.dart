@@ -199,7 +199,7 @@ class _CardListPageState extends State<CardListPage> {
       );
       if (!context.mounted || selectedId == null) return;
       await _repo.insertCard(card.copyWith(resetId: true, albumId: selectedId, quantity: delta));
-      _refreshCards();
+      _refreshCards().then((_) => _applyCtPricesIfNeeded());
       return;
     }
 

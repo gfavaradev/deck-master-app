@@ -283,7 +283,11 @@ class _AddCardDialogState extends State<_AddCardDialog> {
           if (found.isEmpty) {
             found = sets.where((s) => s['setCode'] == preSelectedSetCode).toList();
           }
-          selectedSetCode = found.isNotEmpty ? _setKey(found.first) : (sets.isNotEmpty ? _setKey(sets.first) : null);
+          final matchedSet = found.isNotEmpty ? found.first : (sets.isNotEmpty ? sets.first : null);
+          selectedSetCode = matchedSet != null ? _setKey(matchedSet) : null;
+          // Apply the matched set data so serial/rarity/value/artwork come from
+          // the actual print row, not from the flat catalog search result.
+          if (matchedSet != null) _applySet(matchedSet);
         } else {
           selectedSetCode = sets.isNotEmpty ? _setKey(sets.first) : null;
           if (sets.isNotEmpty) _applySet(sets.first);

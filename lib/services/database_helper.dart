@@ -1044,7 +1044,9 @@ class DatabaseHelper {
   Future<int> insertCard(CardModel card) async {
     Database db = await database;
     return await db.transaction((txn) async {
-      int id = await txn.insert('cards', card.toMap());
+      final map = card.toMap()
+        ..['added_at'] = DateTime.now().toIso8601String();
+      int id = await txn.insert('cards', map);
 
       if (card.catalogId != null && card.collection != 'yugioh') {
         // Legacy catalog tracking for non-yugioh collections
@@ -3234,21 +3236,27 @@ class DatabaseHelper {
     // Fall back to the passed name if catalog lookup failed
     final nameLower = nameEn ?? cardName.toLowerCase();
 
-    // ── Normalize collector number: strip leading lang prefix (IT, EN, FR…) ─
-    // "ITJ03" → "J03", "IT001" → "001", "EN006" → "006", "1" → "1"
-    String? cnNorm;
+    // ── Normalize collector number ──────────────────────────────────────────
+    // Try the raw value lowercased ("it001") AND the stripped version ("001").
+    // CT stores the raw CN (e.g. "IT001") — always include the raw form.
+    String? cnRaw;  // lowercased as-is: "it001"
+    String? cnNorm; // prefix-stripped:  "001"
     if (collectorNumber != null && collectorNumber.isNotEmpty) {
-      cnNorm = collectorNumber.replaceFirst(RegExp(r'^[A-Za-z]{2}(?=[A-Za-z0-9])'), '');
+      cnRaw  = collectorNumber.toLowerCase();
+      cnNorm = collectorNumber.replaceFirst(RegExp(r'^[A-Za-z]{2}(?=[A-Za-z0-9])'), '').toLowerCase();
+      if (cnNorm == cnRaw) cnNorm = null; // no stripping happened — avoid duplicate
     }
 
     // ── 1. expansion + name (all languages, priced or not) ──────────────────
     if (rows.isEmpty) {
       String w = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?';
       final a = <dynamic>[catalog, exp, nameLower];
-      if (cnNorm != null && cnNorm.isNotEmpty) {
+      // Try raw CN first (e.g. "it001"), then stripped (e.g. "001")
+      for (final cn in [cnRaw, cnNorm].whereType<String>()) {
         rows = await db.query('cardtrader_prices',
             where: '$w AND LOWER(collector_number) = ?',
-            whereArgs: [...a, cnNorm.toLowerCase()], orderBy: orderBy);
+            whereArgs: [...a, cn], orderBy: orderBy);
+        if (rows.isNotEmpty) break;
       }
       if (rows.isEmpty) {
         rows = await db.query('cardtrader_prices', where: w, whereArgs: a, orderBy: orderBy);
@@ -3256,12 +3264,12 @@ class DatabaseHelper {
     }
 
     // ── 2. Fallback: expansion + collector_number only ───────────────────────
-    if (rows.isEmpty && cnNorm != null && cnNorm.isNotEmpty) {
-      final digits = RegExp(r'\d+$').firstMatch(cnNorm)?.group(0) ?? '';
+    if (rows.isEmpty && (cnRaw != null || cnNorm != null)) {
+      final digits = RegExp(r'\d+$').firstMatch(cnNorm ?? cnRaw ?? '')?.group(0) ?? '';
       final candidates = <String>{
-        if (digits.isNotEmpty) '#$digits',
+        if (cnRaw  != null) cnRaw,
+        if (cnNorm != null) cnNorm,
         if (digits.isNotEmpty) digits,
-        cnNorm,
       };
       for (final cn in candidates) {
         rows = await db.query(
@@ -3460,12 +3468,16 @@ class DatabaseHelper {
         final code = m.group(1)!.toLowerCase();
         lang = code == 'sp' ? 'es' : code;
       }
-      final rawCn   = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
-      final stripped = rawCn.replaceFirst(RegExp(r'^[A-Za-z]{2}(?=[A-Za-z0-9])'), '');
-      final digits  = RegExp(r'\d+$').firstMatch(stripped)?.group(0) ?? '';
-      cn = digits.isNotEmpty ? '#$digits' : '';
+      final rawCn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+      cn = rawCn.toLowerCase(); // e.g. "IT001" → "it001", matches CT stored value
+    } else if (catalog == 'onepiece') {
+      cn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1).toLowerCase() : '';
+      // "001" or "SEC" → Japanese (no lang prefix); "EN001" → English
+      final langMatch = RegExp(r'^([a-z]{2})\d').firstMatch(cn);
+      lang = langMatch != null ? langMatch.group(1)! : 'ja';
     } else {
-      cn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+      // Pokemon and others: lowercase CN to match CT stored values
+      cn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1).toLowerCase() : '';
     }
 
     return (exp, lang, cn);

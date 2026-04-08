@@ -46,7 +46,8 @@ class CardModel {
       'quantity': quantity,
       'value': value,
       'cardtrader_value': cardtraderValue,
-      'added_at': DateTime.now().toIso8601String(),
+      // added_at is intentionally excluded: set once at insert time and
+      // must not be overwritten by subsequent updateCard() calls.
     };
   }
 
