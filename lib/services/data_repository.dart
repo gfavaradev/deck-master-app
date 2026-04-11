@@ -1056,6 +1056,10 @@ class DataRepository {
     return await _dbHelper.getDecksForCard(cardId);
   }
 
+  Future<Map<String, dynamic>?> getCardExtraInfo(
+          String collection, String? catalogId) =>
+      _dbHelper.getCardExtraInfo(collection, catalogId);
+
   Future<void> removeCardFromDeck(int deckId, int cardId) async {
     await _dbHelper.removeCardFromDeck(deckId, cardId);
     // Sync deck card removal

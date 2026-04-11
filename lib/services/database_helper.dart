@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 20,
+      version: 21,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -274,6 +274,21 @@ class DatabaseHelper {
       // Colonna cardtrader_value mancante dalla migration — aggiunta al modello
       // senza ALTER TABLE corrispondente.
       await _addColumnIfMissing(db, 'cards', 'cardtrader_value', 'REAL');
+    }
+    if (oldVersion < 21) {
+      // Aggiunge le collezioni "Prossimamente" presenti su CardTrader.
+      await db.execute('''
+        INSERT OR IGNORE INTO collections (id, name, isUnlocked) VALUES
+          ('digimon',          'Digimon Card Game',     0),
+          ('dragon-ball-super','Dragon Ball Super',      0),
+          ('lorcana',          'Disney Lorcana',         0),
+          ('flesh-and-blood',  'Flesh and Blood',        0),
+          ('vanguard',         'Cardfight!! Vanguard',   0),
+          ('star-wars',        'Star Wars: Unlimited',   0),
+          ('riftbound',        'Riftbound',              0),
+          ('gundam',           'Gundam Card Game',       0),
+          ('union-arena',      'Union Arena',            0)
+      ''');
     }
   }
 
@@ -683,10 +698,19 @@ class DatabaseHelper {
       )
     ''');
 
-    await db.insert('collections', {'id': 'yugioh', 'name': 'Yu-Gi-Oh!', 'isUnlocked': 0});
-    await db.insert('collections', {'id': 'pokemon', 'name': 'Pokémon', 'isUnlocked': 0});
-    await db.insert('collections', {'id': 'magic', 'name': 'Magic: The Gathering', 'isUnlocked': 0});
-    await db.insert('collections', {'id': 'onepiece', 'name': 'One Piece', 'isUnlocked': 0});
+    await db.insert('collections', {'id': 'yugioh',          'name': 'Yu-Gi-Oh!',              'isUnlocked': 0});
+    await db.insert('collections', {'id': 'pokemon',         'name': 'Pokémon',                 'isUnlocked': 0});
+    await db.insert('collections', {'id': 'magic',           'name': 'Magic: The Gathering',    'isUnlocked': 0});
+    await db.insert('collections', {'id': 'onepiece',        'name': 'One Piece',               'isUnlocked': 0});
+    await db.insert('collections', {'id': 'digimon',         'name': 'Digimon Card Game',       'isUnlocked': 0});
+    await db.insert('collections', {'id': 'dragon-ball-super','name': 'Dragon Ball Super',      'isUnlocked': 0});
+    await db.insert('collections', {'id': 'lorcana',         'name': 'Disney Lorcana',          'isUnlocked': 0});
+    await db.insert('collections', {'id': 'flesh-and-blood', 'name': 'Flesh and Blood',         'isUnlocked': 0});
+    await db.insert('collections', {'id': 'vanguard',        'name': 'Cardfight!! Vanguard',    'isUnlocked': 0});
+    await db.insert('collections', {'id': 'star-wars',       'name': 'Star Wars: Unlimited',    'isUnlocked': 0});
+    await db.insert('collections', {'id': 'riftbound',       'name': 'Riftbound',               'isUnlocked': 0});
+    await db.insert('collections', {'id': 'gundam',          'name': 'Gundam Card Game',        'isUnlocked': 0});
+    await db.insert('collections', {'id': 'union-arena',     'name': 'Union Arena',             'isUnlocked': 0});
 
     // Create yugioh-specific tables
     await _createYugiohTables(db);
@@ -1117,6 +1141,56 @@ class DatabaseHelper {
     }
 
     return completions;
+  }
+
+  /// Returns game-specific stats for a card (ATK/DEF for YGO, HP for Pokémon,
+  /// Power/Cost for One Piece). Returns null when catalogId is missing/unknown.
+  Future<Map<String, dynamic>?> getCardExtraInfo(
+      String collection, String? catalogId) async {
+    if (catalogId == null || catalogId.isEmpty) return null;
+    final db = await database;
+
+    if (collection == 'yugioh') {
+      final id = int.tryParse(catalogId);
+      if (id == null) return null;
+      final rows = await db.query(
+        'yugioh_cards',
+        columns: ['atk', 'def', 'level', 'attribute', 'race',
+                  'linkval', 'scale', 'human_readable_type'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      return rows.isEmpty ? null : rows.first;
+    }
+
+    if (collection == 'onepiece') {
+      final id = int.tryParse(catalogId);
+      if (id == null) return null;
+      final rows = await db.query(
+        'onepiece_cards',
+        columns: ['cost', 'power', 'color', 'counter_amount', 'attribute', 'life'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      return rows.isEmpty ? null : rows.first;
+    }
+
+    if (collection == 'pokemon') {
+      final id = int.tryParse(catalogId);
+      if (id == null) return null;
+      final rows = await db.query(
+        'pokemon_cards',
+        columns: ['hp', 'types', 'supertype', 'subtype'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      return rows.isEmpty ? null : rows.first;
+    }
+
+    return null;
   }
 
   // Returns all owned card instances for a collection.

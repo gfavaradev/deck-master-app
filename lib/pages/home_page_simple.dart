@@ -35,13 +35,13 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     if (mounted) {
       setState(() {
         _unlockedCollections = all.where((c) => c.isUnlocked).toList();
-        final available = all.where((c) => !c.isUnlocked).toList();
-        available.sort((a, b) {
+        final locked = all.where((c) => !c.isUnlocked).toList();
+        locked.sort((a, b) {
           final aHas = _catalogAvailable.contains(a.key) ? 0 : 1;
           final bHas = _catalogAvailable.contains(b.key) ? 0 : 1;
           return aHas.compareTo(bHas);
         });
-        _availableCollections = available;
+        _availableCollections = locked;
         _isLoading = false;
       });
     }
@@ -212,28 +212,24 @@ class _HomePageSimpleState extends State<HomePageSimple> {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(15),
-          gradient: isUnlocked
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.collectionCardBg, AppColors.collectionCardBgEnd],
-                )
-              : const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.collectionCardLocked, AppColors.collectionCardLockedEnd],
-                ),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isUnlocked
+                ? [AppColors.bgMedium, color.withValues(alpha: 0.18)]
+                : [AppColors.bgMedium, color.withValues(alpha: 0.07)],
+          ),
           border: Border.all(
             color: isUnlocked
-                ? AppColors.gold.withValues(alpha: 0.7)
-                : AppColors.gold.withValues(alpha: 0.2),
+                ? color.withValues(alpha: 0.65)
+                : color.withValues(alpha: 0.22),
             width: isUnlocked ? 1.5 : 1.0,
           ),
           boxShadow: isUnlocked
               ? [
                   BoxShadow(
-                    color: color.withValues(alpha: 0.18),
-                    blurRadius: 10,
+                    color: color.withValues(alpha: 0.25),
+                    blurRadius: 12,
                     offset: const Offset(0, 4),
                   )
                 ]
@@ -315,33 +311,37 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     );
   }
 
-  Color _getCollectionColor(String key) {
-    switch (key) {
-      case 'yugioh':
-        return Colors.red;
-      case 'pokemon':
-        return Colors.yellow;
-      case 'magic':
-        return Colors.orange;
-      case 'onepiece':
-        return Colors.black;
-      default:
-        return Colors.blue;
-    }
-  }
+  Color _getCollectionColor(String key) => switch (key) {
+    'yugioh'           => const Color(0xFFE53935),
+    'pokemon'          => const Color(0xFFFFCA28),
+    'magic'            => const Color(0xFFEF6C00),
+    'onepiece'         => const Color(0xFFE53935),
+    'digimon'          => const Color(0xFF1E88E5),
+    'dragon-ball-super'=> const Color(0xFFFF8F00),
+    'lorcana'          => const Color(0xFF8E24AA),
+    'flesh-and-blood'  => const Color(0xFFC62828),
+    'vanguard'         => const Color(0xFF00897B),
+    'star-wars'        => const Color(0xFFFFEE58),
+    'riftbound'        => const Color(0xFF1565C0),
+    'gundam'           => const Color(0xFF546E7A),
+    'union-arena'      => const Color(0xFF43A047),
+    _                  => const Color(0xFF78909C),
+  };
 
-  String _getCollectionLogoUrl(String key) {
-    switch (key) {
-      case 'yugioh':
-        return 'assets/images/collections/yugioh-logo.png';
-      case 'pokemon':
-        return 'assets/images/collections/pokemon-logo.png';
-      case 'magic':
-        return 'assets/images/collections/magic-logo.png';
-      case 'onepiece':
-        return 'assets/images/collections/one-piece-logo.webp';
-      default:
-        return 'assets/images/collections/yugioh-logo.png';
-    }
-  }
+  String _getCollectionLogoUrl(String key) => switch (key) {
+    'yugioh'           => 'assets/images/collections/yugioh-logo.png',
+    'pokemon'          => 'assets/images/collections/pokemon-logo.png',
+    'magic'            => 'assets/images/collections/magic-logo.png',
+    'onepiece'         => 'assets/images/collections/one-piece-logo.webp',
+    'digimon'          => 'assets/images/collections/digimon-logo.png',
+    'dragon-ball-super'=> 'assets/images/collections/dragon-ball-super-logo.png',
+    'lorcana'          => 'assets/images/collections/lorcana-logo.png',
+    'flesh-and-blood'  => 'assets/images/collections/flesh-and-blood-logo.png',
+    'vanguard'         => 'assets/images/collections/vanguard-logo.png',
+    'star-wars'        => 'assets/images/collections/star-wars-logo.png',
+    'riftbound'        => 'assets/images/collections/riftbound-logo.png',
+    'gundam'           => 'assets/images/collections/gundam-logo.png',
+    'union-arena'      => 'assets/images/collections/union-arena-logo.png',
+    _                  => 'assets/images/collections/yugioh-logo.png',
+  };
 }

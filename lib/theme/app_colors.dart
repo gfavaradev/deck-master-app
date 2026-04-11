@@ -34,12 +34,6 @@ abstract final class AppColors {
   static const Color textSecondary = Color(0xB3FFFFFF); // white70
   static const Color textHint      = Color(0x80FFFFFF); // white50
 
-  // ── Card collezioni (sfondi chiari su tema caldo) ────────────────────────────
-  static const Color collectionCardBg      = Color(0xFFF8F2E3); // pergamena calda – unlocked
-  static const Color collectionCardBgEnd   = Color(0xFFEFE0B8); // oro chiaro – unlocked
-  static const Color collectionCardLocked  = Color(0xFFE5E0D5); // grigio caldo – locked
-  static const Color collectionCardLockedEnd = Color(0xFFD8D2C4); // grigio scuro – locked
-
   // ── Bordi e divisori ─────────────────────────────────────────────────────────
   static const Color border        = Color(0x40FFFFFF); // bordi standard
   static const Color divider       = Color(0x1FFFFFFF); // divisori sottili

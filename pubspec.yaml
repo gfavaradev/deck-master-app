@@ -51,18 +51,18 @@ dependencies:
   google_sign_in: ^7.2.0
   flutter_facebook_auth: ^7.1.6
   sign_in_with_apple: ^7.0.1
-  package_info_plus: ^9.0.0
+  package_info_plus: ^9.0.1
   http: ^1.2.2
   firebase_storage: ^13.0.5
   firebase_messaging: ^16.1.2
-  file_picker: ^10.3.10
+  file_picker: ^11.0.2
   flutter_background_service: ^5.0.5
   cached_network_image: ^3.3.1
   flutter_image_compress: ^2.3.0
   image_picker: ^1.1.2
   permission_handler: ^12.0.1
-  purchases_flutter: ^9.15.0
-  google_mobile_ads: ^5.3.1
+  purchases_flutter: ^9.16.1
+  google_mobile_ads: ^7.0.0
   # google_mlkit_text_recognition: ^0.15.1  # disabled for simulator build
   google_generative_ai: ^0.4.6
 

@@ -280,6 +280,8 @@ class _CardListPageState extends State<CardListPage> {
       _repo.getOrCreateDoppioniAlbum(widget.collectionKey);
 
   Future<void> _showDetails(CardModel card) async {
+    final index = _filteredCards.indexOf(card);
+    final safeIndex = index < 0 ? 0 : index;
     final decks = card.id != null
         ? await _repo.getDecksForCard(card.id!)
         : <Map<String, dynamic>>[];
@@ -288,12 +290,12 @@ class _CardListPageState extends State<CardListPage> {
       context,
       MaterialPageRoute(
         builder: (_) => CardDetailPage(
-          card: card,
-          albumName: _getAlbumName(card.albumId),
+          cards: _filteredCards,
+          initialIndex: safeIndex,
           onDelete: _confirmDelete,
           availableAlbums: _availableAlbums,
           onAlbumChanged: _refreshCards,
-          cardDecks: decks,
+          initialDecks: decks,
         ),
       ),
     );

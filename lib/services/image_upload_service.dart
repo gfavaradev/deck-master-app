@@ -22,7 +22,7 @@ class ImageUploadService {
   }) async {
     await _assertAdmin();
 
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.image,
       withData: true,
     );
