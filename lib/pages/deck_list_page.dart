@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
+import '../theme/app_colors.dart';
+import '../widgets/app_dialog.dart';
+import '../widgets/top_undo_bar.dart';
 import 'deck_detail_page.dart';
 
 /// Dialog separato come StatefulWidget: il TextEditingController viene
@@ -24,25 +27,52 @@ class _AddDeckDialogState extends State<_AddDeckDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Nuovo Deck'),
-      content: TextField(
-        controller: _nameController,
-        autofocus: true,
-        decoration: InputDecoration(
-          labelText: 'Nome Deck',
-          errorText: _nameError,
-        ),
-        onChanged: (_) {
-          if (_nameError != null) setState(() => _nameError = null);
-        },
+    return AppDialog(
+      title: 'Nuovo Deck',
+      icon: Icons.style_outlined,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'NOME DECK',
+            style: TextStyle(
+              color: AppColors.textHint,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _nameController,
+            autofocus: true,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+            decoration: InputDecoration(
+              hintText: 'Es. Mazzo Attacco',
+              hintStyle: const TextStyle(color: AppColors.textHint),
+              errorText: _nameError,
+              prefixIcon: const Icon(Icons.style_outlined, color: AppColors.blue, size: 20),
+              filled: true,
+              fillColor: AppColors.bgLight,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.blue, width: 1.5)),
+              errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.error)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+            ),
+            onChanged: (_) {
+              if (_nameError != null) setState(() => _nameError = null);
+            },
+          ),
+        ],
       ),
       actions: [
-        TextButton(
+        OutlinedButton(
           onPressed: () => Navigator.pop(context),
+          style: appDialogCancelStyle(),
           child: const Text('Annulla'),
         ),
-        ElevatedButton(
+        FilledButton(
           onPressed: () {
             final name = _nameController.text.trim();
             if (name.isEmpty) {
@@ -51,6 +81,7 @@ class _AddDeckDialogState extends State<_AddDeckDialog> {
             }
             Navigator.pop(context, name);
           },
+          style: appDialogConfirmStyle(),
           child: const Text('Crea'),
         ),
       ],
@@ -91,6 +122,26 @@ class _DeckListPageState extends State<DeckListPage> {
     }
   }
 
+  Future<void> _deleteDeck(Map<String, dynamic> deck) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AppConfirmDialog(
+        title: 'Elimina Deck',
+        icon: Icons.delete_outline,
+        message: 'Sei sicuro di voler eliminare "${deck['name']}"?',
+        confirmLabel: 'Elimina',
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _dbHelper.deleteDeck(deck['id']);
+    if (!mounted) return;
+    _refreshDecks();
+    TopUndoBar.show(
+      context: context,
+      message: 'Deck "${deck['name']}" eliminato',
+    );
+  }
+
   Future<void> _showAddDeckDialog() async {
     final deckName = await showDialog<String>(
       context: context,
@@ -115,10 +166,7 @@ class _DeckListPageState extends State<DeckListPage> {
                   title: Text(deck['name']),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () async {
-                      await _dbHelper.deleteDeck(deck['id']);
-                      if (mounted) _refreshDecks();
-                    },
+                    onPressed: () => _deleteDeck(deck),
                   ),
                   onTap: () {
                     Navigator.push(

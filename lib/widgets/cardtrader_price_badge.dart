@@ -77,8 +77,30 @@ class _CardtraderAllPricesSectionState
     return FutureBuilder<List<CardtraderPrice>>(
       future: _future,
       builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 1.5, color: AppColors.cardtraderTeal),
+              ),
+            ),
+          );
+        }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              'Nessun prezzo disponibile — sincronizza i prezzi CardTrader.',
+              style: TextStyle(
+                fontSize: 11,
+                color: AppColors.textHint.withValues(alpha: 0.7),
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          );
         }
 
         final prices = snapshot.data!;
@@ -282,17 +304,18 @@ class _PriceRow extends StatelessWidget {
               ),
             ),
           ],
-          // Historical date
-          if (isHistorical) ...[
-            const SizedBox(width: 4),
+          const Spacer(),
+          // Listing count (active) or last-seen date (historical)
+          if (isHistorical)
             Text(
               _formatDate(price!.syncedAtDate),
-              style: TextStyle(
-                fontSize: 9,
-                color: Colors.orange.withValues(alpha: 0.8),
-              ),
+              style: TextStyle(fontSize: 9, color: Colors.orange.withValues(alpha: 0.8)),
+            )
+          else if (price!.listingCount > 0)
+            Text(
+              '${price!.listingCount} ann.',
+              style: const TextStyle(fontSize: 9, color: AppColors.textHint),
             ),
-          ],
         ],
       ),
     );
@@ -308,6 +331,9 @@ class CardtraderPriceBadge extends StatefulWidget {
   final String serialNumber;
   final String cardName;
   final String? rarity;
+  /// Catalog card ID used to resolve the English name for CT lookup.
+  /// Improves match accuracy for localized cards (e.g. Italian names).
+  final String? catalogId;
 
   const CardtraderPriceBadge({
     super.key,
@@ -315,6 +341,7 @@ class CardtraderPriceBadge extends StatefulWidget {
     required this.serialNumber,
     required this.cardName,
     this.rarity,
+    this.catalogId,
   });
 
   @override
@@ -344,6 +371,7 @@ class _CardtraderPriceBadgeState extends State<CardtraderPriceBadge> {
       language: language,
       rarity: widget.rarity,
       collectorNumber: collectorNumber,
+      catalogId: widget.catalogId,
     );
   }
 
@@ -362,22 +390,8 @@ class _CardtraderPriceBadgeState extends State<CardtraderPriceBadge> {
     return sn.substring(idx + 1);
   }
 
-  /// Detects language code from serial number.
-  ///
-  /// YuGiOh: "LOB-EN001" → "en", "LOB-IT001" → "it", "LOB-SP001" → "es" (CardTrader uses "es")
-  /// Pokemon/OnePiece: defaults to "en" (these use set codes without language suffix)
-  static String _extractLanguage(String sn, String collection) {
-    if (collection == 'yugioh') {
-      // Match 2 alpha chars after the last '-', followed by any alphanumeric
-      // Handles both LOB-EN001 and LDK2-ITJ03 formats
-      final match = RegExp(r'-([A-Za-z]{2})[A-Za-z0-9]').firstMatch(sn);
-      if (match != null) {
-        final code = match.group(1)!.toLowerCase();
-        return code == 'sp' ? 'es' : code;
-      }
-    }
-    return 'en';
-  }
+  static String _extractLanguage(String sn, String collection) =>
+      CardtraderService.languageFromSerial(sn, collection);
 
   @override
   Widget build(BuildContext context) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../models/card_model.dart';
 import '../models/album_model.dart';
@@ -9,6 +10,8 @@ import '../widgets/collection_summary.dart';
 import '../widgets/full_screen_gallery.dart';
 import '../widgets/card_dialogs.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_dialog.dart';
+import '../widgets/top_undo_bar.dart';
 import 'support_page.dart';
 import 'card_detail_page.dart';
 import '../services/language_service.dart';
@@ -36,6 +39,8 @@ class _CardListPageState extends State<CardListPage> {
   List<CardModel> _filteredCards = [];
   List<CardModel> _doppioniCards = [];
   List<CardModel> _filteredDoppioniCards = [];
+  /// Precomputed map: "serialNumber|rarity|catalogId" → total doppioni quantity
+  Map<String, int> _doppioniQtyMap = {};
   List<AlbumModel> _availableAlbums = [];
   bool _isGridView = false;
   bool _isLoading = true;
@@ -112,9 +117,19 @@ class _CardListPageState extends State<CardListPage> {
 
     }
 
+    final doppioniCards = data.where((c) => doppioniIds.contains(c.albumId)).toList();
+
+    // Precompute lookup map once — O(n) build, O(1) per-item access in the list
+    final doppioniMap = <String, int>{};
+    for (final c in doppioniCards) {
+      final key = '${c.serialNumber.toLowerCase()}|${c.rarity.toLowerCase()}|${c.catalogId ?? ''}';
+      doppioniMap[key] = (doppioniMap[key] ?? 0) + c.quantity;
+    }
+
     setState(() {
       _allCards = processedCards;
-      _doppioniCards = data.where((c) => doppioniIds.contains(c.albumId)).toList();
+      _doppioniCards = doppioniCards;
+      _doppioniQtyMap = doppioniMap;
       _availableAlbums = albums;
       _isLoading = false;
       _applyFilter(_searchController.text);
@@ -186,13 +201,16 @@ class _CardListPageState extends State<CardListPage> {
       if (delta <= 0) return;
       final int? selectedId = await showDialog<int>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Seleziona Album'),
+        builder: (ctx) => AppDialog(
+          title: 'Seleziona Album',
+          icon: Icons.book_outlined,
+          contentPadding: EdgeInsets.zero,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: _availableAlbums.map((album) => ListTile(
-              title: Text(album.name),
-              onTap: () => Navigator.pop(context, album.id),
+              title: Text(album.name, style: const TextStyle(color: AppColors.textPrimary)),
+              subtitle: Text('${album.currentCount}/${album.maxCapacity} carte', style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
+              onTap: () => Navigator.pop(ctx, album.id),
             )).toList(),
           ),
         ),
@@ -217,13 +235,13 @@ class _CardListPageState extends State<CardListPage> {
         if (!mounted) return;
         final proceed = await showDialog<bool>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Capacità Superata'),
-            content: Text('Supererà la capacità massima ($freshCount/${album.maxCapacity}). Procedere?'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
-              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Procedi')),
-            ],
+          builder: (_) => AppConfirmDialog(
+            title: 'Capacità Superata',
+            icon: Icons.warning_amber_rounded,
+            iconColor: AppColors.warning,
+            message: 'Supererà la capacità massima ($freshCount/${album.maxCapacity}). Procedere?',
+            confirmLabel: 'Procedi',
+            confirmColor: AppColors.warning,
           ),
         );
         if (proceed != true) return;
@@ -246,15 +264,11 @@ class _CardListPageState extends State<CardListPage> {
     _refreshCards();
   }
 
-  /// Returns the total quantity for a card: its own quantity + matching doppioni quantity
+  /// Returns the total quantity for a card: its own quantity + matching doppioni quantity.
+  /// Uses a precomputed map (O(1)) instead of a linear scan per item.
   int _getTotalQuantity(CardModel card) {
-    final doppioniQty = _doppioniCards
-      .where((c) =>
-        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
-        c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
-        (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId))
-      .fold(0, (sum, c) => sum + c.quantity);
-    return card.quantity + doppioniQty;
+    final key = '${card.serialNumber.toLowerCase()}|${card.rarity.toLowerCase()}|${card.catalogId ?? ''}';
+    return card.quantity + (_doppioniQtyMap[key] ?? 0);
   }
 
   Future<void> _confirmDelete(CardModel card) async {
@@ -264,7 +278,7 @@ class _CardListPageState extends State<CardListPage> {
     );
     _refreshCards();
     if (!mounted) return;
-    _TopUndoBar.show(
+    TopUndoBar.show(
       context: context,
       message: '"${card.name}" eliminata',
       onUndo: () async {
@@ -603,13 +617,18 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Widget _buildGrid() {
-    return GridView.builder(
+    return LayoutBuilder(builder: (context, constraints) {
+      final aw = constraints.maxWidth;
+      final cols = kIsWeb
+          ? (aw > 1100 ? 7 : aw > 860 ? 6 : aw > 640 ? 5 : 4)
+          : (aw > 500 ? 3 : 2);
+      return GridView.builder(
       padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: cols,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
-        childAspectRatio: 0.65, // Same as catalog
+        childAspectRatio: 0.65,
       ),
       itemCount: _filteredCards.length,
       itemBuilder: (context, index) {
@@ -626,6 +645,7 @@ class _CardListPageState extends State<CardListPage> {
         );
       },
     );
+    });
   }
 
   double _getEffectiveValue(CardModel card) {
@@ -638,151 +658,3 @@ class _CardListPageState extends State<CardListPage> {
 
 // ─── Top undo bar ─────────────────────────────────────────────────────────────
 
-class _TopUndoBar {
-  static OverlayEntry? _entry;
-
-  static void show({
-    required BuildContext context,
-    required String message,
-    required VoidCallback onUndo,
-  }) {
-    _entry?.remove();
-    _entry = null;
-
-    late final OverlayEntry entry;
-    entry = OverlayEntry(
-      builder: (_) => _UndoBarWidget(
-        message: message,
-        onUndo: () {
-          onUndo();
-          _dismiss();
-        },
-        onExpired: _dismiss,
-      ),
-    );
-    _entry = entry;
-    Overlay.of(context).insert(entry);
-  }
-
-  static void _dismiss() {
-    _entry?.remove();
-    _entry = null;
-  }
-}
-
-class _UndoBarWidget extends StatefulWidget {
-  final String message;
-  final VoidCallback onUndo;
-  final VoidCallback onExpired;
-
-  const _UndoBarWidget({
-    required this.message,
-    required this.onUndo,
-    required this.onExpired,
-  });
-
-  @override
-  State<_UndoBarWidget> createState() => _UndoBarWidgetState();
-}
-
-class _UndoBarWidgetState extends State<_UndoBarWidget> {
-  int _remaining = 5;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
-      if (_remaining <= 1) {
-        t.cancel();
-        widget.onExpired();
-      } else {
-        setState(() => _remaining--);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final topPad = MediaQuery.of(context).padding.top;
-    return Positioned(
-      top: topPad + kToolbarHeight + 8,
-      left: 16,
-      right: 16,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppColors.bgMedium,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.red.withValues(alpha: 0.45)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // Countdown ring
-              SizedBox(
-                width: 34,
-                height: 34,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    CircularProgressIndicator(
-                      value: _remaining / 5,
-                      strokeWidth: 2.5,
-                      color: Colors.red.shade400,
-                      backgroundColor: Colors.red.withValues(alpha: 0.15),
-                    ),
-                    Text(
-                      '$_remaining',
-                      style: TextStyle(
-                        color: Colors.red.shade300,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  widget.message,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: widget.onUndo,
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.orange.shade300,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                child: const Text(
-                  'Annulla',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

@@ -5,6 +5,8 @@ import '../models/album_model.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import '../pages/album_list_page.dart';
+import '../theme/app_colors.dart';
+import 'app_dialog.dart';
 import 'cardtrader_price_badge.dart' show CardtraderAllPricesSection;
 
 class CardDialogs {
@@ -21,74 +23,116 @@ class CardDialogs {
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(card.name),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('S/N: ${card.serialNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                const SizedBox(height: 8),
-                if (availableAlbums.isNotEmpty)
-                  DropdownButtonFormField<int>(
-                    initialValue: selectedAlbumId,
-                    decoration: const InputDecoration(labelText: 'Album', isDense: true),
-                    items: availableAlbums.map((album) {
-                      return DropdownMenuItem<int>(
-                        value: album.id,
-                        child: Text(album.name),
-                      );
-                    }).toList(),
-                    onChanged: (newId) async {
-                      if (newId == null || newId == selectedAlbumId) return;
-                      setDialogState(() => selectedAlbumId = newId);
-                      await DataRepository().updateCard(card.copyWith(albumId: newId));
-                      onAlbumChanged?.call();
-                    },
-                  )
-                else
-                  Text('Album: $albumName', style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Text('Quantità: ${card.quantity}'),
-                if (card.serialNumber.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  CardtraderAllPricesSection(
-                    collection: card.collection,
-                    serialNumber: card.serialNumber,
-                    cardName: card.name,
-                    rarity: card.rarity.isNotEmpty ? card.rarity : null,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AppDialog(
+          title: card.name,
+          icon: Icons.style_outlined,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'S/N: ${card.serialNumber}',
+                style: const TextStyle(
+                  color: AppColors.textHint,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (availableAlbums.isNotEmpty)
+                DropdownButtonFormField<int>(
+                  initialValue: selectedAlbumId,
+                  dropdownColor: AppColors.bgLight,
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'Album',
+                    labelStyle: const TextStyle(color: AppColors.textHint),
+                    isDense: true,
+                    filled: true,
+                    fillColor: AppColors.bgLight,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.blue, width: 1.5)),
                   ),
-                ],
-                Text('Tipo: ${card.type}'),
-                Text('Rarità: ${card.rarity}'),
-                if (cardDecks.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  const Text('Deck:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ...cardDecks.map((d) => Text(
-                    '• ${d['name']} (x${d['quantity']})',
-                    style: const TextStyle(fontSize: 13),
-                  )),
-                ],
+                  items: availableAlbums.map((album) {
+                    return DropdownMenuItem<int>(
+                      value: album.id,
+                      child: Text(album.name),
+                    );
+                  }).toList(),
+                  onChanged: (newId) async {
+                    if (newId == null || newId == selectedAlbumId) return;
+                    setDialogState(() => selectedAlbumId = newId);
+                    await DataRepository().updateCard(card.copyWith(albumId: newId));
+                    onAlbumChanged?.call();
+                  },
+                )
+              else
+                _infoRow('Album', albumName),
+              const SizedBox(height: 10),
+              _infoRow('Quantità', '${card.quantity}'),
+              if (card.serialNumber.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                const Text('Descrizione:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(card.description),
+                CardtraderAllPricesSection(
+                  collection: card.collection,
+                  serialNumber: card.serialNumber,
+                  cardName: card.name,
+                  rarity: card.rarity.isNotEmpty ? card.rarity : null,
+                  catalogId: card.catalogId,
+                ),
               ],
-            ),
+              const SizedBox(height: 6),
+              _infoRow('Tipo', card.type),
+              const SizedBox(height: 4),
+              _infoRow('Rarità', card.rarity),
+              if (cardDecks.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Text('Deck', style: TextStyle(color: AppColors.textHint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+                const SizedBox(height: 4),
+                ...cardDecks.map((d) => Text(
+                  '• ${d['name']} (x${d['quantity']})',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                )),
+              ],
+              if (card.description.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Text('Descrizione', style: TextStyle(color: AppColors.textHint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+                const SizedBox(height: 4),
+                Text(card.description, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4)),
+              ],
+            ],
           ),
           actions: [
-            TextButton(
+            OutlinedButton(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(ctx);
                 onDelete(card);
               },
-              child: const Text('Elimina', style: TextStyle(color: Colors.red)),
+              style: appDialogCancelStyle().copyWith(
+                foregroundColor: WidgetStatePropertyAll(AppColors.error),
+                side: const WidgetStatePropertyAll(BorderSide(color: AppColors.error, width: 0.8)),
+              ),
+              child: const Text('Elimina'),
             ),
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: appDialogConfirmStyle(),
+              child: const Text('Chiudi'),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  static Widget _infoRow(String label, String value) {
+    return Row(
+      children: [
+        Text('$label: ', style: const TextStyle(color: AppColors.textHint, fontSize: 13, fontWeight: FontWeight.w600)),
+        Expanded(child: Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13))),
+      ],
     );
   }
 
@@ -106,16 +150,21 @@ class CardDialogs {
     if (availableAlbums.isEmpty) {
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Nessun Album Trovato'),
-          content: const Text('Devi prima creare almeno un album per questa collezione prima di poter aggiungere delle carte.'),
+        builder: (ctx) => AppDialog(
+          title: 'Nessun Album',
+          icon: Icons.book_outlined,
+          iconColor: AppColors.warning,
+          content: const Text(
+            'Devi prima creare almeno un album per questa collezione prima di poter aggiungere delle carte.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
-            ElevatedButton(
+            OutlinedButton(onPressed: () => Navigator.pop(ctx), style: appDialogCancelStyle(), child: const Text('Chiudi')),
+            FilledButton(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(ctx);
                 Navigator.push(
-                  context,
+                  ctx,
                   MaterialPageRoute(
                     builder: (context) => AlbumListPage(
                       collectionName: collectionName,
@@ -496,16 +545,20 @@ class _AddCardDialogState extends State<_AddCardDialog> {
         if (!mounted) return;
         await showDialog<void>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Album pieno'),
+          builder: (ctx) => AppDialog(
+            title: 'Album pieno',
+            icon: Icons.layers_outlined,
+            iconColor: AppColors.warning,
             content: Text(
               '${targetAlbum.name} ha raggiunto la capacità massima '
               '($freshCount/${targetAlbum.maxCapacity}).\n\n'
               'Aumenta la capacità dell\'album oppure seleziona un altro album.',
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
             ),
             actions: [
-              TextButton(
+              FilledButton(
                 onPressed: () => Navigator.pop(ctx),
+                style: appDialogConfirmStyle(color: AppColors.warning),
                 child: const Text('OK'),
               ),
             ],

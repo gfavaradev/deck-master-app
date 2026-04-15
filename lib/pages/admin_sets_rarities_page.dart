@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/database_helper.dart';
+import '../services/firestore_service.dart';
 import '../services/admin_translation_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -78,7 +80,8 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
         actions: [
-          if (_tabController.index == 0) ...[
+          // Sync to Firestore uses SQLite — only available on mobile/desktop
+          if (!kIsWeb && _tabController.index == 0) ...[
             if (_syncing)
               const Padding(
                 padding: EdgeInsets.all(16),
@@ -127,6 +130,80 @@ class _CollectionSetsRarities extends StatelessWidget {
     required this.db,
   });
 
+  // ─── Firestore loaders (web fallback) ─────────────────────────────────────
+
+  static Future<List<Map<String, dynamic>>> _loadSetsFromFirestore(
+      String collectionKey, List<String> langs) async {
+    final cards = await FirestoreService().fetchCatalog(collectionKey);
+    final seen = <String, Map<String, dynamic>>{};
+
+    for (final card in cards) {
+      final sets = card['sets'];
+      if (sets is Map) {
+        // YuGiOh: sets keyed by language
+        final enEntry = sets['en'];
+        if (enEntry is Map) {
+          final setName = (enEntry['set_name'] as String? ?? '').trim();
+          final setId   = (enEntry['set_id']   as String? ?? '').trim();
+          if (setName.isEmpty) continue;
+          if (!seen.containsKey(setName)) {
+            final row = <String, dynamic>{'set_name': setName, 'set_code': setId};
+            for (final l in langs) {
+              final lEntry = sets[l];
+              row['set_name_$l'] = (lEntry is Map ? lEntry['set_name'] as String? : null) ?? '';
+            }
+            seen[setName] = row;
+          }
+        }
+      } else {
+        // Pokemon / One Piece: top-level set_id + set_name
+        final setId   = (card['set_id']   as String? ?? '').trim();
+        final setName = (card['set_name'] as String? ?? setId).trim();
+        if (setName.isEmpty) continue;
+        seen.putIfAbsent(setName, () => {'set_name': setName, 'set_code': setId});
+      }
+    }
+
+    final list = seen.values.toList();
+    list.sort((a, b) => (a['set_name'] as String).compareTo(b['set_name'] as String));
+    return list;
+  }
+
+  static Future<List<Map<String, dynamic>>> _loadRaritiesFromFirestore(
+      String collectionKey, List<String> langs) async {
+    final cards = await FirestoreService().fetchCatalog(collectionKey);
+    final seen = <String, Map<String, dynamic>>{};
+
+    for (final card in cards) {
+      final sets = card['sets'];
+      if (sets is Map) {
+        // YuGiOh
+        final enEntry = sets['en'];
+        if (enEntry is Map) {
+          final rarity = (enEntry['rarity'] as String? ?? '').trim();
+          if (rarity.isEmpty) continue;
+          if (!seen.containsKey(rarity)) {
+            final row = <String, dynamic>{'rarity': rarity};
+            for (final l in langs) {
+              final lEntry = sets[l];
+              row['rarity_$l'] = (lEntry is Map ? lEntry['rarity'] as String? : null) ?? '';
+            }
+            seen[rarity] = row;
+          }
+        }
+      } else {
+        // Pokemon / One Piece
+        final rarity = (card['rarity'] as String? ?? '').trim();
+        if (rarity.isEmpty) continue;
+        seen.putIfAbsent(rarity, () => {'rarity': rarity});
+      }
+    }
+
+    final list = seen.values.toList();
+    list.sort((a, b) => (a['rarity'] as String).compareTo(b['rarity'] as String));
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -144,25 +221,35 @@ class _CollectionSetsRarities extends StatelessWidget {
               children: [
                 _DataList(
                   key: ValueKey('${collectionKey}_sets'),
-                  loader: () => db.getDistinctSets(collectionKey),
+                  loader: kIsWeb
+                      ? () => _loadSetsFromFirestore(collectionKey, langs)
+                      : () => db.getDistinctSets(collectionKey),
                   langs: langs,
                   nameKey: 'set_name',
                   emptyMsg: 'Nessuna espansione trovata',
-                  onSave: (oldEn, newEn, translations) async {
-                    await db.renameSetName(collectionKey, oldEn, newEn);
-                    await db.updateSetTranslations(collectionKey, newEn, translations);
-                  },
+                  readOnly: kIsWeb,
+                  onSave: kIsWeb
+                      ? (_, a, b) async {}
+                      : (oldEn, newEn, translations) async {
+                          await db.renameSetName(collectionKey, oldEn, newEn);
+                          await db.updateSetTranslations(collectionKey, newEn, translations);
+                        },
                 ),
                 _DataList(
                   key: ValueKey('${collectionKey}_rarities'),
-                  loader: () => db.getDistinctRarities(collectionKey),
+                  loader: kIsWeb
+                      ? () => _loadRaritiesFromFirestore(collectionKey, langs)
+                      : () => db.getDistinctRarities(collectionKey),
                   langs: langs,
                   nameKey: 'rarity',
                   emptyMsg: 'Nessuna rarità trovata',
-                  onSave: (oldEn, newEn, translations) async {
-                    await db.renameRarity(collectionKey, oldEn, newEn);
-                    await db.updateRarityTranslations(collectionKey, newEn, translations);
-                  },
+                  readOnly: kIsWeb,
+                  onSave: kIsWeb
+                      ? (_, a, b) async {}
+                      : (oldEn, newEn, translations) async {
+                          await db.renameRarity(collectionKey, oldEn, newEn);
+                          await db.updateRarityTranslations(collectionKey, newEn, translations);
+                        },
                 ),
               ],
             ),
@@ -178,6 +265,7 @@ class _DataList extends StatefulWidget {
   final List<String> langs;
   final String nameKey;
   final String emptyMsg;
+  final bool readOnly;
   final Future<void> Function(String oldEnName, String newEnName, Map<String, String> translations) onSave;
 
   const _DataList({
@@ -187,6 +275,7 @@ class _DataList extends StatefulWidget {
     required this.nameKey,
     required this.emptyMsg,
     required this.onSave,
+    this.readOnly = false,
   });
 
   @override
@@ -319,12 +408,13 @@ class _DataListState extends State<_DataList> {
                 children: [
                   if (missing.isNotEmpty)
                     const Icon(Icons.warning_amber, size: 16, color: Colors.orange),
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    tooltip: 'Modifica traduzioni',
-                    onPressed: widget.langs.isEmpty ? null : () => _openEdit(row),
-                    color: Colors.deepPurple,
-                  ),
+                  if (!widget.readOnly)
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      tooltip: 'Modifica traduzioni',
+                      onPressed: widget.langs.isEmpty ? null : () => _openEdit(row),
+                      color: Colors.deepPurple,
+                    ),
                   const Icon(Icons.expand_more),
                 ],
               ),

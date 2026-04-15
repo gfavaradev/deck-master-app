@@ -101,8 +101,8 @@ class CardListItem extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: SizedBox(
-                    width: 40,
-                    height: 56,
+                    width: 52,
+                    height: 73,
                     child: card.imageUrl != null && card.imageUrl!.isNotEmpty
                         ? CachedNetworkImage(
                             imageUrl: card.imageUrl!,

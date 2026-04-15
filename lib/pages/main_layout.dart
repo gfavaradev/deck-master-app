@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_colors.dart';
@@ -17,6 +18,7 @@ import '../services/auth_service.dart';
 import '../services/background_download_service.dart';
 import '../services/data_repository.dart';
 import '../services/notification_service.dart';
+import '../services/review_service.dart';
 import '../services/sync_service.dart';
 import '../services/xp_service.dart';
 import '../widgets/banner_ad_widget.dart';
@@ -71,14 +73,17 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _currentCollectionKey = widget.collectionKey;
     _currentCollectionName = widget.collectionName;
     _currentUser = FirebaseAuth.instance.currentUser;
-    _checkAdmin();
-    _checkUnreadNotifications();
+    _checkAdminAndNotifications();
     XpService().syncFromFirestore();
     _levelUpSub = XpService().onLevelUp.listen(_onLevelUp);
     SyncService().startListening();
     // Backfill XP for cards added before the XP system existed (one-time, idempotent)
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) _repo.backfillXpFromExistingCards().catchError((_) {});
+    });
+    // Review prompt — shown after 7 days of use, then ogni 30 giorni se non completato
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) ReviewService.maybePrompt(context);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _checkPendingCatalogNavigation();
@@ -203,15 +208,18 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _checkAdmin() async {
-    final isAdmin = await _authService.isCurrentUserAdmin()
-        .timeout(const Duration(seconds: 8))
-        .catchError((_) => false);
-    if (mounted) {
-      setState(() {
-        _isAdmin = isAdmin;
-      });
-    }
+  Future<void> _checkAdminAndNotifications() async {
+    final results = await Future.wait([
+      _authService.isCurrentUserAdmin()
+          .timeout(const Duration(seconds: 8))
+          .catchError((_) => false),
+      unreadNotificationCount(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _isAdmin = results[0] as bool;
+      _unreadCount = results[1] as int;
+    });
   }
 
   Future<void> _checkUnreadNotifications() async {
@@ -450,6 +458,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final bool inCollection = _currentCollectionKey != null;
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isWide = screenWidth > 700;
 
     // IndexedStack keeps all in-collection pages alive so switching tab is instant (no reload)
     final Widget currentPage;
@@ -480,7 +490,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     } else {
       currentPage = _isAdmin
           ? const AdminCatalogBody()
-          : HomePageSimple(onCollectionSelected: _onCollectionSelected);
+          : HomePageSimple(
+              onCollectionSelected: _onCollectionSelected,
+              onCatalogRefreshNeeded: () async {
+                // Piccolo delay affinché il DB registri la nuova collezione sbloccata
+                await Future.delayed(const Duration(milliseconds: 800));
+                if (mounted) _checkCatalogUpdate();
+              },
+            );
     }
 
     String appBarTitle;
@@ -489,6 +506,48 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     } else {
       const titles = ['Home', 'Le mie Carte', 'Catalogo', 'Album', 'Deck'];
       appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';
+    }
+
+    // On wide screens wrap content with a max-width so it doesn't stretch edge-to-edge
+    Widget pageBody = isWide
+        ? Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1280),
+              child: currentPage,
+            ),
+          )
+        : currentPage;
+
+    // On wide screens inside a collection replace BottomNav with a NavigationRail on the left
+    if (isWide && inCollection) {
+      pageBody = Row(
+        children: [
+          NavigationRail(
+            backgroundColor: AppColors.bgMedium,
+            selectedIndex: _currentIndex - 1,
+            onDestinationSelected: (i) => setState(() => _currentIndex = i + 1),
+            labelType: NavigationRailLabelType.all,
+            selectedIconTheme: const IconThemeData(color: AppColors.gold),
+            selectedLabelTextStyle: const TextStyle(color: AppColors.gold, fontSize: 12),
+            unselectedLabelTextStyle: TextStyle(color: AppColors.textHint, fontSize: 12),
+            destinations: const [
+              NavigationRailDestination(icon: Icon(Icons.style), label: Text('Carte')),
+              NavigationRailDestination(icon: Icon(Icons.search), label: Text('Catalogo')),
+              NavigationRailDestination(icon: Icon(Icons.book), label: Text('Album')),
+              NavigationRailDestination(icon: Icon(Icons.deck), label: Text('Deck')),
+            ],
+          ),
+          const VerticalDivider(thickness: 1, width: 1),
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1280),
+                child: currentPage,
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
     return PopScope(
@@ -705,12 +764,12 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       ),
       body: Column(
         children: [
-          Expanded(child: currentPage),
-          const BannerAdWidget(),
+          Expanded(child: pageBody),
+          if (!kIsWeb) const BannerAdWidget(),
         ],
       ),
-      // Bottom nav only shown when inside a collection (Home, Carte, Catalogo, Album, Deck)
-      bottomNavigationBar: inCollection
+      // Bottom nav only shown on narrow screens inside a collection
+      bottomNavigationBar: (!isWide && inCollection)
           ? BottomNavigationBar(
               currentIndex: _currentIndex,
               type: BottomNavigationBarType.fixed,

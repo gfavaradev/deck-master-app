@@ -11,7 +11,7 @@ class LanguageService {
   static const Map<String, List<String>> collectionLanguages = {
     'yugioh':   ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'],
     'pokemon':  ['EN', 'IT', 'FR', 'DE', 'PT'],
-    'onepiece': [],
+    'onepiece': ['JP', 'EN', 'FR'],
   };
 
   /// Kept for backward compatibility — same as yugioh list.
@@ -24,6 +24,18 @@ class LanguageService {
     'DE': 'Deutsch',
     'PT': 'Português',
     'SP': 'Español',
+    'JP': '日本語',
+  };
+
+  /// Bandiere emoji per codice lingua.
+  static const Map<String, String> flagEmoji = {
+    'EN': '🇬🇧',
+    'IT': '🇮🇹',
+    'FR': '🇫🇷',
+    'DE': '🇩🇪',
+    'PT': '🇵🇹',
+    'SP': '🇪🇸',
+    'JP': '🇯🇵',
   };
 
   // Per-collection in-memory cache: avoids repeated SharedPreferences I/O

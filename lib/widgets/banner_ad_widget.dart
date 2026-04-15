@@ -1,13 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../services/ad_service.dart';
 import '../services/user_service.dart';
-import '../theme/app_colors.dart';
 
-/// Banner pubblicitario AdMob adattivo — si estende a tutta la larghezza dello schermo.
-/// Nascosto automaticamente per gli utenti Pro.
-/// Si auto-carica al mount e si auto-dispone all'unmount.
+/// Banner AdMob — nascosto per utenti Pro e su Web.
 class BannerAdWidget extends StatefulWidget {
   const BannerAdWidget({super.key});
 
@@ -17,40 +14,36 @@ class BannerAdWidget extends StatefulWidget {
 
 class _BannerAdWidgetState extends State<BannerAdWidget> {
   BannerAd? _bannerAd;
-  AdSize? _adSize;
-  bool _isPro = true; // default true: niente banner finché non sappiamo lo stato
+  bool _isAdLoaded = false;
+  bool _isPro = true; // default: nascosto finché non sappiamo lo stato
 
   @override
   void initState() {
     super.initState();
-    _checkPro();
+    _checkAndLoad();
   }
 
-  Future<void> _checkPro() async {
+  Future<void> _checkAndLoad() async {
     final user = await UserService().getCurrentUser();
     if (!mounted) return;
-    final isPro = user?.isPro ?? false;
-    setState(() => _isPro = isPro);
-    if (!isPro) _loadAd();
+    if (user?.isPro == true) {
+      setState(() => _isPro = true);
+      return;
+    }
+    setState(() => _isPro = false);
+    _loadAd();
   }
 
-  Future<void> _loadAd() async {
-    if (kIsWeb) return;
-    final width = MediaQuery.sizeOf(context).width.truncate();
-    final adSize = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width);
-    if (adSize == null || !mounted) return;
-
+  void _loadAd() {
     final ad = BannerAd(
       adUnitId: AdService.bannerAdUnitId,
-      size: adSize,
+      size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          if (mounted) setState(() => _adSize = adSize);
+        onAdLoaded: (_) {
+          if (mounted) setState(() => _isAdLoaded = true);
         },
-        onAdFailedToLoad: (ad, error) {
-          ad.dispose();
-        },
+        onAdFailedToLoad: (ad, _) => ad.dispose(),
       ),
     );
     ad.load();
@@ -65,12 +58,12 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isPro || _adSize == null || _bannerAd == null) return const SizedBox.shrink();
-    return Container(
+    if (kIsWeb || _isPro || !_isAdLoaded || _bannerAd == null) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
       width: double.infinity,
-      height: _adSize!.height.toDouble(),
-      color: AppColors.bgMedium,
-      alignment: Alignment.center,
+      height: _bannerAd!.size.height.toDouble(),
       child: AdWidget(ad: _bannerAd!),
     );
   }

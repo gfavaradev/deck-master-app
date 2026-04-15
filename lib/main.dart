@@ -7,7 +7,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/background_download_service.dart';
 import 'services/notification_service.dart';
 import 'services/ad_service.dart';
@@ -26,17 +25,17 @@ void main() async {
     systemNavigationBarContrastEnforced: false,
   ));
 
-  await dotenv.load(fileName: ".env");
-
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // AppCheck non blocca l'avvio — si attiva in background
-  FirebaseAppCheck.instance.activate(
-    providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
-    providerApple: const AppleDebugProvider(),
-  );
+  // AppCheck non blocca l'avvio — si attiva in background (solo su mobile)
+  if (!kIsWeb) {
+    FirebaseAppCheck.instance.activate(
+      providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+      providerApple: const AppleDebugProvider(),
+    );
+  }
 
   // Disabilita la persistence nativa di Firestore (usiamo SQLite come cache locale)
   FirebaseFirestore.instance.settings = const Settings(

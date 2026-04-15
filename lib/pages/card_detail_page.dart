@@ -4,24 +4,12 @@ import '../models/card_model.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_dialog.dart';
+import '../services/cardtrader_service.dart' show CardtraderService;
 import '../widgets/cardtrader_price_badge.dart' show CardtraderAllPricesSection;
 
-/// Extracts the CT language code from a serial number.
-String _langFromSerial(String sn, String collection) {
-  if (collection == 'yugioh') {
-    final m = RegExp(r'-([A-Za-z]{2})[A-Za-z0-9]').firstMatch(sn);
-    if (m != null) {
-      final code = m.group(1)!.toLowerCase();
-      return code == 'sp' ? 'es' : code;
-    }
-  } else if (collection == 'onepiece') {
-    final cn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
-    final m = RegExp(r'^([A-Za-z]{2})\d').firstMatch(cn);
-    if (m != null) return m.group(1)!.toLowerCase();
-    return 'ja';
-  }
-  return 'en';
-}
+String _langFromSerial(String sn, String collection) =>
+    CardtraderService.languageFromSerial(sn, collection);
 
 Color _rarityColor(String rarity) {
   final code = rarity.toUpperCase();
@@ -139,23 +127,11 @@ class _CardDetailPageState extends State<CardDetailPage> {
   Future<void> _delete() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgLight,
-        title: const Text('Elimina carta', style: TextStyle(color: AppColors.textPrimary)),
-        content: Text(
-          'Eliminare "${_card.name}" dalla collezione?',
-          style: const TextStyle(color: AppColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annulla'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Elimina', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
+      builder: (_) => AppConfirmDialog(
+        title: 'Elimina carta',
+        icon: Icons.delete_outline,
+        message: 'Eliminare "${_card.name}" dalla collezione?',
+        confirmLabel: 'Elimina',
       ),
     );
     if (confirm != true || !mounted) return;

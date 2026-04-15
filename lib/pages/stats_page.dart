@@ -60,10 +60,11 @@ class _StatsPageState extends State<StatsPage> {
     'onepiece': 'One Piece TCG',
   };
 
-  static const _collectionColors = {
-    'yugioh': Colors.purple,
-    'pokemon': Colors.amber,
-    'onepiece': Colors.red,
+  static final _collectionColors = {
+    'yugioh':   AppColors.yugiohAccent,
+    'pokemon':  AppColors.pokemonAccent,
+    'onepiece': AppColors.onepieceAccent,
+    'magic':    AppColors.magicAccent,
   };
 
   @override

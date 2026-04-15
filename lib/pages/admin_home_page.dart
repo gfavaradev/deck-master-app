@@ -1,5 +1,4 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/admin_catalog_service.dart';
 import '../services/admin_translation_service.dart';
@@ -623,22 +622,22 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         return [
           _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da YGOPRODeck API', _downloadFull),
           _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove (incrementale)', _downloadIncremental),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', kIsWeb ? null : _migrateImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', _migrateImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set IT/FR/DE/PT/SP da EN', _fillMissingSetsYugioh),
           _StepDef(Icons.translate, 'Scarica Traduzioni', 'Nomi e descrizioni ufficiali', _translateMissingYugioh),
         ];
       case 'onepiece':
         return [
           _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da OPTCG API', _downloadFullOnePiece),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', kIsWeb ? null : _migrateOnePieceImages),
-          _StepDef(Icons.refresh, 'Ri-migra Tutto', 'Forza ri-migrazione di tutte le immagini', kIsWeb ? null : _forceMigrateOnePieceImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', _migrateOnePieceImages),
+          _StepDef(Icons.refresh, 'Ri-migra Tutto', 'Forza ri-migrazione di tutte le immagini', _forceMigrateOnePieceImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsOnePiece),
         ];
       case 'pokemon':
         return [
           _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da pokemontcg.io', _downloadFullPokemon),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', kIsWeb ? null : _migratePokemonImages),
-          _StepDef(Icons.refresh, 'Ri-migra Tutto', 'Forza ri-migrazione di tutte le immagini', kIsWeb ? null : _forceMigratePokemonImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', _migratePokemonImages),
+          _StepDef(Icons.refresh, 'Ri-migra Tutto', 'Forza ri-migrazione di tutte le immagini', _forceMigratePokemonImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsPokemon),
         ];
       default:

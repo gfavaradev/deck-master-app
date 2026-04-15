@@ -4,16 +4,20 @@ import '../theme/app_colors.dart';
 
 /// Gallery a schermo intero con swipe orizzontale tra immagini.
 /// Supporta pinch-to-zoom per carta: quando zoomata il PageView è disabilitato.
+/// [onCardTap]: se fornito, dopo aver chiuso la gallery viene chiamato con
+/// l'indice corrente (es. per aprire il dettaglio carta dal catalogo).
 class FullScreenGallery extends StatefulWidget {
   final List<String?> imageUrls;
   final List<String> names;
   final int initialIndex;
+  final ValueChanged<int>? onCardTap;
 
   const FullScreenGallery({
     super.key,
     required this.imageUrls,
     required this.names,
     required this.initialIndex,
+    this.onCardTap,
   });
 
   @override
@@ -88,7 +92,10 @@ class _FullScreenGalleryState extends State<FullScreenGallery> {
               final tc = _controllerFor(index);
               return GestureDetector(
                 onTap: () {
-                  if (!_isZoomed) Navigator.pop(context);
+                  if (!_isZoomed) {
+                    Navigator.pop(context);
+                    widget.onCardTap?.call(_currentIndex);
+                  }
                 },
                 behavior: HitTestBehavior.opaque,
                 child: Center(

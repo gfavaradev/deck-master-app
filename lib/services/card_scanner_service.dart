@@ -2,7 +2,6 @@ import 'dart:convert';
 // google_mlkit_text_recognition disabled for simulator build
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'data_repository.dart';
 
 /// Result from a card scan attempt.
@@ -86,7 +85,7 @@ class CardScannerService {
 
   Future<CardScanResult?> _tryGemini(XFile image,
       {String? collectionHint}) async {
-    final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+    const apiKey = String.fromEnvironment('GEMINI_API_KEY');
     if (apiKey.isEmpty || apiKey == 'your_gemini_api_key_here') {
 
       return null;

@@ -396,6 +396,12 @@ class DataRepository {
   // ============================================================
 
   Future<int> insertAlbum(AlbumModel album) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return -1;
+      final firestoreId = await _firestoreService.insertAlbum(userId, album);
+      return _webGetAlbumLocalId(firestoreId);
+    }
     final localId = await _dbHelper.insertAlbum(album);
     final savedAlbum = album.copyWith(id: localId);
     await _syncService.pushAlbumChange(savedAlbum, 'insert');
@@ -404,10 +410,37 @@ class DataRepository {
   }
 
   Future<List<AlbumModel>> getAlbumsByCollection(String collection) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return [];
+      final rawAlbums = await _firestoreService.getAlbums(userId);
+      return rawAlbums
+          .where((a) => a['collection'] == collection)
+          .map((a) {
+        final fid = a['firestoreId'] as String;
+        return AlbumModel(
+          id: _webGetAlbumLocalId(fid),
+          firestoreId: fid,
+          name: a['name'] ?? '',
+          collection: a['collection'] ?? '',
+          maxCapacity: a['maxCapacity'] ?? 100,
+        );
+      }).toList();
+    }
     return await _dbHelper.getAlbumsByCollection(collection);
   }
 
   Future<int> updateAlbum(AlbumModel album) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return 0;
+      final firestoreId = album.firestoreId ??
+          (album.id != null ? _webAlbumFirestoreIdById[album.id!] : null);
+      if (firestoreId != null) {
+        await _firestoreService.updateAlbum(userId, firestoreId, album);
+      }
+      return 0;
+    }
     final result = await _dbHelper.updateAlbum(album);
     _syncService.notifyLocalChange('albums');
     // Re-read to get firestoreId
@@ -418,6 +451,17 @@ class DataRepository {
   }
 
   Future<int> deleteAlbum(int id) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return 0;
+      final firestoreId = _webAlbumFirestoreIdById[id];
+      if (firestoreId != null) {
+        await _firestoreService.deleteAlbum(userId, firestoreId);
+        _webAlbumFirestoreIdById.remove(id);
+        _webAlbumIdByFirestoreId.remove(firestoreId);
+      }
+      return 0;
+    }
     // Get firestoreId before deleting
     final firestoreId = await _dbHelper.getFirestoreId('albums', id);
     final result = await _dbHelper.deleteAlbum(id);
@@ -434,6 +478,15 @@ class DataRepository {
   // ============================================================
 
   Future<int> insertCard(CardModel card) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return -1;
+      final albumFirestoreId = _webAlbumFirestoreIdById[card.albumId];
+      final firestoreId = await _firestoreService.insertCard(
+        userId, card, albumFirestoreId: albumFirestoreId,
+      );
+      return _webGetCardLocalId(firestoreId);
+    }
     final localId = await _dbHelper.insertCard(card);
     // Apply CT price BEFORE notifying the UI so the first refresh already
     // shows the correct price instead of a blank value.
@@ -448,6 +501,19 @@ class DataRepository {
   }
 
   Future<int> updateCard(CardModel card) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return 0;
+      final firestoreId = card.firestoreId ??
+          (card.id != null ? _webCardFirestoreIdById[card.id!] : null);
+      if (firestoreId != null) {
+        final albumFirestoreId = _webAlbumFirestoreIdById[card.albumId];
+        await _firestoreService.updateCard(
+          userId, firestoreId, card, albumFirestoreId: albumFirestoreId,
+        );
+      }
+      return 0;
+    }
     final result = await _dbHelper.updateCard(card);
     // Re-read to get firestoreId
     _syncService.notifyLocalChange('cards');
@@ -458,6 +524,17 @@ class DataRepository {
   }
 
   Future<int> deleteCard(int id) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return 0;
+      final firestoreId = _webCardFirestoreIdById[id];
+      if (firestoreId != null) {
+        await _firestoreService.deleteCard(userId, firestoreId);
+        _webCardFirestoreIdById.remove(id);
+        _webCardIdByFirestoreId.remove(firestoreId);
+      }
+      return 0;
+    }
     final firestoreId = await _dbHelper.getFirestoreId('cards', id);
     final result = await _dbHelper.deleteCard(id);
     _syncService.notifyLocalChange('cards');
@@ -479,22 +556,82 @@ class DataRepository {
   }
 
   Future<List<CardModel>> getCardsByCollection(String collection) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return [];
+      final rawCards = await _firestoreService.getCards(userId);
+      return rawCards
+          .where((c) => c['collection'] == collection)
+          .map((c) {
+        final fid = c['firestoreId'] as String;
+        final albumFid = c['albumFirestoreId'] as String?;
+        final albumLocalId = (albumFid != null && albumFid.isNotEmpty)
+            ? _webGetAlbumLocalId(albumFid)
+            : (c['albumId'] as int? ?? -1);
+        // For YuGiOh, Firebase Storage URLs fail CORS on web — use ygoprodeck CDN
+        String? imageUrl = c['imageUrl'] as String?;
+        if (collection == 'yugioh' &&
+            (imageUrl == null ||
+             imageUrl.isEmpty ||
+             imageUrl.contains('firebasestorage'))) {
+          final cid = c['catalogId']?.toString();
+          if (cid != null && cid.isNotEmpty) {
+            imageUrl = 'https://images.ygoprodeck.com/images/cards/$cid.jpg';
+          }
+        }
+        return CardModel(
+          id: _webGetCardLocalId(fid),
+          firestoreId: fid,
+          catalogId: c['catalogId']?.toString(),
+          name: c['name'] ?? '',
+          serialNumber: c['serialNumber'] ?? '',
+          collection: c['collection'] ?? '',
+          albumId: albumLocalId,
+          type: c['type'] ?? '',
+          rarity: c['rarity'] ?? '',
+          description: c['description'] ?? '',
+          quantity: c['quantity'] as int? ?? 1,
+          value: (c['value'] as num?)?.toDouble() ?? 0.0,
+          imageUrl: imageUrl,
+        );
+      }).toList();
+    }
     return await _dbHelper.getCardsByCollection(collection);
   }
 
   Future<Map<String, double>> getCollectionCompletions() async {
+    if (kIsWeb) return {};
     return await _dbHelper.getCollectionCompletions();
   }
 
   Future<List<CardModel>> getCardsWithCatalog(String collection) async {
+    if (kIsWeb) {
+      // On web there is no local catalog to join against; return user cards directly.
+      return getCardsByCollection(collection);
+    }
     return await _dbHelper.getCardsWithCatalog(collection);
   }
 
   Future<List<CardModel>> findOwnedInstances(String collection, String name, String serialNumber, String rarity) async {
+    if (kIsWeb) {
+      final all = await getCardsByCollection(collection);
+      return all.where((c) =>
+        c.serialNumber.toLowerCase() == serialNumber.toLowerCase() &&
+        c.rarity.toLowerCase() == rarity.toLowerCase()
+      ).toList();
+    }
     return await _dbHelper.findOwnedInstances(collection, name, serialNumber, rarity);
   }
 
   Future<int> getCardCountByAlbum(int albumId) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return 0;
+      final albumFid = _webAlbumFirestoreIdById[albumId];
+      if (albumFid == null) return 0;
+      final rawCards = await _firestoreService.getCards(userId);
+      return rawCards.where((c) => c['albumFirestoreId'] == albumFid).length;
+    }
     return await _dbHelper.getCardCountByAlbum(albumId);
   }
 
@@ -810,7 +947,32 @@ class DataRepository {
   /// In-memory cache for web catalog, keyed by language code.
   static final Map<String, List<Map<String, dynamic>>> _webCatalogCache = {};
 
+  /// Web-only in-memory mappings between Firestore doc IDs and fake local int IDs.
+  /// These are session-scoped (reset on page refresh) and allow web paths to
+  /// use the same int-keyed APIs as SQLite paths without touching the database.
+  static final Map<String, int> _webAlbumIdByFirestoreId = {};
+  static final Map<int, String> _webAlbumFirestoreIdById = {};
+  static int _webAlbumIdCounter = 1;
+  static final Map<String, int> _webCardIdByFirestoreId = {};
+  static final Map<int, String> _webCardFirestoreIdById = {};
+  static int _webCardIdCounter = 1;
+
+  static int _webGetAlbumLocalId(String firestoreId) =>
+      _webAlbumIdByFirestoreId.putIfAbsent(firestoreId, () {
+        final id = _webAlbumIdCounter++;
+        _webAlbumFirestoreIdById[id] = firestoreId;
+        return id;
+      });
+
+  static int _webGetCardLocalId(String firestoreId) =>
+      _webCardIdByFirestoreId.putIfAbsent(firestoreId, () {
+        final id = _webCardIdCounter++;
+        _webCardFirestoreIdById[id] = firestoreId;
+        return id;
+      });
+
   Future<List<Map<String, dynamic>>> getCatalogCards(String collection, {String? query}) async {
+    if (kIsWeb) return [];
     return await _dbHelper.getCatalogCards(collection, query: query);
   }
 
@@ -886,6 +1048,7 @@ class DataRepository {
       final bool isLocalized = langSets is List && langSets.isNotEmpty;
 
       final cardId = card['id'];
+      // Always use ygoprodeck CDN — Firebase Storage URLs fail CORS on web
       final artworkUrl = 'https://images.ygoprodeck.com/images/cards/$cardId.jpg';
 
       for (final set in setsToShow.cast<Map<String, dynamic>>()) {
@@ -927,39 +1090,58 @@ class DataRepository {
   }
 
   Future<List<Map<String, dynamic>>> getYugiohCardPrints(int cardId, {required String language}) async {
+    if (kIsWeb) return [];
     return await _dbHelper.getYugiohCardPrints(cardId, language: language);
   }
 
   Future<List<Map<String, dynamic>>> getOnepieceCardPrints(int cardId) async {
+    if (kIsWeb) return [];
     return await _dbHelper.getOnepieceCardPrints(cardId);
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCardPrints(int cardId, {required String language}) async {
+    if (kIsWeb) return [];
     return await _dbHelper.getPokemonCardPrints(cardId, language: language);
   }
 
   Future<List<Map<String, dynamic>>> getCardSets(String cardId) async {
+    if (kIsWeb) return [];
     return await _dbHelper.getCardSets(cardId);
   }
 
-  Future<List<Map<String, dynamic>>> getSetStats(String collection, {String lang = 'en'}) =>
-      _dbHelper.getSetStats(collection, lang: lang);
+  Future<List<Map<String, dynamic>>> getSetStats(String collection, {String lang = 'en'}) async {
+    if (kIsWeb) return [];
+    return _dbHelper.getSetStats(collection, lang: lang);
+  }
 
-  Future<List<Map<String, dynamic>>> getSetDetail(String collection, String setIdentifier, {String lang = 'en'}) =>
-      _dbHelper.getSetDetail(collection, setIdentifier, lang: lang);
+  Future<List<Map<String, dynamic>>> getSetDetail(String collection, String setIdentifier, {String lang = 'en'}) async {
+    if (kIsWeb) return [];
+    return _dbHelper.getSetDetail(collection, setIdentifier, lang: lang);
+  }
 
-  Future<Map<String, dynamic>?> checkSetCompletion(String collection, String serialNumber) =>
-      _dbHelper.checkSetCompletion(collection, serialNumber);
+  Future<Map<String, dynamic>?> checkSetCompletion(String collection, String serialNumber) async {
+    if (kIsWeb) return null;
+    return _dbHelper.checkSetCompletion(collection, serialNumber);
+  }
 
-  Future<void> moveSetCardsToAlbum(String collection, String setIdentifier, int albumId) =>
-      _dbHelper.moveSetCardsToAlbum(collection, setIdentifier, albumId);
+  Future<void> moveSetCardsToAlbum(String collection, String setIdentifier, int albumId) async {
+    if (kIsWeb) return;
+    return _dbHelper.moveSetCardsToAlbum(collection, setIdentifier, albumId);
+  }
 
   Future<int> getCatalogCount(String collection) async {
+    if (kIsWeb) return 0;
     return await _dbHelper.getCatalogCount(collection);
   }
 
   Future<int> getYugiohCatalogCount() async {
+    if (kIsWeb) return 0;
     return await _dbHelper.getYugiohCatalogCount();
+  }
+
+  Future<Set<String>> getAvailableCatalogLanguages(String collectionKey) async {
+    if (kIsWeb) return {'EN'};
+    return await _dbHelper.getAvailableCatalogLanguages(collectionKey);
   }
 
   // ============================================================
@@ -993,7 +1175,25 @@ class DataRepository {
   // Decks (write-through: SQLite + Firestore)
   // ============================================================
 
+  // Web-only deck ID mappings (session-scoped)
+  static final Map<String, int> _webDeckIdByFirestoreId = {};
+  static final Map<int, String> _webDeckFirestoreIdById = {};
+  static int _webDeckIdCounter = 1;
+
+  static int _webGetDeckLocalId(String firestoreId) =>
+      _webDeckIdByFirestoreId.putIfAbsent(firestoreId, () {
+        final id = _webDeckIdCounter++;
+        _webDeckFirestoreIdById[id] = firestoreId;
+        return id;
+      });
+
   Future<int> insertDeck(String name, String collection) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return -1;
+      final firestoreId = await _firestoreService.insertDeck(userId, name, collection);
+      return _webGetDeckLocalId(firestoreId);
+    }
     final localId = await _dbHelper.insertDeck(name, collection);
     _syncService.notifyLocalChange('decks');
     // Push to Firestore
@@ -1019,10 +1219,37 @@ class DataRepository {
   }
 
   Future<List<Map<String, dynamic>>> getDecksByCollection(String collection) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return [];
+      final rawDecks = await _firestoreService.getDecks(userId);
+      return rawDecks
+          .where((d) => d['collection'] == collection)
+          .map((d) {
+        final fid = d['firestoreId'] as String;
+        return {
+          'id': _webGetDeckLocalId(fid),
+          'firestoreId': fid,
+          'name': d['name'] ?? '',
+          'collection': d['collection'] ?? '',
+        };
+      }).toList();
+    }
     return await _dbHelper.getDecksByCollection(collection);
   }
 
   Future<int> deleteDeck(int id) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      if (userId == null) return 0;
+      final firestoreId = _webDeckFirestoreIdById[id];
+      if (firestoreId != null) {
+        await _firestoreService.deleteDeck(userId, firestoreId);
+        _webDeckFirestoreIdById.remove(id);
+        _webDeckIdByFirestoreId.remove(firestoreId);
+      }
+      return 0;
+    }
     final firestoreId = await _dbHelper.getFirestoreId('decks', id);
     final result = await _dbHelper.deleteDeck(id);
     _syncService.notifyLocalChange('decks');
@@ -1033,6 +1260,7 @@ class DataRepository {
   }
 
   Future<void> addCardToDeck(int deckId, int cardId, int quantity) async {
+    if (kIsWeb) return; // Deck card editing not yet supported on web.
     await _dbHelper.addCardToDeck(deckId, cardId, quantity);
     // Sync deck card addition
     if (await _syncService.canSync()) {
@@ -1049,18 +1277,28 @@ class DataRepository {
   }
 
   Future<List<Map<String, dynamic>>> getDeckCards(int deckId) async {
+    if (kIsWeb) return [];
     return await _dbHelper.getDeckCards(deckId);
   }
 
   Future<List<Map<String, dynamic>>> getDecksForCard(int cardId) async {
+    if (kIsWeb) return [];
     return await _dbHelper.getDecksForCard(cardId);
   }
 
   Future<Map<String, dynamic>?> getCardExtraInfo(
-          String collection, String? catalogId) =>
-      _dbHelper.getCardExtraInfo(collection, catalogId);
+      String collection, String? catalogId) async {
+    if (kIsWeb) return null;
+    return _dbHelper.getCardExtraInfo(collection, catalogId);
+  }
+
+  Future<void> decrementCardInDeck(int deckId, int cardId) async {
+    if (kIsWeb) return;
+    await _dbHelper.decrementCardInDeck(deckId, cardId);
+  }
 
   Future<void> removeCardFromDeck(int deckId, int cardId) async {
+    if (kIsWeb) return; // Deck card editing not yet supported on web.
     await _dbHelper.removeCardFromDeck(deckId, cardId);
     // Sync deck card removal
     if (await _syncService.canSync()) {
@@ -1081,10 +1319,12 @@ class DataRepository {
   // ============================================================
 
   Future<void> syncOnLogin() async {
+    if (kIsWeb) return; // On web, data is always read directly from Firestore.
     await _syncService.syncOnLogin();
   }
 
   Future<void> fullSync() async {
+    if (kIsWeb) return; // On web, data is always read directly from Firestore.
     // Push any local pending changes first, then restore the full cloud state.
     // Timeout totale 30s — se offline fallisce silenziosamente senza bloccare.
     await _syncService.flushPendingQueue()
@@ -1098,12 +1338,14 @@ class DataRepository {
   /// Deduplicate local data, wipe Firestore, re-upload clean state.
   /// Use when the user sees doubled cards/albums/decks.
   Future<void> resetAndResync({void Function(String)? onStatus}) async {
+    if (kIsWeb) return; // Not applicable on web.
     await _syncService.resetAndResync(onStatus: onStatus);
   }
 
   /// Backfill XP from all existing cards (one-time, idempotent via SharedPreferences flag).
   /// Necessary for users who had cards before the XP system was introduced.
   Future<void> backfillXpFromExistingCards() async {
+    if (kIsWeb) return; // XP backfill uses SQLite; not applicable on web.
     const backfillKey = 'xp_backfill_done_v1';
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(backfillKey) == true) return;
@@ -1278,11 +1520,102 @@ class DataRepository {
 
   Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
     String? query,
+    String language = 'EN',
     int limit = 60,
     int offset = 0,
   }) async {
-    if (kIsWeb) return [];
-    return await _dbHelper.getOnepieceCatalogCards(query: query, limit: limit, offset: offset);
+    if (kIsWeb) {
+      return _getOnepieceCatalogCardsWeb(query: query, limit: limit, offset: offset);
+    }
+    return await _dbHelper.getOnepieceCatalogCards(
+        query: query, language: language, limit: limit, offset: offset);
+  }
+
+  Future<List<Map<String, dynamic>>> _getOnepieceCatalogCardsWeb({
+    String? query,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    const cacheKey = 'onepiece';
+    if (!_webCatalogCache.containsKey(cacheKey)) {
+      final firestoreCards = await _firestoreService.fetchCatalog(CatalogConstants.onepiece);
+      _webCatalogCache[cacheKey] = _buildOnepieceWebRows(firestoreCards);
+    }
+
+    var rows = _webCatalogCache[cacheKey]!;
+
+    if (query != null && query.isNotEmpty) {
+      final q = query.toLowerCase();
+      rows = rows.where((r) {
+        final name = (r['name'] ?? '').toString().toLowerCase();
+        final setCode = (r['setCode'] ?? '').toString().toLowerCase();
+        final setName = (r['setName'] ?? '').toString().toLowerCase();
+        return name.contains(q) || setCode.contains(q) || setName.contains(q);
+      }).toList();
+    }
+
+    if (offset >= rows.length) return [];
+    return rows.sublist(offset, (offset + limit).clamp(0, rows.length));
+  }
+
+  static List<Map<String, dynamic>> _buildOnepieceWebRows(
+    List<Map<String, dynamic>> cards,
+  ) {
+    final rows = <Map<String, dynamic>>[];
+    int idCounter = 1;
+    for (final card in cards) {
+      final prints = card['prints'];
+      final List<dynamic> printList = prints is List ? prints : [];
+      final cardArtwork = card['imageUrl'] as String? ?? card['image_url'] as String?;
+
+      if (printList.isEmpty) {
+        rows.add({
+          'id': idCounter++,
+          'name': card['name'] ?? '',
+          'card_type': card['card_type'] ?? '',
+          'color': card['color'] ?? '',
+          'cost': card['cost'],
+          'power': card['power'],
+          'setCode': '',
+          'localizedSetCode': '',
+          'setId': '',
+          'setName': '',
+          'localizedSetName': '',
+          'rarity': '',
+          'setRarity': '',
+          'localizedRarity': '',
+          'artwork': cardArtwork,
+          'collection': 'onepiece',
+          'isOwned': 0,
+        });
+        continue;
+      }
+
+      for (final p in printList.cast<Map<String, dynamic>>()) {
+        final artwork = p['artwork'] as String? ?? cardArtwork;
+        rows.add({
+          'id': card['id'] ?? idCounter,
+          'name': card['name'] ?? '',
+          'card_type': card['card_type'] ?? '',
+          'color': card['color'] ?? '',
+          'cost': card['cost'],
+          'power': card['power'],
+          'setCode': p['card_set_id'] ?? '',
+          'localizedSetCode': p['card_set_id'] ?? '',
+          'setId': p['set_id'] ?? '',
+          'setName': p['set_name'] ?? '',
+          'localizedSetName': p['set_name'] ?? '',
+          'rarity': p['rarity'] ?? card['rarity'] ?? '',
+          'setRarity': p['rarity'] ?? '',
+          'localizedRarity': p['rarity'] ?? '',
+          'artwork': artwork,
+          'collection': 'onepiece',
+          'isOwned': 0,
+        });
+        idCounter++;
+      }
+    }
+    return rows;
   }
 
   // ============================================================
@@ -1422,13 +1755,97 @@ class DataRepository {
     int limit = 60,
     int offset = 0,
   }) async {
-    if (kIsWeb) return [];
+    if (kIsWeb) {
+      return _getPokemonCatalogCardsWeb(query: query, limit: limit, offset: offset);
+    }
     return await _dbHelper.getPokemonCatalogCards(
       query: query,
       language: language,
       limit: limit,
       offset: offset,
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _getPokemonCatalogCardsWeb({
+    String? query,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    const cacheKey = 'pokemon';
+    if (!_webCatalogCache.containsKey(cacheKey)) {
+      final firestoreCards = await _firestoreService.fetchCatalog(CatalogConstants.pokemon);
+      _webCatalogCache[cacheKey] = _buildPokemonWebRows(firestoreCards);
+    }
+
+    var rows = _webCatalogCache[cacheKey]!;
+
+    if (query != null && query.isNotEmpty) {
+      final q = query.toLowerCase();
+      rows = rows.where((r) {
+        final name = (r['name'] ?? '').toString().toLowerCase();
+        final setCode = (r['setCode'] ?? '').toString().toLowerCase();
+        final setName = (r['setName'] ?? '').toString().toLowerCase();
+        return name.contains(q) || setCode.contains(q) || setName.contains(q);
+      }).toList();
+    }
+
+    if (offset >= rows.length) return [];
+    return rows.sublist(offset, (offset + limit).clamp(0, rows.length));
+  }
+
+  static List<Map<String, dynamic>> _buildPokemonWebRows(
+    List<Map<String, dynamic>> cards,
+  ) {
+    final rows = <Map<String, dynamic>>[];
+    int idCounter = 1;
+    for (final card in cards) {
+      final prints = card['prints'];
+      final List<dynamic> printList = prints is List ? prints : [];
+      final cardArtwork = card['imageUrl'] as String? ?? card['image_url'] as String?;
+
+      if (printList.isEmpty) {
+        rows.add({
+          'id': card['id'] ?? idCounter++,
+          'apiId': card['api_id'] ?? '',
+          'name': card['name'] ?? '',
+          'type': card['supertype'] ?? '',
+          'rarity': card['rarity'] ?? '',
+          'setCode': '',
+          'localizedSetCode': '',
+          'setName': card['set_name'] ?? '',
+          'localizedSetName': card['set_name'] ?? '',
+          'setRarity': '',
+          'localizedRarity': '',
+          'artwork': cardArtwork,
+          'collection': 'pokemon',
+          'isOwned': 0,
+        });
+        continue;
+      }
+
+      for (final p in printList.cast<Map<String, dynamic>>()) {
+        final artwork = p['artwork'] as String? ?? cardArtwork;
+        final setCode = p['set_code'] ?? p['card_set_id'] ?? '';
+        rows.add({
+          'id': card['id'] ?? idCounter,
+          'apiId': card['api_id'] ?? '',
+          'name': card['name'] ?? '',
+          'type': card['supertype'] ?? '',
+          'rarity': card['rarity'] ?? '',
+          'setCode': setCode,
+          'localizedSetCode': setCode,
+          'setName': p['set_name'] ?? card['set_name'] ?? '',
+          'localizedSetName': p['set_name'] ?? card['set_name'] ?? '',
+          'setRarity': p['rarity'] ?? card['rarity'] ?? '',
+          'localizedRarity': p['rarity'] ?? card['rarity'] ?? '',
+          'artwork': artwork,
+          'collection': 'pokemon',
+          'isOwned': 0,
+        });
+        idCounter++;
+      }
+    }
+    return rows;
   }
 
   /// Metodo unificato: instrada alla query corretta in base alla collezione.
@@ -1450,6 +1867,7 @@ class DataRepository {
     } else if (collection == 'onepiece') {
       return getOnepieceCatalogCards(
         query: query,
+        language: language,
         limit: limit,
         offset: offset,
       );

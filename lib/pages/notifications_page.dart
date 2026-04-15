@@ -3,9 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../constants/app_constants.dart';
 import '../services/database_helper.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_dialog.dart';
 
 // ─── SharedPreferences keys ───────────────────────────────────────────────────
 const _kHistory = 'notif_history';
@@ -156,7 +158,8 @@ Future<List<_NotifEntry>> _detectAndPersistNewNotifs(
   }
   await prefs.setString(_kLastSeenAppVersion, currentVersion);
 
-  // ── Catalogo Yu-Gi-Oh ───────────────────────────────────────────────────────
+  // ── Catalogo Yu-Gi-Oh ── (only on native; web has no local SQLite catalog) ──
+  if (kIsWeb) return history;
   final db = DatabaseHelper();
   final yugiohMeta = await db.getCatalogMetadata('yugioh');
   if (yugiohMeta != null) {
@@ -376,21 +379,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _deleteAll() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cancella tutto'),
-        content: const Text('Vuoi eliminare tutte le notifiche?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annulla'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Elimina'),
-          ),
-        ],
+      builder: (_) => const AppConfirmDialog(
+        title: 'Cancella tutto',
+        icon: Icons.notifications_off_outlined,
+        message: 'Vuoi eliminare tutte le notifiche?',
+        confirmLabel: 'Elimina',
       ),
     );
     if (confirmed != true || !mounted) return;

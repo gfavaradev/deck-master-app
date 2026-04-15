@@ -5,8 +5,9 @@ import '../services/export_service.dart';
 import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
-import '../services/language_service.dart';
+import '../models/collection_model.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/user_avatar_widget.dart';
 import 'main_layout.dart';
 import 'login_page.dart';
@@ -34,8 +35,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _notifAppUpdates = true;
   bool _notifCatalogUpdates = true;
   final NotificationService _notifService = NotificationService();
-  String _selectedLanguage = 'EN';
-
   bool _isExporting = false;
   bool _isResetting = false;
   String _resetStatus = '';
@@ -44,13 +43,28 @@ class _SettingsPageState extends State<SettingsPage> {
   String _restoreStatus = '';
   double _restoreProgress = 0.0;
 
+  Set<String> _unlockedCatalogKeys = {};
+
   @override
   void initState() {
     super.initState();
     _checkOfflineMode();
-    _loadLanguagePreference();
     _checkAdminStatus();
     _loadNotificationPreference();
+    _loadUnlockedCatalogKeys();
+  }
+
+  Future<void> _loadUnlockedCatalogKeys() async {
+    const supported = {'yugioh', 'pokemon', 'onepiece'};
+    final all = await _repo.getCollections();
+    if (mounted) {
+      setState(() {
+        _unlockedCatalogKeys = all
+            .where((CollectionModel c) => c.isUnlocked && supported.contains(c.key))
+            .map((c) => c.key)
+            .toSet();
+      });
+    }
   }
 
   Future<void> _loadNotificationPreference() async {
@@ -125,32 +139,15 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _loadLanguagePreference() async {
-    final key = widget.collectionKey ?? 'yugioh';
-    final lang = await LanguageService.getPreferredLanguageForCollection(key);
-    if (mounted) setState(() => _selectedLanguage = lang);
-  }
-
   Future<void> _deleteAccount() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Elimina Account'),
-        content: const Text(
-          'Questa azione è irreversibile.\n\n'
-          'Il tuo account e tutti i dati associati verranno eliminati definitivamente.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annulla'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Elimina'),
-          ),
-        ],
+      builder: (_) => const AppConfirmDialog(
+        title: 'Elimina Account',
+        icon: Icons.person_remove_outlined,
+        message: 'Questa azione è irreversibile.\n\n'
+            'Il tuo account e tutti i dati associati verranno eliminati definitivamente.',
+        confirmLabel: 'Elimina',
       ),
     );
 
@@ -213,23 +210,15 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _resetAndResync() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Ripristina Sincronizzazione'),
-        content: const Text(
-          'Questa operazione deduplicerà le carte/album/deck presenti due volte, '
-          'ripulirà il cloud e ricaricherà i dati corretti.\n\n'
-          'Procedi solo se vedi elementi duplicati.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annulla'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ripristina'),
-          ),
-        ],
+      builder: (_) => const AppConfirmDialog(
+        title: 'Ripristina Sincronizzazione',
+        icon: Icons.sync_problem_outlined,
+        iconColor: AppColors.blue,
+        message: 'Questa operazione deduplicerà le carte/album/deck presenti due volte, '
+            'ripulirà il cloud e ricaricherà i dati corretti.\n\n'
+            'Procedi solo se vedi elementi duplicati.',
+        confirmLabel: 'Ripristina',
+        confirmColor: AppColors.blue,
       ),
     );
     if (confirm != true || !mounted) return;
@@ -273,7 +262,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _restoreCatalog(String collectionKey) async {
     final keys = collectionKey == 'all'
-        ? ['yugioh', 'pokemon', 'onepiece']
+        ? _unlockedCatalogKeys.toList()
         : [collectionKey];
 
     setState(() {
@@ -331,8 +320,26 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  static const _catalogMeta = [
+    (key: 'yugioh',   label: 'Yu-Gi-Oh!',  icon: Icons.star_outline,              accent: AppColors.yugiohAccent),
+    (key: 'pokemon',  label: 'Pokémon',     icon: Icons.catching_pokemon,          accent: AppColors.pokemonAccent),
+    (key: 'onepiece', label: 'One Piece',   icon: Icons.directions_boat_outlined,  accent: AppColors.onepieceAccent),
+  ];
+
   void _showRestoreDialog() {
     if (_isRestoring || _isOffline) return;
+
+    final unlocked = _catalogMeta
+        .where((m) => _unlockedCatalogKeys.contains(m.key))
+        .toList();
+
+    if (unlocked.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nessuna collezione sbloccata da ripristinare.')),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bgMedium,
@@ -367,13 +374,15 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           Container(height: 0.5, color: AppColors.divider),
-          _catalogOption(ctx, Icons.cloud_download_outlined, 'Tutti i Cataloghi', 'all', AppColors.blue),
-          Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 56)),
-          _catalogOption(ctx, Icons.star_outline, 'Yu-Gi-Oh!', 'yugioh', AppColors.yugiohAccent),
-          Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 56)),
-          _catalogOption(ctx, Icons.catching_pokemon, 'Pokémon', 'pokemon', AppColors.pokemonAccent),
-          Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 56)),
-          _catalogOption(ctx, Icons.directions_boat_outlined, 'One Piece', 'onepiece', AppColors.onepieceAccent),
+          if (unlocked.length >= 2) ...[
+            _catalogOption(ctx, Icons.cloud_download_outlined, 'Tutti i Cataloghi', 'all', AppColors.blue),
+            Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 56)),
+          ],
+          for (int i = 0; i < unlocked.length; i++) ...[
+            _catalogOption(ctx, unlocked[i].icon, unlocked[i].label, unlocked[i].key, unlocked[i].accent),
+            if (i < unlocked.length - 1)
+              Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 56)),
+          ],
           SizedBox(height: MediaQuery.of(ctx).viewInsets.bottom + 20),
         ],
       ),
@@ -414,37 +423,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  void _showLanguagePicker() {
-    final key = widget.collectionKey ?? 'yugioh';
-    final langs = LanguageService.collectionLanguages[key] ?? LanguageService.supportedLanguages;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Lingua Catalogo'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: langs.map((code) {
-            return RadioListTile<String>(
-              title: Text(LanguageService.languageLabels[code] ?? code),
-              value: code,
-              // ignore: deprecated_member_use
-              groupValue: _selectedLanguage,
-              // ignore: deprecated_member_use
-              onChanged: (val) async {
-                if (val != null) {
-                  await LanguageService.setPreferredLanguageForCollection(key, val);
-                  if (!context.mounted) return;
-                  setState(() => _selectedLanguage = val);
-                  Navigator.pop(context);
-                }
-              },
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-
   // Pro e Donazioni temporaneamente nascosti — da riabilitare quando il pagamento sarà configurato
   Widget _buildProSection() => const SizedBox.shrink();
 
@@ -452,7 +430,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_isRestoring,
+      child: Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgMedium,
@@ -491,6 +471,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 32),
         ],
       ),
+    ),
     );
   }
 
@@ -929,27 +910,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildCatalogSection() {
-    final key = widget.collectionKey ?? '';
-    final langs = LanguageService.collectionLanguages[key] ?? [];
-    if (langs.isEmpty) return const SizedBox.shrink();
-    return _buildSectionCard(
-      title: 'Catalogo',
-      icon: Icons.auto_stories,
-      accentColor: AppColors.gold,
-      children: [
-        _buildTile(
-          icon: Icons.translate,
-          title: 'Lingua Catalogo',
-          subtitle: LanguageService.languageLabels[_selectedLanguage] ?? _selectedLanguage,
-          iconColor: AppColors.gold,
-          isLast: true,
-          trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
-          onTap: _showLanguagePicker,
-        ),
-      ],
-    );
-  }
+  Widget _buildCatalogSection() => const SizedBox.shrink();
 
   Widget _buildCatalogRestoreSection() {
     return _buildSectionCard(

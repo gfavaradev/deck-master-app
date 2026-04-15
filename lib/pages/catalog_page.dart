@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -42,6 +43,8 @@ class _CatalogPageState extends State<CatalogPage> {
   // key: "catalogId-serialNumber-rarity" → total quantity owned (all albums)
   Map<String, int> _ownedQuantityMap = {};
   String _preferredLanguage = 'EN';
+  List<String> _supportedLanguages = [];   // tutte le lingue per questa collezione
+  Set<String> _availableCatalogLanguages = {'EN'}; // lingue con dati reali nel DB
   bool _isDownloadingUpdate = false;
   bool _isCatalogMissing = false; // true = nessun catalogo locale, bisogna scaricarlo
   String? _loadError;
@@ -100,11 +103,18 @@ class _CatalogPageState extends State<CatalogPage> {
     _preferredLanguage = await LanguageService.getPreferredLanguageForCollection(widget.collectionKey);
     final prefs = await SharedPreferences.getInstance();
     _lastUsedAlbumId = prefs.getInt('last_album_id_${widget.collectionKey}');
-    await Future.wait([
+    _supportedLanguages = LanguageService.collectionLanguages[widget.collectionKey] ?? [];
+
+    final results = await Future.wait<dynamic>([
       _loadCards(),
       _loadAlbumsAndOwned(),
       _checkCatalogMissing(),
+      _dbHelper.getAvailableCatalogLanguages(widget.collectionKey),
     ]);
+
+    if (mounted) {
+      setState(() => _availableCatalogLanguages = results[3] as Set<String>);
+    }
   }
 
   /// Controlla se il catalogo locale è assente (primo download).
@@ -430,6 +440,10 @@ class _CatalogPageState extends State<CatalogPage> {
 
   @override
   Widget build(BuildContext context) {
+    final sw = MediaQuery.of(context).size.width;
+    final catalogCols = kIsWeb
+        ? (sw > 1400 ? 7 : sw > 1100 ? 6 : sw > 820 ? 5 : 4)
+        : (sw > 560 ? 3 : 2);
     return Stack(
       children: [
         Column(
@@ -437,24 +451,34 @@ class _CatalogPageState extends State<CatalogPage> {
             if (_isSelectionMode) _buildSelectionBanner(),
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: 'Cerca per nome o seriale...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      labelText: 'Cerca per nome o seriale...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          _debounce?.cancel();
+                          _loadCards();
+                        },
+                      ),
+                    ),
+                    onChanged: _onSearchChanged,
+                  ),
                 ),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    _debounce?.cancel();
-                    _loadCards();
-                  },
-                ),
-              ),
-              onChanged: _onSearchChanged,
+                if (_supportedLanguages.length > 1) ...[
+                  const SizedBox(width: 8),
+                  _buildLanguageButton(),
+                ],
+              ],
             ),
           ),
           Expanded(
@@ -487,8 +511,8 @@ class _CatalogPageState extends State<CatalogPage> {
                         : GridView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(8),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: catalogCols,
                           childAspectRatio: 0.65,
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
@@ -732,6 +756,11 @@ class _CatalogPageState extends State<CatalogPage> {
             .map((c) => (c['localizedName'] ?? c['name'] ?? '') as String)
             .toList(),
         initialIndex: initialIndex,
+        onCardTap: (index) {
+          if (index < _catalogCards.length) {
+            _showAddDialog(_catalogCards[index]);
+          }
+        },
       ),
     );
   }
@@ -854,6 +883,124 @@ class _CatalogPageState extends State<CatalogPage> {
       if (langMap.containsKey(code)) return langMap[code]!;
     }
     return 'EN';
+  }
+
+  Widget _buildLanguageButton() {
+    final flag = LanguageService.flagEmoji[_preferredLanguage] ?? '🌐';
+    return GestureDetector(
+      onTap: _showLanguagePicker,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: AppColors.bgMedium,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.border, width: 0.5),
+        ),
+        child: Center(
+          child: Text(flag, style: const TextStyle(fontSize: 22)),
+        ),
+      ),
+    );
+  }
+
+  void _showLanguagePicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.bgMedium,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textHint,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
+            child: Text(
+              'Lingua Catalogo',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Text(
+              'Le lingue grigie non sono ancora disponibili nel catalogo locale.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+          ),
+          Container(height: 0.5, color: AppColors.divider),
+          for (final code in _supportedLanguages) ...[
+            Builder(
+              builder: (_) {
+                final isAvailable = _availableCatalogLanguages.contains(code);
+                final isSelected = code == _preferredLanguage;
+                return Opacity(
+                  opacity: isAvailable ? 1.0 : 0.4,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: isAvailable
+                          ? () {
+                              Navigator.pop(ctx);
+                              LanguageService.setPreferredLanguageForCollection(
+                                  widget.collectionKey, code);
+                              setState(() => _preferredLanguage = code);
+                            }
+                          : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        child: Row(
+                          children: [
+                            Text(
+                              LanguageService.flagEmoji[code] ?? '',
+                              style: const TextStyle(fontSize: 24),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                LanguageService.languageLabels[code] ?? code,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            if (!isAvailable)
+                              const Text(
+                                'Non disponibile',
+                                style: TextStyle(color: AppColors.textHint, fontSize: 12),
+                              )
+                            else if (isSelected)
+                              const Icon(Icons.check, color: AppColors.blue, size: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 58)),
+          ],
+          SizedBox(height: MediaQuery.of(ctx).viewInsets.bottom + 20),
+        ],
+      ),
+    );
   }
 
   void _showSetCompletedDialog(Map<String, dynamic> completion, int currentAlbumId) {

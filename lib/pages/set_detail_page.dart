@@ -34,6 +34,8 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
   late final TabController _tabController;
 
   List<Map<String, dynamic>> _allCards = [];
+  List<Map<String, dynamic>> _ownedCards = [];
+  List<Map<String, dynamic>> _missingCards = [];
   bool _isLoading = true;
   String _lang = 'en';
   StreamSubscription<String>? _syncSub;
@@ -66,12 +68,11 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
     if (!mounted) return;
     setState(() {
       _allCards = data;
+      _ownedCards = data.where((c) => (c['isOwned'] as int?) == 1).toList();
+      _missingCards = data.where((c) => (c['isOwned'] as int?) == 0).toList();
       _isLoading = false;
     });
   }
-
-  List<Map<String, dynamic>> get _owned => _allCards.where((c) => (c['isOwned'] as int?) == 1).toList();
-  List<Map<String, dynamic>> get _missing => _allCards.where((c) => (c['isOwned'] as int?) == 0).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -99,20 +100,25 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
           indicatorColor: AppColors.gold,
           tabs: [
             Tab(text: 'Tutte (${_allCards.length})'),
-            Tab(text: 'Possedute (${_owned.length})'),
-            Tab(text: 'Mancanti (${_missing.length})'),
+            Tab(text: 'Possedute (${_ownedCards.length})'),
+            Tab(text: 'Mancanti (${_missingCards.length})'),
           ],
         ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildList(_allCards),
-                _buildList(_owned),
-                _buildList(_missing),
-              ],
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildList(_allCards),
+                    _buildList(_ownedCards),
+                    _buildList(_missingCards),
+                  ],
+                ),
+              ),
             ),
     );
   }
@@ -123,7 +129,11 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
         child: Text('Nessuna carta.', style: TextStyle(color: AppColors.textHint)),
       );
     }
-    return ListView.builder(
+    return LayoutBuilder(builder: (context, constraints) {
+      final isWide = constraints.maxWidth > 600;
+      final thumbW = isWide ? 66.0 : 44.0;
+      final thumbH = isWide ? 90.0 : 60.0;
+      return ListView.builder(
       itemCount: cards.length,
       itemBuilder: (_, index) {
         final card = cards[index];
@@ -149,8 +159,8 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             leading: SizedBox(
-              width: 44,
-              height: 60,
+              width: thumbW,
+              height: thumbH,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: imageUrl != null && imageUrl.isNotEmpty
@@ -189,6 +199,7 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
                     serialNumber: serial,
                     cardName: name,
                     rarity: rarity.isNotEmpty ? rarity : null,
+                    catalogId: card['id']?.toString(),
                   ),
                 ],
               ],
@@ -202,5 +213,6 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
         );
       },
     );
+    });
   }
 }

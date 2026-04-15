@@ -1,6 +1,6 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'sync_service.dart';
@@ -48,12 +48,34 @@ class CardtraderService {
     },
     'onepiece': {
       'ja': 'Giapponese', 'en': 'Inglese',
+      'zh': 'Cinese', 'ko': 'Coreano',
     },
   };
 
   /// Returns the language code→label map for [catalog].
   static Map<String, String> languagesForCatalog(String catalog) =>
       _catalogLanguages[catalog] ?? {};
+
+  /// Detects the CardTrader language code from a card serial number.
+  ///
+  /// YuGiOh:   "LOB-EN001" → "en", "LOB-IT001" → "it", "LOB-SP001" → "es"
+  /// One Piece: "OP01-001" → "ja" (default), "OP01-EN001" → "en"
+  /// Pokemon:   any serial → "en" (serials don't encode language)
+  static String languageFromSerial(String sn, String collection) {
+    if (collection == 'yugioh') {
+      final m = RegExp(r'-([A-Za-z]{2})[A-Za-z0-9]').firstMatch(sn);
+      if (m != null) {
+        final code = m.group(1)!.toLowerCase();
+        return code == 'sp' ? 'es' : code;
+      }
+    } else if (collection == 'onepiece') {
+      final cn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1) : '';
+      final m = RegExp(r'^([A-Za-z]{2})\d').firstMatch(cn);
+      if (m != null) return m.group(1)!.toLowerCase();
+      return 'ja'; // Default: One Piece cards are Japanese unless serial says otherwise
+    }
+    return 'en';
+  }
 
   /// Normalizes CardTrader API language codes to internal codes.
   /// CT uses 'jp' for Japanese, 'kr' for Korean, 'zh-CN' for Chinese.
@@ -66,7 +88,7 @@ class CardtraderService {
     }
   }
 
-  String get _jwt => dotenv.env['CARDTRADER_JWT'] ?? '';
+  String get _jwt => const String.fromEnvironment('CARDTRADER_JWT');
 
   Map<String, String> get _headers => {
         'Authorization': 'Bearer $_jwt',
@@ -96,6 +118,8 @@ class CardtraderService {
     required String adminUid,
     required void Function(String msg, double? progress) onProgress,
   }) async {
+    if (kIsWeb) return _syncPricesWeb(catalog: catalog, adminUid: adminUid, onProgress: onProgress);
+
     final gameId = gameIds[catalog];
     if (gameId == null) throw Exception('Catalogo non supportato: $catalog');
     if (_jwt.isEmpty) {
@@ -206,6 +230,7 @@ class CardtraderService {
     bool? firstEdition,
     String? rarity,
     String? collectorNumber,
+    String? catalogId,
   }) async {
     final row = await _db.getCardtraderPrice(
       catalog: catalog,
@@ -215,6 +240,7 @@ class CardtraderService {
       firstEdition: firstEdition,
       rarity: rarity,
       collectorNumber: collectorNumber,
+      catalogId: catalogId,
     );
     if (row == null) return null;
     return CardtraderPrice.fromMap(row as Map<String, dynamic>);
@@ -247,10 +273,199 @@ class CardtraderService {
   /// Ricalcola `cards.value` e aggiorna i prezzi del catalogo dai prezzi CT in cache locale.
   /// Utile dopo un riavvio o un sync Firestore che ha azzerato i valori.
   /// Returns a map with 'collectionUpdated' and 'catalogUpdated' counts.
+  /// Updates `cards.cardtrader_value` for the user's owned cards.
+  /// Does NOT touch catalog prints (that only runs during a full CT price download).
   Future<Map<String, int>> applyLocalPricesToCollection(String catalog) async {
     final collectionUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
-    final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
-    return {'collectionUpdated': collectionUpdated, 'catalogUpdated': catalogUpdated};
+    return {'collectionUpdated': collectionUpdated, 'catalogUpdated': 0};
+  }
+
+  // ─── Web-specific sync (Firestore-only, no SQLite) ───────────────────────
+
+  Future<Map<String, dynamic>> _syncPricesWeb({
+    required String catalog,
+    required String adminUid,
+    required void Function(String msg, double? progress) onProgress,
+  }) async {
+    final gameId = gameIds[catalog];
+    if (gameId == null) throw Exception('Catalogo non supportato: $catalog');
+    if (_jwt.isEmpty) throw Exception('CARDTRADER_JWT non configurato');
+
+    onProgress('Caricamento espansioni CardTrader…', null);
+    final ctExpansions = await _fetchExpansions(gameId);
+
+    onProgress('Lettura set da Firestore…', null);
+    final localCodes = await _getSetCodesFromFirestore(catalog);
+
+    final matched = ctExpansions.where((e) {
+      final code = (e['code'] as String? ?? '').toLowerCase();
+      return localCodes.contains(code);
+    }).toList();
+
+    int totalBlueprints = 0;
+    int pricedBlueprints = 0;
+    int errors = 0;
+    final allPrices = <CardtraderPrice>[];
+
+    for (int i = 0; i < matched.length; i++) {
+      final exp = matched[i];
+      final expId = exp['id'] as int;
+      final expCode = (exp['code'] as String).toLowerCase();
+      final expName = exp['name'] as String? ?? expCode;
+
+      onProgress('$expName — ${i + 1}/${matched.length}', (i + 1) / matched.length);
+
+      try {
+        late List<Map<String, dynamic>> blueprints;
+        late Map<String, List<Map<String, dynamic>>> products;
+        await Future.wait([
+          _fetchBlueprints(expId).then((r) => blueprints = r),
+          _fetchMarketplaceProducts(expId).then((r) => products = r),
+        ]);
+
+        final byLang = _groupBlueprintsByLanguage(blueprints, catalog);
+        for (final entry in byLang.entries) {
+          totalBlueprints += _buildBlueprintMaps(catalog, expCode, entry.value, entry.key).length;
+        }
+
+        if (products.isNotEmpty) {
+          final prices = _collectPricesInMemory(catalog, expCode, products);
+          allPrices.addAll(prices);
+          if (prices.isNotEmpty) pricedBlueprints += prices.length;
+        }
+
+        await Future.delayed(const Duration(milliseconds: 150));
+      } catch (_) {
+        errors++;
+      }
+    }
+
+    // Save all prices to Firestore (replaces local SQLite on web)
+    onProgress('Salvataggio prezzi su Firestore…', null);
+    if (allPrices.isNotEmpty) {
+      await FirestoreService().saveCardtraderPrices(
+        catalog,
+        allPrices.map((p) => p.toMap()).toList(),
+      );
+    }
+
+    return {
+      'success': true,
+      'expansions': matched.length,
+      'blueprints': totalBlueprints,
+      'pricedBlueprints': pricedBlueprints,
+      'skipped': 0,
+      'errors': errors,
+      'catalog': catalog,
+      'valuesUpdated': 0,
+      'catalogUpdated': allPrices.length,
+    };
+  }
+
+  /// Reads distinct set codes from Firestore catalog chunks (web fallback).
+  Future<Set<String>> _getSetCodesFromFirestore(String catalog) async {
+    try {
+      final cards = await FirestoreService().fetchCatalog(catalog);
+      final codes = <String>{};
+      for (final card in cards) {
+        // sets is a map keyed by language; each entry has set_id
+        final sets = card['sets'];
+        if (sets is Map) {
+          for (final langEntry in sets.values) {
+            if (langEntry is Map) {
+              final setId = langEntry['set_id'] as String?;
+              if (setId != null && setId.isNotEmpty) {
+                codes.add(setId.toLowerCase());
+              }
+            }
+          }
+        }
+        // also check top-level set_id (Pokemon / One Piece)
+        final topSetId = card['set_id'] as String?;
+        if (topSetId != null && topSetId.isNotEmpty) {
+          codes.add(topSetId.toLowerCase());
+        }
+      }
+      return codes;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Collects prices from marketplace products into memory (no SQLite write).
+  List<CardtraderPrice> _collectPricesInMemory(
+    String catalog,
+    String expansionCode,
+    Map<String, List<Map<String, dynamic>>> products,
+  ) {
+    final langKey = _langKeys[catalog] ?? 'yugioh_language';
+    final rarityKey = _rarityKeys[catalog] ?? 'yugioh_rarity';
+    final prices = <CardtraderPrice>[];
+    final now = DateTime.now().toIso8601String();
+
+    for (final entry in products.entries) {
+      final blueprintId = int.tryParse(entry.key);
+      if (blueprintId == null) continue;
+      final listings = entry.value;
+      if (listings.isEmpty) continue;
+
+      final cardNameEn = listings.first['name_en'] as String? ?? '';
+      if (cardNameEn.isEmpty) continue;
+
+      final firstPh = listings.first['properties_hash'] as Map<String, dynamic>? ?? {};
+      final collectorNumber =
+          (listings.first['collector_number'] as String?)?.trim() ??
+          (firstPh['collector_number'] as String?)?.trim() ??
+          (firstPh['number'] as String?)?.trim() ??
+          '';
+
+      final nmPrices = <String, List<int>>{};
+      final anyPrices = <String, List<int>>{};
+      final rarityByKey = <String, String>{};
+
+      for (final listing in listings) {
+        final ph = listing['properties_hash'] as Map<String, dynamic>? ?? {};
+        final lang = _normalizeLang(ph[langKey] as String? ?? 'en');
+        final isFirst = (ph['first_edition'] as bool?) == true ? 1 : 0;
+        final rarity = (ph[rarityKey] as String? ?? '').toLowerCase();
+        final condition = ph['condition'] as String? ?? '';
+        final priceCents = listing['price_cents'] as int?;
+        if (priceCents == null || priceCents <= 0) continue;
+
+        final key = '$lang|$isFirst|$rarity';
+        rarityByKey[key] = rarity;
+        final isNm = condition.contains('Near Mint') ||
+            (condition.contains('Mint') && !condition.contains('Moderately'));
+
+        anyPrices.putIfAbsent(key, () => []).add(priceCents);
+        if (isNm) nmPrices.putIfAbsent(key, () => []).add(priceCents);
+      }
+
+      for (final key in anyPrices.keys) {
+        final parts = key.split('|');
+        final lang = parts[0];
+        final firstEd = parts[1] == '1';
+        final rarity = rarityByKey[key] ?? '';
+        final nm = nmPrices[key];
+        final any = anyPrices[key]!;
+
+        prices.add(CardtraderPrice(
+          blueprintId: blueprintId,
+          catalog: catalog,
+          expansionCode: expansionCode,
+          cardNameEn: cardNameEn,
+          language: lang,
+          firstEdition: firstEd,
+          rarity: rarity,
+          collectorNumber: collectorNumber,
+          minPriceNmCents: nm != null && nm.isNotEmpty ? nm.reduce(_min) : null,
+          minPriceAnyCents: any.reduce(_min),
+          listingCount: any.length,
+          syncedAt: now,
+        ));
+      }
+    }
+    return prices;
   }
 
   Future<void> _pushCardValuesToFirestore(String catalog) async {

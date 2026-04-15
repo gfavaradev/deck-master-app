@@ -14,7 +14,7 @@ class DatabaseHelper {
 
   DatabaseHelper._internal();
 
-  static const List<String> _validLanguages = ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'];
+  static const List<String> _validLanguages = ['EN', 'IT', 'FR', 'DE', 'PT', 'SP', 'JP'];
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 21,
+      version: 24,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -290,6 +290,31 @@ class DatabaseHelper {
           ('union-arena',      'Union Arena',            0)
       ''');
     }
+    if (oldVersion < 22) {
+      // Aggiunge colonne lingua a onepiece_prints (fr rimane usata; le altre resteranno vuote)
+      for (final lang in ['it', 'fr', 'de', 'pt', 'sp']) {
+        await _addColumnIfMissing(db, 'onepiece_prints', 'set_name_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'onepiece_prints', 'rarity_$lang', 'TEXT');
+      }
+    }
+    if (oldVersion < 23) {
+      // Aggiunge giapponese a onepiece_prints (lingua ufficiale del TCG)
+      await _addColumnIfMissing(db, 'onepiece_prints', 'set_name_jp', 'TEXT');
+      await _addColumnIfMissing(db, 'onepiece_prints', 'rarity_jp', 'TEXT');
+    }
+    if (oldVersion < 24) {
+      // Ripara le carte con collection NULL o vuoto usando la collection dell'album.
+      // Causato da sync Firestore che non salvava correttamente il campo collection.
+      await db.rawUpdate('''
+        UPDATE cards
+        SET collection = (
+          SELECT a.collection FROM albums a WHERE a.id = cards.albumId
+        )
+        WHERE (collection IS NULL OR collection = '')
+          AND albumId IS NOT NULL
+          AND EXISTS (SELECT 1 FROM albums a WHERE a.id = cards.albumId)
+      ''');
+    }
   }
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
@@ -512,6 +537,10 @@ class DatabaseHelper {
         inventory_price REAL,
         market_price REAL,
         artwork TEXT,
+        set_name_jp TEXT,
+        rarity_jp TEXT,
+        set_name_fr TEXT,
+        rarity_fr TEXT,
         created_at TEXT,
         updated_at TEXT,
         FOREIGN KEY (card_id) REFERENCES onepiece_cards(id) ON DELETE CASCADE,
@@ -1198,7 +1227,12 @@ class DatabaseHelper {
   // All fields are already stored in the cards table at insert time.
   Future<List<CardModel>> getCardsWithCatalog(String collection) async {
     Database db = await database;
-    final maps = await db.query('cards', where: 'collection = ?', whereArgs: [collection]);
+    final maps = await db.rawQuery('''
+      SELECT c.*
+      FROM cards c
+      LEFT JOIN albums a ON a.id = c.albumId
+      WHERE c.collection = ? OR a.collection = ?
+    ''', [collection, collection]);
     return maps.map((row) => CardModel.fromMap(row)).toList();
   }
 
@@ -1210,7 +1244,7 @@ class DatabaseHelper {
                COALESCE(u.name, yc.name) as name,
                COALESCE(u.type, yc.type) as type,
                COALESCE(u.description, yc.description) as description,
-               u.collection,
+               COALESCE(u.collection, a.collection, 'yugioh') as collection,
                COALESCE(
                  NULLIF(u.value, 0),
                  (SELECT set_price FROM yugioh_prints
@@ -1231,7 +1265,8 @@ class DatabaseHelper {
                ) as imageUrl
         FROM cards u
         LEFT JOIN yugioh_cards yc ON yc.id = CAST(u.catalogId AS INTEGER)
-        WHERE u.collection = 'yugioh'
+        LEFT JOIN albums a ON a.id = u.albumId
+        WHERE u.collection = 'yugioh' OR a.collection = 'yugioh'
       ''');
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
@@ -1242,7 +1277,7 @@ class DatabaseHelper {
                COALESCE(u.name, oc.name) as name,
                COALESCE(u.type, oc.card_type) as type,
                COALESCE(u.description, oc.card_text) as description,
-               u.collection,
+               COALESCE(u.collection, a.collection, 'onepiece') as collection,
                COALESCE(NULLIF(u.value, 0), op.market_price) as value,
                COALESCE(
                  op.artwork,
@@ -1252,7 +1287,8 @@ class DatabaseHelper {
         FROM cards u
         LEFT JOIN onepiece_cards oc ON oc.id = CAST(u.catalogId AS INTEGER)
         LEFT JOIN onepiece_prints op ON op.card_id = oc.id AND op.card_set_id = u.serialNumber
-        WHERE u.collection = 'onepiece'
+        LEFT JOIN albums a ON a.id = u.albumId
+        WHERE u.collection = 'onepiece' OR a.collection = 'onepiece'
       ''');
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
@@ -1262,7 +1298,7 @@ class DatabaseHelper {
         SELECT u.*,
                COALESCE(u.name, pc.name) as name,
                COALESCE(u.type, pc.supertype) as type,
-               u.collection,
+               COALESCE(u.collection, a.collection, 'pokemon') as collection,
                COALESCE(
                  NULLIF(u.value, 0),
                  (SELECT set_price FROM pokemon_prints
@@ -1284,7 +1320,8 @@ class DatabaseHelper {
                ) as imageUrl
         FROM cards u
         LEFT JOIN pokemon_cards pc ON pc.id = CAST(u.catalogId AS INTEGER)
-        WHERE u.collection = 'pokemon'
+        LEFT JOIN albums a ON a.id = u.albumId
+        WHERE u.collection = 'pokemon' OR a.collection = 'pokemon'
       ''');
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
@@ -1298,8 +1335,9 @@ class DatabaseHelper {
              COALESCE(c.imageUrl, u.imageUrl) as imageUrl
       FROM cards u
       LEFT JOIN catalog_cards c ON u.catalogId = c.id
-      WHERE u.collection = ?
-    ''', [collection]);
+      LEFT JOIN albums a ON a.id = u.albumId
+      WHERE u.collection = ? OR a.collection = ?
+    ''', [collection, collection]);
     return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
   }
 
@@ -2051,6 +2089,42 @@ class DatabaseHelper {
     return result.first['count'] as int? ?? 0;
   }
 
+  /// Restituisce le lingue che hanno dati effettivi nel catalogo locale.
+  /// Controlla le colonne localizzate nella tabella prints della collezione.
+  Future<Set<String>> getAvailableCatalogLanguages(String collectionKey) async {
+    final result = <String>{'EN'};
+    if (collectionKey == 'yugioh') {
+      final db = await database;
+      const langs = ['it', 'fr', 'de', 'pt', 'sp'];
+      for (final lang in langs) {
+        final rows = await db.rawQuery(
+          'SELECT 1 FROM yugioh_prints WHERE set_code_$lang IS NOT NULL AND set_code_$lang != "" LIMIT 1',
+        );
+        if (rows.isNotEmpty) result.add(lang.toUpperCase());
+      }
+    } else if (collectionKey == 'pokemon') {
+      final db = await database;
+      const langs = ['it', 'fr', 'de', 'pt'];
+      for (final lang in langs) {
+        final rows = await db.rawQuery(
+          'SELECT 1 FROM pokemon_prints WHERE set_code_$lang IS NOT NULL AND set_code_$lang != "" LIMIT 1',
+        );
+        if (rows.isNotEmpty) result.add(lang.toUpperCase());
+      }
+    } else if (collectionKey == 'onepiece') {
+      final db = await database;
+      // Lingue ufficiali One Piece TCG rilevanti: JP e FR
+      const langs = ['jp', 'fr'];
+      for (final lang in langs) {
+        final rows = await db.rawQuery(
+          'SELECT 1 FROM onepiece_prints WHERE set_name_$lang IS NOT NULL AND set_name_$lang != "" LIMIT 1',
+        );
+        if (rows.isNotEmpty) result.add(lang.toUpperCase());
+      }
+    }
+    return result;
+  }
+
   // ============================================================
   // Pokémon Catalog Methods
   // ============================================================
@@ -2386,6 +2460,20 @@ class DatabaseHelper {
   Future<void> removeCardFromDeck(int deckId, int cardId) async {
     Database db = await database;
     await db.delete('deck_cards', where: 'deckId = ? AND cardId = ?', whereArgs: [deckId, cardId]);
+  }
+
+  /// Decrementa di 1 la quantità di una carta nel deck; se arriva a 0 rimuove la riga.
+  Future<void> decrementCardInDeck(int deckId, int cardId) async {
+    Database db = await database;
+    await db.rawUpdate(
+      'UPDATE deck_cards SET quantity = quantity - 1 WHERE deckId = ? AND cardId = ?',
+      [deckId, cardId],
+    );
+    await db.delete(
+      'deck_cards',
+      where: 'deckId = ? AND cardId = ? AND quantity <= 0',
+      whereArgs: [deckId, cardId],
+    );
   }
 
   // ============================================================
@@ -3051,12 +3139,18 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
     String? query,
+    String language = 'EN',
     int limit = 60,
     int offset = 0,
   }) async {
     final db = await database;
-    final String searchPattern = '%${query ?? ''}%';
+    final suffix = _langSuffix(language);
+    final hasLang = suffix.isNotEmpty;
 
+    final setNameCol = hasLang ? 'COALESCE(op.set_name$suffix, op.set_name)' : 'op.set_name';
+    final rarityCol  = hasLang ? 'COALESCE(op.rarity$suffix, op.rarity)'     : 'op.rarity';
+
+    final String searchPattern = '%${query ?? ''}%';
     String whereClause = '';
     if (query != null && query.isNotEmpty) {
       whereClause = '''
@@ -3069,6 +3163,10 @@ class DatabaseHelper {
         )''';
     }
 
+    final isLocalizedPrint = hasLang
+        ? 'CASE WHEN op.set_name$suffix IS NOT NULL THEN 1 ELSE 0 END'
+        : '1';
+
     final sql = '''
       SELECT
         oc.id, oc.name, oc.card_type, oc.color, oc.cost, oc.power,
@@ -3078,11 +3176,14 @@ class DatabaseHelper {
         op.card_set_id AS setCode,
         op.set_id AS setId,
         op.set_name AS setName,
+        $setNameCol AS localizedSetName,
         op.rarity,
+        $rarityCol AS localizedRarity,
         op.inventory_price AS inventoryPrice,
         op.market_price AS marketPrice,
         op.artwork,
         'onepiece' AS collection,
+        $isLocalizedPrint AS isLocalizedPrint,
         EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(oc.id AS TEXT) AND collection = 'onepiece') AS isOwned
       FROM onepiece_cards oc
       INNER JOIN onepiece_prints op ON oc.id = op.card_id
@@ -3221,9 +3322,32 @@ class DatabaseHelper {
     bool? firstEdition,
     String? rarity,
     String? collectorNumber,
+    String? catalogId,
   }) async {
     final db = await database;
-    final nameLower = cardName.toLowerCase();
+
+    // If catalogId is provided resolve the canonical English name from the
+    // catalog table so that localized card names (e.g. "Drago Bianco") don't
+    // break the match against CT's English-only card_name_en column.
+    String nameLower = cardName.toLowerCase();
+    if (catalogId != null && catalogId.isNotEmpty) {
+      final id = int.tryParse(catalogId);
+      if (id != null) {
+        final table = switch (catalog) {
+          'yugioh'   => 'yugioh_cards',
+          'pokemon'  => 'pokemon_cards',
+          'onepiece' => 'onepiece_cards',
+          _          => null,
+        };
+        if (table != null) {
+          final rows = await db.query(table,
+              columns: ['name'], where: 'id = ?', whereArgs: [id], limit: 1);
+          if (rows.isNotEmpty) {
+            nameLower = (rows.first['name'] as String).toLowerCase();
+          }
+        }
+      }
+    }
 
     String baseWhere =
         'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ? AND language = ?'
