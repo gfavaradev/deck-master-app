@@ -732,6 +732,8 @@ class _CatalogPageState extends State<CatalogPage> {
       child: CachedNetworkImage(
         imageUrl: imageUrl,
         fit: BoxFit.cover,
+        memCacheWidth: 300,
+        memCacheHeight: 420,
         placeholder: (_, _) => Container(
           color: Colors.grey.withValues(alpha: 0.08),
           child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),

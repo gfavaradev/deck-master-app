@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import 'support_page.dart';
+import 'donations_page.dart';
 import 'home_page_simple.dart';
 import 'card_list_page.dart';
 import 'catalog_page.dart';
@@ -64,6 +66,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _pendingUpdates = [];
   String? _currentDownloadingName;
   int _currentDownloadingIndex = 0;
+  OverlayEntry? _popoverEntry;
 
   @override
   void initState() {
@@ -108,6 +111,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _popoverEntry?.remove();
+    _popoverEntry = null;
     _levelUpSub?.cancel();
     SyncService().stopListening();
     WidgetsBinding.instance.removeObserver(this);
@@ -208,18 +213,61 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     );
   }
 
+  static const _kAdminCachePrefix = 'admin_verified_';
+  static const _kAdminCheckedAtPrefix = 'admin_checked_at_';
+  // Verifica Firestore solo una volta ogni 24h per ridurre le letture
+  static const _kAdminCheckTtl = Duration(hours: 24);
+
   Future<void> _checkAdminAndNotifications() async {
-    final results = await Future.wait([
-      _authService.isCurrentUserAdmin()
-          .timeout(const Duration(seconds: 8))
-          .catchError((_) => false),
-      unreadNotificationCount(),
-    ]);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1. Applica subito il valore cached per evitare flickering.
+    final cached = uid != null ? (prefs.getBool('$_kAdminCachePrefix$uid') ?? false) : false;
+    if (cached && mounted) setState(() => _isAdmin = true);
+
+    // 2. Se il check Firestore è stato fatto di recente (< 24h), usa la cache.
+    if (uid != null) {
+      final lastChecked = prefs.getString('$_kAdminCheckedAtPrefix$uid');
+      if (lastChecked != null) {
+        final last = DateTime.tryParse(lastChecked);
+        if (last != null && DateTime.now().difference(last) < _kAdminCheckTtl) {
+          final unread = await unreadNotificationCount();
+          if (mounted) setState(() { _isAdmin = cached; _unreadCount = unread; });
+          return;
+        }
+      }
+    }
+
+    // 3. Verifica Firestore (fonte autorevole).
+    // null = Firestore non raggiungibile (offline/timeout) → mantieni cache.
+    // true/false = Firestore ha risposto → aggiorna cache.
+    bool? firestoreAdmin;
+    try {
+      firestoreAdmin = await _authService.isCurrentUserAdmin()
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      firestoreAdmin = null; // offline: non sovrascrivere la cache
+    }
+
+    final unread = await unreadNotificationCount();
     if (!mounted) return;
-    setState(() {
-      _isAdmin = results[0] as bool;
-      _unreadCount = results[1] as int;
-    });
+
+    final isAdmin = firestoreAdmin ?? cached; // offline → mantieni ultimo stato noto
+
+    // 4. Persiste ruolo e timestamp SOLO se Firestore ha risposto.
+    // Se offline, il timestamp non viene aggiornato così al prossimo avvio
+    // ritenterà subito invece di aspettare le 24h.
+    if (uid != null && firestoreAdmin != null) {
+      if (isAdmin) {
+        await prefs.setBool('$_kAdminCachePrefix$uid', true);
+      } else {
+        await prefs.remove('$_kAdminCachePrefix$uid');
+      }
+      await prefs.setString('$_kAdminCheckedAtPrefix$uid', DateTime.now().toIso8601String());
+    }
+
+    if (mounted) setState(() { _isAdmin = isAdmin; _unreadCount = unread; });
   }
 
   Future<void> _checkUnreadNotifications() async {
@@ -227,14 +275,27 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     if (mounted) setState(() => _unreadCount = count);
   }
 
-  Future<void> _checkCatalogUpdate() async {
+  static const _kCatalogCheckedAtKey = 'catalog_update_checked_at';
+  // Controlla aggiornamenti catalogo al più ogni ora (3 read Firestore per check)
+  static const _kCatalogCheckTtl = Duration(hours: 1);
+
+  Future<void> _checkCatalogUpdate({bool force = false}) async {
+    // Se ci sono già aggiornamenti in coda (utente ha rimandato), non serve ricontrollare
+    if (!force && _pendingUpdates.isNotEmpty) return;
     try {
+      if (!force) {
+        final prefs = await SharedPreferences.getInstance();
+        final lastChecked = prefs.getString(_kCatalogCheckedAtKey);
+        if (lastChecked != null) {
+          final last = DateTime.tryParse(lastChecked);
+          if (last != null && DateTime.now().difference(last) < _kCatalogCheckTtl) return;
+        }
+        await prefs.setString(_kCatalogCheckedAtKey, DateTime.now().toIso8601String());
+      }
       final updates = await _repo.checkAllUnlockedCatalogUpdates();
       if (!mounted || updates.isEmpty) return;
       setState(() => _pendingUpdates = updates);
       await setPendingUpdatesCount(updates.length);
-      // Rileva e salva notifiche una volta sola qui — unreadNotificationCount()
-      // legge solo lo storico già salvato, senza query DB aggiuntive.
       await detectAndSaveNotifications();
       if (mounted) _checkUnreadNotifications();
     } catch (_) {}
@@ -316,6 +377,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             _currentDownloadingName = name;
             _currentDownloadingIndex = i + 1;
           });
+          _popoverEntry?.markNeedsBuild();
         }
         BackgroundDownloadService.updateStatus(
           total > 1 ? 'Collezione ${i + 1}/$total: $name' : name,
@@ -326,7 +388,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             updateInfo: info,
             onProgress: (current, colTotal) {
               if (mounted) {
-                setState(() => _catalogDownloadProgress = (i + current / colTotal) / total);
+                setState(() => _catalogDownloadProgress = (i + current / colTotal) / total); _popoverEntry?.markNeedsBuild();
               }
               final pct = colTotal > 0 ? ((current / colTotal) * 100).toInt() : 0;
               BackgroundDownloadService.updateStatus(
@@ -335,7 +397,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             },
             onSaveProgress: (progress) {
               if (mounted) {
-                setState(() => _catalogDownloadProgress = (i + progress) / total);
+                setState(() => _catalogDownloadProgress = (i + progress) / total); _popoverEntry?.markNeedsBuild();
               }
             },
           );
@@ -371,88 +433,129 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     }
   }
 
-  void _showDownloadDetails() {
-    final progress = _catalogDownloadProgress;
-    final total = _pendingUpdates.isNotEmpty ? _pendingUpdates.length : _currentDownloadingIndex;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isDismissible: true,
-      enableDrag: true,
-      builder: (ctx) => Container(
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 12,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+  void _startRestoreDownload(String collectionKey) {
+    if (_isCatalogDownloading) return;
+    final keys = collectionKey == 'all'
+        ? (_pendingUpdates.isNotEmpty
+            ? _pendingUpdates.map((u) => u['collectionKey'] as String).toList()
+            : ['yugioh', 'pokemon', 'onepiece'])
+        : [collectionKey];
+
+    setState(() {
+      _isCatalogDownloading = true;
+      _catalogDownloadProgress = null;
+      _currentDownloadingName = null;
+      _currentDownloadingIndex = 0;
+    });
+
+    () async {
+      final total = keys.length;
+      int successCount = 0;
+      try {
+        await BackgroundDownloadService.startDownload('Ripristino catalogo');
+        for (int i = 0; i < keys.length; i++) {
+          final key = keys[i];
+          final name = switch (key) {
+            'yugioh'   => 'Yu-Gi-Oh!',
+            'pokemon'  => 'Pokémon',
+            'onepiece' => 'One Piece',
+            _          => key,
+          };
+          if (mounted) { setState(() { _currentDownloadingName = name; _currentDownloadingIndex = i + 1; }); _popoverEntry?.markNeedsBuild(); }
+          BackgroundDownloadService.updateStatus(total > 1 ? 'Ripristino ${i + 1}/$total: $name' : name);
+
+          await switch (key) {
+            'yugioh'   => _repo.redownloadYugiohCatalog(
+                onProgress: (cur, tot) {
+                  if (mounted) setState(() => _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total); _popoverEntry?.markNeedsBuild();
+                },
+                onSaveProgress: (p) {
+                  if (mounted) setState(() => _catalogDownloadProgress = (i + p) / total); _popoverEntry?.markNeedsBuild();
+                },
+              ),
+            'pokemon'  => _repo.redownloadPokemonCatalog(
+                onProgress: (cur, tot) {
+                  if (mounted) setState(() => _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total); _popoverEntry?.markNeedsBuild();
+                },
+                onSaveProgress: (p) {
+                  if (mounted) setState(() => _catalogDownloadProgress = (i + p) / total); _popoverEntry?.markNeedsBuild();
+                },
+              ),
+            'onepiece' => _repo.redownloadOnepieceCatalog(
+                onProgress: (cur, tot) {
+                  if (mounted) setState(() => _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total); _popoverEntry?.markNeedsBuild();
+                },
+                onSaveProgress: (p) {
+                  if (mounted) setState(() => _catalogDownloadProgress = (i + p) / total); _popoverEntry?.markNeedsBuild();
+                },
+              ),
+            _ => Future.value(),
+          };
+          successCount++;
+        }
+      } catch (_) {} finally {
+        await BackgroundDownloadService.stopDownload();
+        if (mounted) {
+          setState(() {
+            _isCatalogDownloading = false;
+            _catalogDownloadProgress = null;
+            _currentDownloadingName = null;
+            _currentDownloadingIndex = 0;
+            _pendingUpdates = [];
+          });
+          if (successCount > 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Catalogo ripristinato con successo!'), backgroundColor: Colors.green),
+            );
+          }
+        }
+      }
+    }();
+  }
+
+  void _toggleDownloadPopover() {
+    if (_popoverEntry != null) {
+      _popoverEntry!.remove();
+      _popoverEntry = null;
+      return;
+    }
+
+    final overlayState = Overlay.of(context);
+    final topPadding = MediaQuery.of(context).padding.top;
+
+    _popoverEntry = OverlayEntry(builder: (_) {
+      final progress   = _catalogDownloadProgress;
+      final name       = _currentDownloadingName;
+      final idx        = _currentDownloadingIndex;
+      final total      = _pendingUpdates.isNotEmpty ? _pendingUpdates.length : idx;
+
+      return GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          _popoverEntry?.remove();
+          _popoverEntry = null;
+        },
+        child: Stack(
           children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 14),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(2),
+            Positioned(
+              top: topPadding + kToolbarHeight + 6,
+              right: 8,
+              child: GestureDetector(
+                onTap: () {},
+                child: _DownloadPopoverCard(
+                  progress: progress,
+                  name: name,
+                  index: idx,
+                  total: total,
                 ),
               ),
             ),
-            Row(
-              children: [
-                const Icon(Icons.download_rounded, color: Colors.blue, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  'Download in corso',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                ),
-                const Spacer(),
-                if (progress != null)
-                  Text(
-                    '${(progress * 100).toInt()}%',
-                    style: const TextStyle(
-                      color: Colors.blue,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_currentDownloadingName != null) ...[
-              Text(
-                _currentDownloadingIndex > 0 && total > 1
-                    ? 'Collezione $_currentDownloadingIndex di $total: $_currentDownloadingName'
-                    : _currentDownloadingName!,
-                style: const TextStyle(fontSize: 13, color: Colors.grey),
-              ),
-              const SizedBox(height: 8),
-            ],
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 6,
-                backgroundColor: Colors.grey.shade200,
-                color: Colors.blue,
-              ),
-            ),
-            const SizedBox(height: 4),
           ],
         ),
-      ),
-    );
+      );
+    });
+
+    overlayState.insert(_popoverEntry!);
   }
 
   @override
@@ -634,7 +737,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           ),
           if (_isCatalogDownloading)
             GestureDetector(
-              onTap: _showDownloadDetails,
+              onTap: _toggleDownloadPopover,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: SizedBox(
@@ -707,7 +810,15 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
                 if (mounted) setState(() => _avatarVersion++);
               } else if (value == 'settings') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsPage(collectionKey: _currentCollectionKey)));
+                final result = await Navigator.push<Map<String, dynamic>>(
+                  context,
+                  MaterialPageRoute(builder: (_) => SettingsPage(collectionKey: _currentCollectionKey)),
+                );
+                if (mounted && result?['restore'] != null) {
+                  _startRestoreDownload(result!['restore'] as String);
+                }
+              } else if (value == 'donations') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const DonationsPage()));
               } else if (value == 'support') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportPage()));
               } else if (value == 'logout') {
@@ -731,7 +842,15 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'donations',
+                child: ListTile(
+                  leading: Icon(Icons.coffee, color: Color(0xFFFF6B35)),
+                  title: Text('Offrimi un caffè',
+                      style: TextStyle(color: Color(0xFFFF6B35), fontWeight: FontWeight.w600)),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
               const PopupMenuItem(
                 value: 'support',
                 child: ListTile(
@@ -740,7 +859,6 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'logout',
                 child: ListTile(
@@ -946,4 +1064,138 @@ class _WelcomeOverlayState extends State<_WelcomeOverlay> {
       ),
     );
   }
+}
+
+// ─── Download popover card ────────────────────────────────────────────────────
+
+class _DownloadPopoverCard extends StatelessWidget {
+  final double? progress;
+  final String? name;
+  final int index;
+  final int total;
+
+  const _DownloadPopoverCard({
+    required this.progress,
+    required this.name,
+    required this.index,
+    required this.total,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = progress != null ? '${(progress! * 100).toInt()}%' : '···';
+    final subtitle = name == null
+        ? null
+        : (index > 0 && total > 1)
+            ? 'Collezione $index di $total: $name'
+            : name;
+
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Arrow pointing up toward the indicator
+          Positioned(
+            top: -7,
+            right: 16,
+            child: CustomPaint(
+              size: const Size(14, 7),
+              painter: _ArrowPainter(AppColors.bgMedium),
+            ),
+          ),
+          // Card body
+          Container(
+            width: 220,
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            decoration: BoxDecoration(
+              color: AppColors.bgMedium,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.28),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.download_rounded, color: Colors.blue, size: 16),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(
+                        'Download in corso',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      pct,
+                      style: const TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 5,
+                    backgroundColor: AppColors.bgDark,
+                    color: Colors.blue,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Tocca fuori per chiudere',
+                  style: TextStyle(color: AppColors.textHint, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArrowPainter extends CustomPainter {
+  final Color color;
+  const _ArrowPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = Path()
+      ..moveTo(0, size.height)
+      ..lineTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_ArrowPainter old) => old.color != color;
 }

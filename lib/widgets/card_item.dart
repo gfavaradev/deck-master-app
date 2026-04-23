@@ -107,6 +107,8 @@ class CardListItem extends StatelessWidget {
                         ? CachedNetworkImage(
                             imageUrl: card.imageUrl!,
                             fit: BoxFit.cover,
+                            memCacheWidth: 104,
+                            memCacheHeight: 146,
                             placeholder: (c, u) => const Icon(Icons.style, size: 40),
                             errorWidget: (c, u, e) => const Icon(Icons.style, size: 40),
                           )
@@ -231,6 +233,8 @@ class CardGridItem extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: card.imageUrl!,
                         fit: BoxFit.cover,
+                        memCacheWidth: 300,
+                        memCacheHeight: 420,
                         placeholder: (c, u) => Container(
                           color: AppColors.bgMedium,
                           child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),

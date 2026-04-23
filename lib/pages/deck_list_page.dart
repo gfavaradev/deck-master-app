@@ -184,6 +184,7 @@ class _DeckListPageState extends State<DeckListPage> {
               },
             ),
       floatingActionButton: FloatingActionButton(
+        heroTag: null,
         onPressed: _showAddDeckDialog,
         child: const Icon(Icons.add),
       ),

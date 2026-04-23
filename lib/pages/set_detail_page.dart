@@ -167,6 +167,8 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
                     ? CachedNetworkImage(
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
+                        memCacheWidth: 132,
+                        memCacheHeight: 180,
                         placeholder: (ctx, url) => Container(color: AppColors.bgLight),
                         errorWidget: (ctx, url, err) => const Icon(Icons.image_not_supported, color: AppColors.textHint, size: 20),
                       )

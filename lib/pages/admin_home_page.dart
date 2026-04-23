@@ -1,9 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/admin_catalog_service.dart';
 import '../services/admin_translation_service.dart';
 import '../services/background_download_service.dart';
 import '../services/cardtrader_service.dart';
+import '../services/database_helper.dart';
 import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../models/subscription_model.dart';
@@ -23,10 +25,12 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   final AdminCatalogService _service = AdminCatalogService();
   final AdminTranslationService _translationService = AdminTranslationService();
   final CardtraderService _cardtraderService = CardtraderService();
+  final DatabaseHelper _db = DatabaseHelper();
   bool _isRunning = false;
   double? _progress;
   String _statusText = '';
   String _currentOp = '';
+  Future<List<Map<String, dynamic>>>? _coverageStatsFuture;
 
   // ─── Operations ───────────────────────────────────────────────────────────
 
@@ -371,9 +375,14 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         final total = r['blueprints'] as int? ?? 0;
         final priced = r['pricedBlueprints'] as int? ?? 0;
         final exps = r['expansions'] as int? ?? 0;
+        final ctTotal = r['ctExpansionsTotal'] as int? ?? 0;
+        final localSets = r['localSets'] as int? ?? 0;
         final err = r['errors'] as int? ?? 0;
-        return '$total blueprint in $exps espansioni · $priced con prezzo'
-            ' · ${r['valuesUpdated'] ?? 0} carte · ${r['catalogUpdated'] ?? 0} catalogo'
+        // Refresh coverage stats after sync completes
+        if (mounted) setState(() { _coverageStatsFuture = _db.getCardtraderCoverageStats(); });
+        return '$total blueprint in $exps/$ctTotal espansioni CT (set locali: $localSets)'
+            ' · $priced con prezzo · ${r['valuesUpdated'] ?? 0} carte'
+            ' · ${r['catalogUpdated'] ?? 0} catalogo'
             '${err > 0 ? " ($err errori)" : ""}.';
       },
     );
@@ -748,6 +757,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   }
 
   Widget _buildCardtraderSyncCard() {
+    _coverageStatsFuture ??= _db.getCardtraderCoverageStats();
     return Card(
       elevation: 2,
       color: AppColors.bgLight,
@@ -779,8 +789,13 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
               'Prezzi di mercato reali per lingua e 1ª Edizione',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+
+            // Coverage stats (mobile-only, SQLite required)
+            if (!kIsWeb) _buildCoverageStats(),
+
             if (_isRunning) ...[
+              const SizedBox(height: 12),
               Text(
                 _currentOp,
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
@@ -794,8 +809,10 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                   style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                 ),
               ],
-              const SizedBox(height: 16),
-            ],
+              const SizedBox(height: 12),
+            ] else
+              const SizedBox(height: 12),
+
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -825,6 +842,148 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCoverageStats() {
+    final catalogMeta = <String, ({String label, Color color})>{
+      'yugioh':   (label: 'Yu-Gi-Oh!',  color: const Color(0xFF7B1FA2)),
+      'pokemon':  (label: 'Pokémon',    color: const Color(0xFFF57C00)),
+      'onepiece': (label: 'One Piece',  color: const Color(0xFFD32F2F)),
+    };
+
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _coverageStatsFuture,
+      builder: (context, snap) {
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.bgMedium,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Copertura blueprint',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                  ),
+                  const Spacer(),
+                  if (snap.connectionState == ConnectionState.waiting)
+                    const SizedBox(
+                      width: 12, height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.teal),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: () => setState(() { _coverageStatsFuture = _db.getCardtraderCoverageStats(); }),
+                      child: const Icon(Icons.refresh, size: 14, color: Colors.teal),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (snap.hasError)
+                Text('Errore: ${snap.error}', style: const TextStyle(fontSize: 11, color: Colors.red))
+              else if (!snap.hasData || snap.data!.isEmpty)
+                const Text('Nessun dato CT in cache locale.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary))
+              else ...[
+                // Header row
+                const Row(
+                  children: [
+                    SizedBox(width: 84),
+                    Expanded(child: Text('Catalogo', style: TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
+                    Expanded(child: Text('CT blueprint', style: TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
+                    Expanded(child: Text('Con prezzo', style: TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
+                    Expanded(child: Text('Diff.', style: TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                for (final row in snap.data!)
+                  _buildCoverageRow(row, catalogMeta),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCoverageRow(
+    Map<String, dynamic> row,
+    Map<String, ({String label, Color color})> meta,
+  ) {
+    final cat = row['catalog'] as String;
+    final local = row['localCards'] as int;
+    final ct = row['ctBlueprints'] as int;
+    final priced = row['ctPriced'] as int;
+    final diff = ct - local;
+    final m = meta[cat];
+    final color = m?.color ?? Colors.grey;
+    final label = m?.label ?? cat;
+
+    final coveragePct = local > 0 ? (ct / local * 100).clamp(0, 999) : 0.0;
+    final diffStr = diff > 0 ? '+$diff' : '$diff';
+    final diffColor = diff < 0 ? Colors.orange : (diff > 0 ? Colors.green : AppColors.textSecondary);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 84,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: color.withValues(alpha: 0.4)),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '$local',
+              style: const TextStyle(fontSize: 11, color: AppColors.textPrimary),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  '$ct',
+                  style: const TextStyle(fontSize: 11, color: AppColors.textPrimary),
+                  textAlign: TextAlign.center,
+                ),
+                Text(
+                  '${coveragePct.toStringAsFixed(0)}%',
+                  style: const TextStyle(fontSize: 9, color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '$priced',
+              style: const TextStyle(fontSize: 11, color: AppColors.textPrimary),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              diffStr,
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: diffColor),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -870,6 +1029,8 @@ class _AdminProPageState extends State<AdminProPage> {
   List<UserModel> _users = [];
   List<UserModel> _filtered = [];
   bool _loading = true;
+  static const int _pageSize = 50;
+  int _displayLimit = _pageSize;
 
   @override
   void initState() {
@@ -911,6 +1072,7 @@ class _AdminProPageState extends State<AdminProPage> {
               u.email.toLowerCase().contains(q) ||
               (u.displayName?.toLowerCase().contains(q) ?? false))
           .toList();
+      _displayLimit = _pageSize; // Reset pagination on new search
     });
   }
 
@@ -1044,12 +1206,31 @@ class _AdminProPageState extends State<AdminProPage> {
                 color: AppColors.gold,
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: _filtered.length,
-                  itemBuilder: (_, i) => _UserProTile(
-                    user: _filtered[i],
-                    onTogglePro: () => _togglePro(_filtered[i]),
-                    onDonation: () => _recordDonation(_filtered[i]),
-                  ),
+                  itemCount: _filtered.length > _displayLimit
+                      ? _displayLimit + 1
+                      : _filtered.length,
+                  itemBuilder: (_, i) {
+                    if (i >= _displayLimit) {
+                      // "Load more" row
+                      final remaining = _filtered.length - _displayLimit;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: TextButton(
+                          onPressed: () => setState(
+                              () => _displayLimit += _pageSize),
+                          child: Text(
+                            'Mostra altri $remaining utenti',
+                            style: const TextStyle(color: AppColors.gold),
+                          ),
+                        ),
+                      );
+                    }
+                    return _UserProTile(
+                      user: _filtered[i],
+                      onTogglePro: () => _togglePro(_filtered[i]),
+                      onDonation: () => _recordDonation(_filtered[i]),
+                    );
+                  },
                 ),
               ),
             ),

@@ -57,24 +57,29 @@ class FirestoreService {
       }
 
       final List<Map<String, dynamic>> allCards = [];
-
-      for (int i = 1; i <= totalChunks; i++) {
-        final chunkId = FirestoreConstants.getChunkId(i);
-        final doc = await _firestore
-            .collection(FirestorePaths.catalog(catalogName))
-            .doc(FirestoreConstants.catalogChunks)
-            .collection(FirestoreConstants.catalogItems)
-            .doc(chunkId)
-            .get();
-
-        if (doc.exists && doc.data() != null) {
-          final List<dynamic> cards = doc.data()!['cards'] ?? [];
-          for (var card in cards) {
-            allCards.add(Map<String, dynamic>.from(card as Map));
+      // PERF #1 fix: fetch chunk in parallelo (batch di 10) invece di N round-trip sequenziali
+      const batchSize = 10;
+      for (int start = 1; start <= totalChunks; start += batchSize) {
+        final end = (start + batchSize - 1).clamp(1, totalChunks);
+        final futures = [
+          for (int i = start; i <= end; i++)
+            _firestore
+                .collection(FirestorePaths.catalog(catalogName))
+                .doc(FirestoreConstants.catalogChunks)
+                .collection(FirestoreConstants.catalogItems)
+                .doc(FirestoreConstants.getChunkId(i))
+                .get(),
+        ];
+        final docs = await Future.wait(futures);
+        for (final doc in docs) {
+          if (doc.exists && doc.data() != null) {
+            final List<dynamic> cards = doc.data()!['cards'] ?? [];
+            for (var card in cards) {
+              allCards.add(Map<String, dynamic>.from(card as Map));
+            }
           }
         }
-
-        onProgress?.call(i, totalChunks);
+        onProgress?.call(end, totalChunks);
       }
 
       AppLogger.success(
@@ -103,23 +108,26 @@ class FirestoreService {
       AppLogger.info('Fetching ${chunkIds.length} chunks for $catalogName', tag: 'FirestoreService');
       final List<Map<String, dynamic>> allCards = [];
       final total = chunkIds.length;
-
-      for (int i = 0; i < total; i++) {
-        final chunkId = chunkIds[i];
-        final doc = await _firestore
+      // PERF #1 fix: fetch in parallelo a batch di 10
+      const batchSize = 10;
+      for (int start = 0; start < total; start += batchSize) {
+        final end = (start + batchSize).clamp(0, total);
+        final batch = chunkIds.sublist(start, end);
+        final docs = await Future.wait(batch.map((chunkId) => _firestore
             .collection(FirestorePaths.catalog(catalogName))
             .doc(FirestoreConstants.catalogChunks)
             .collection(FirestoreConstants.catalogItems)
             .doc(chunkId)
-            .get();
-
-        if (doc.exists && doc.data() != null) {
-          final List<dynamic> cards = doc.data()!['cards'] ?? [];
-          for (var card in cards) {
-            allCards.add(Map<String, dynamic>.from(card as Map));
+            .get()));
+        for (final doc in docs) {
+          if (doc.exists && doc.data() != null) {
+            final List<dynamic> cards = doc.data()!['cards'] ?? [];
+            for (var card in cards) {
+              allCards.add(Map<String, dynamic>.from(card as Map));
+            }
           }
         }
-        onProgress?.call(i + 1, total);
+        onProgress?.call(end, total);
       }
 
       AppLogger.success(
@@ -276,6 +284,8 @@ class FirestoreService {
       'rarity': card.rarity,
       'description': card.description,
       'quantity': card.quantity,
+      // BUG #8 fix: persiste il valore manuale dell'utente così è visibile su altri dispositivi
+      if (card.value > 0) 'value': card.value,
       'imageUrl': card.imageUrl,
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -299,6 +309,8 @@ class FirestoreService {
       'rarity': card.rarity,
       'description': card.description,
       'quantity': card.quantity,
+      // BUG #8 fix: persiste il valore manuale su Firestore
+      'value': card.value > 0 ? card.value : FieldValue.delete(),
       'imageUrl': card.imageUrl,
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -489,16 +501,28 @@ class FirestoreService {
   ) async {
     final ref = _firestore.collection('cardtrader_prices').doc(catalog);
 
-    // Delete old chunks
+    // PERF #3 fix: delete old chunks in batches (max 500 ops per WriteBatch)
     final oldChunks = await ref.collection('chunks').get();
-    for (final chunk in oldChunks.docs) {
-      await chunk.reference.delete();
+    const maxBatch = 400;
+    for (int i = 0; i < oldChunks.docs.length; i += maxBatch) {
+      final batch = _firestore.batch();
+      final end = (i + maxBatch).clamp(0, oldChunks.docs.length);
+      for (final doc in oldChunks.docs.sublist(i, end)) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
     }
 
-    // Write new chunks
-    for (int i = 0; i < prices.length; i += _ctChunkSize) {
-      final slice = prices.sublist(i, (i + _ctChunkSize).clamp(0, prices.length));
-      await ref.collection('chunks').doc('$i').set({'rows': slice});
+    // Write new chunks in batches
+    final chunkStarts = [for (int i = 0; i < prices.length; i += _ctChunkSize) i];
+    for (int i = 0; i < chunkStarts.length; i += maxBatch) {
+      final batch = _firestore.batch();
+      final end = (i + maxBatch).clamp(0, chunkStarts.length);
+      for (final start in chunkStarts.sublist(i, end)) {
+        final slice = prices.sublist(start, (start + _ctChunkSize).clamp(0, prices.length));
+        batch.set(ref.collection('chunks').doc('$start'), {'rows': slice});
+      }
+      await batch.commit();
     }
 
     // Update metadata
@@ -540,6 +564,31 @@ class FirestoreService {
       if (ts is Timestamp) return ts.toDate();
     } catch (_) {}
     return null;
+  }
+
+  /// Returns syncedAt + modifiedChunks from the catalog metadata,
+  /// written by syncCatalogPricesToFirestore when prices are embedded in chunks.
+  Future<Map<String, dynamic>?> getCatalogPriceSyncInfo(String catalog) async {
+    try {
+      final catalogCollection = '${catalog}_catalog';
+      final doc = await _firestore
+          .collection(catalogCollection)
+          .doc('metadata')
+          .get()
+          .timeout(const Duration(seconds: 8));
+      if (!doc.exists) return null;
+      final data = doc.data();
+      if (data == null) return null;
+      final ts = data['pricesSyncedAt'];
+      if (ts is! Timestamp) return null;
+      final rawChunks = data['priceModifiedChunks'];
+      final modifiedChunks = rawChunks is List
+          ? rawChunks.whereType<String>().toList()
+          : <String>[];
+      return {'syncedAt': ts.toDate(), 'modifiedChunks': modifiedChunks};
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Delete all albums, cards and decks documents for a user.

@@ -363,7 +363,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: _saveCard,
+                  onPressed: () => _saveCard(),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.deepPurple,
                     foregroundColor: Colors.white,
@@ -444,8 +444,20 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                               catalog: _catalog,
                               cardId: _cardId!,
                               setCode: null,
+                            ).timeout(
+                              const Duration(minutes: 2),
+                              onTimeout: () => null,
                             );
-                            if (ctx.mounted && url != null) setS(() => _imageUrlController.text = url);
+                            if (ctx.mounted && url != null) {
+                              setS(() => _imageUrlController.text = url);
+                            } else if (ctx.mounted && url == null) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Upload non riuscito o timeout'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
                           } finally {
                             if (ctx.mounted) setS(() => _imageUploading = false);
                           }
@@ -1177,7 +1189,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     if (langCode == null) return null;
 
     // Caso 1: PREFIX-EN001 o PREFIX-E001 → PREFIX-IT001
-    final matchWithLang = RegExp(r'^([A-Z0-9]+)-(EN|E)(.+)$').firstMatch(upper);
+    final matchWithLang = RegExp(r'^([A-Z0-9]+)-(EN|E)(\d.*)$').firstMatch(upper);
     if (matchWithLang != null) {
       final isShort = matchWithLang.group(2) == 'E';
       final prefix = matchWithLang.group(1)!;
@@ -1186,12 +1198,20 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
       return '$prefix-$code$suffix';
     }
 
-    // Caso 2: PREFIX-070 (nessuna sigla lingua) → PREFIX-IT070
+    // Caso 2: PREFIX-070 (nessuna sigla lingua nel codice) → PREFIX-IT070
     final matchNoLang = RegExp(r'^([A-Z0-9]+)-(\d+.*)$').firstMatch(upper);
     if (matchNoLang != null) {
       final prefix = matchNoLang.group(1)!;
       final numbers = matchNoLang.group(2)!;
       return '$prefix-$langCode$numbers';
+    }
+
+    // Caso 3: PREFIX001 (nessun trattino) → PREFIX{LANGCODE}001
+    final matchNoDash = RegExp(r'^([A-Z]+)(\d+.*)$').firstMatch(upper);
+    if (matchNoDash != null) {
+      final prefix = matchNoDash.group(1)!;
+      final numbers = matchNoDash.group(2)!;
+      return '$prefix$langCode$numbers';
     }
 
     return null;
@@ -1464,13 +1484,36 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
 
   // ─── Save ────────────────────────────────────────────────────────────────────
 
-  void _saveCard() {
+  Future<void> _saveCard() async {
     if (_nameEnController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nome inglese obbligatorio!')),
       );
       _tabController.animateTo(0);
       return;
+    }
+
+    final imageUrl = _imageUrlController.text.trim();
+    if (imageUrl.isNotEmpty && !imageUrl.contains('firebasestorage')) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('URL immagine non è Firebase Storage'),
+          content: const Text(
+            'L\'URL inserito non punta a Firebase Storage.\n\n'
+            'Le immagini devono essere caricate su Firebase Storage tramite il pulsante di upload.\n\n'
+            'Salvare comunque?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Salva comunque', style: TextStyle(color: Colors.orange)),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
     }
 
     // Build translations map

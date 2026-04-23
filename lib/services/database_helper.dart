@@ -14,7 +14,7 @@ class DatabaseHelper {
 
   DatabaseHelper._internal();
 
-  static const List<String> _validLanguages = ['EN', 'IT', 'FR', 'DE', 'PT', 'SP', 'JP'];
+  static const List<String> _validLanguages = ['EN', 'IT', 'FR', 'DE', 'PT', 'ES', 'SP', 'JP', 'KO', 'ZH'];
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 24,
+      version: 27,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -82,6 +82,7 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_collection ON cards(collection)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_albumId ON cards(albumId)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_catalogId ON cards(catalogId)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_collection_albumId ON cards(collection, albumId)');
 
     return db;
   }
@@ -314,6 +315,35 @@ class DatabaseHelper {
           AND albumId IS NOT NULL
           AND EXISTS (SELECT 1 FROM albums a WHERE a.id = cards.albumId)
       ''');
+    }
+    if (oldVersion < 25) {
+      // Aggiunge spagnolo (ES) a pokemon_cards e pokemon_prints.
+      // ES usa TCGdex /es/ endpoint; prezzi da cardtrader_prices language='es'.
+      await _addColumnIfMissing(db, 'pokemon_cards', 'name_es', 'TEXT');
+      await _addColumnIfMissing(db, 'pokemon_prints', 'set_code_es', 'TEXT');
+      await _addColumnIfMissing(db, 'pokemon_prints', 'set_name_es', 'TEXT');
+      await _addColumnIfMissing(db, 'pokemon_prints', 'rarity_es', 'TEXT');
+      await _addColumnIfMissing(db, 'pokemon_prints', 'set_price_es', 'REAL');
+    }
+    if (oldVersion < 26) {
+      // Aggiunge KO/ZH a onepiece_prints e alle tabelle di traduzioni condivise,
+      // necessari per l'editor admin_sets_rarities_page.
+      // Aggiunge anche ES a catalog_expansions e catalog_rarities per il Pokémon.
+      for (final lang in ['ko', 'zh']) {
+        await _addColumnIfMissing(db, 'onepiece_prints', 'set_name_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'onepiece_prints', 'rarity_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'catalog_expansions', 'set_name_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'catalog_rarities', 'rarity_$lang', 'TEXT');
+      }
+      await _addColumnIfMissing(db, 'catalog_expansions', 'set_name_es', 'TEXT');
+      await _addColumnIfMissing(db, 'catalog_rarities', 'rarity_es', 'TEXT');
+    }
+    if (oldVersion < 27) {
+      // PERF #6 fix: indice composito per query filtrate per collezione + album.
+      // Accelera getCardsByCollection quando si filtra poi per albumId (es. album view).
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_cards_collection_albumId ON cards(collection, albumId)',
+      );
     }
   }
 
@@ -568,6 +598,7 @@ class DatabaseHelper {
         name_it TEXT,
         name_fr TEXT,
         name_de TEXT,
+        name_es TEXT,
         name_pt TEXT,
         created_at TEXT,
         updated_at TEXT
@@ -595,6 +626,10 @@ class DatabaseHelper {
         set_name_de TEXT,
         rarity_de TEXT,
         set_price_de REAL,
+        set_code_es TEXT,
+        set_name_es TEXT,
+        rarity_es TEXT,
+        set_price_es REAL,
         set_code_pt TEXT,
         set_name_pt TEXT,
         rarity_pt TEXT,
@@ -804,8 +839,11 @@ class DatabaseHelper {
         set_name_it TEXT,
         set_name_fr TEXT,
         set_name_de TEXT,
+        set_name_es TEXT,
         set_name_pt TEXT,
         set_name_sp TEXT,
+        set_name_ko TEXT,
+        set_name_zh TEXT,
         UNIQUE(catalog, set_name)
       )
     ''');
@@ -822,8 +860,11 @@ class DatabaseHelper {
         rarity_it   TEXT,
         rarity_fr   TEXT,
         rarity_de   TEXT,
+        rarity_es   TEXT,
         rarity_pt   TEXT,
         rarity_sp   TEXT,
+        rarity_ko   TEXT,
+        rarity_zh   TEXT,
         UNIQUE(catalog, rarity)
       )
     ''');
@@ -860,6 +901,7 @@ class DatabaseHelper {
                MIN(pp.set_name_it) AS set_name_it,
                MIN(pp.set_name_fr) AS set_name_fr,
                MIN(pp.set_name_de) AS set_name_de,
+               MIN(pp.set_name_es) AS set_name_es,
                MIN(pp.set_name_pt) AS set_name_pt,
                NULL AS set_name_sp,
                MIN(pc.set_id) AS set_id
@@ -870,8 +912,10 @@ class DatabaseHelper {
       ''');
     } else if (catalog == 'onepiece') {
       rows = await db.rawQuery('''
-        SELECT set_name, NULL AS set_name_it, NULL AS set_name_fr,
+        SELECT set_name,
+               NULL AS set_name_it, NULL AS set_name_fr,
                NULL AS set_name_de, NULL AS set_name_pt, NULL AS set_name_sp,
+               MIN(set_name_ko) AS set_name_ko, MIN(set_name_zh) AS set_name_zh,
                MIN(set_id) AS set_id
         FROM onepiece_prints
         WHERE set_name IS NOT NULL AND set_name != ''
@@ -888,8 +932,11 @@ class DatabaseHelper {
         'set_name_it': row['set_name_it'],
         'set_name_fr': row['set_name_fr'],
         'set_name_de': row['set_name_de'],
+        if (row.containsKey('set_name_es')) 'set_name_es': row['set_name_es'],
         'set_name_pt': row['set_name_pt'],
         'set_name_sp': row['set_name_sp'],
+        if (row.containsKey('set_name_ko')) 'set_name_ko': row['set_name_ko'],
+        if (row.containsKey('set_name_zh')) 'set_name_zh': row['set_name_zh'],
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
   }
@@ -910,19 +957,21 @@ class DatabaseHelper {
       rows = await db.rawQuery('''
         SELECT rarity, NULL AS rarity_code,
                MIN(rarity_it) AS rarity_it, MIN(rarity_fr) AS rarity_fr,
-               MIN(rarity_de) AS rarity_de, MIN(rarity_pt) AS rarity_pt,
-               NULL AS rarity_sp
+               MIN(rarity_de) AS rarity_de, MIN(rarity_es) AS rarity_es,
+               MIN(rarity_pt) AS rarity_pt, NULL AS rarity_sp
         FROM pokemon_prints
         WHERE rarity IS NOT NULL AND rarity != ''
         GROUP BY rarity
       ''');
     } else if (catalog == 'onepiece') {
       rows = await db.rawQuery('''
-        SELECT DISTINCT rarity, NULL AS rarity_code,
+        SELECT rarity, NULL AS rarity_code,
                NULL AS rarity_it, NULL AS rarity_fr,
-               NULL AS rarity_de, NULL AS rarity_pt, NULL AS rarity_sp
+               NULL AS rarity_de, NULL AS rarity_pt, NULL AS rarity_sp,
+               MIN(rarity_ko) AS rarity_ko, MIN(rarity_zh) AS rarity_zh
         FROM onepiece_prints
         WHERE rarity IS NOT NULL AND rarity != ''
+        GROUP BY rarity
       ''');
     } else {
       return;
@@ -935,8 +984,11 @@ class DatabaseHelper {
         'rarity_it':  row['rarity_it'],
         'rarity_fr':  row['rarity_fr'],
         'rarity_de':  row['rarity_de'],
+        if (row.containsKey('rarity_es')) 'rarity_es': row['rarity_es'],
         'rarity_pt':  row['rarity_pt'],
         'rarity_sp':  row['rarity_sp'],
+        if (row.containsKey('rarity_ko')) 'rarity_ko': row['rarity_ko'],
+        if (row.containsKey('rarity_zh')) 'rarity_zh': row['rarity_zh'],
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
   }
@@ -2104,12 +2156,22 @@ class DatabaseHelper {
       }
     } else if (collectionKey == 'pokemon') {
       final db = await database;
-      const langs = ['it', 'fr', 'de', 'pt'];
+      const langs = ['it', 'fr', 'de', 'es', 'pt'];
       for (final lang in langs) {
-        final rows = await db.rawQuery(
-          'SELECT 1 FROM pokemon_prints WHERE set_code_$lang IS NOT NULL AND set_code_$lang != "" LIMIT 1',
+        // Check either the card name OR the set_name for this language.
+        // set_code_* is always equal to EN (same api_id), so it's always non-null.
+        // A language is "available" if at least one card OR one print has localized data.
+        final cardRows = await db.rawQuery(
+          'SELECT 1 FROM pokemon_cards WHERE name_$lang IS NOT NULL AND name_$lang != "" LIMIT 1',
         );
-        if (rows.isNotEmpty) result.add(lang.toUpperCase());
+        if (cardRows.isNotEmpty) {
+          result.add(lang.toUpperCase());
+          continue;
+        }
+        final printRows = await db.rawQuery(
+          'SELECT 1 FROM pokemon_prints WHERE set_name_$lang IS NOT NULL AND set_name_$lang != "" LIMIT 1',
+        );
+        if (printRows.isNotEmpty) result.add(lang.toUpperCase());
       }
     } else if (collectionKey == 'onepiece') {
       final db = await database;
@@ -2174,9 +2236,9 @@ class DatabaseHelper {
             INSERT OR REPLACE INTO pokemon_cards (
               api_id, name, supertype, subtype, hp, types, rarity,
               set_id, set_name, set_series, number, image_url,
-              name_it, name_fr, name_de, name_pt,
+              name_it, name_fr, name_de, name_es, name_pt,
               created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''', [
             cardData['api_id'],
             cardData['name'],
@@ -2195,6 +2257,7 @@ class DatabaseHelper {
             cardData['name_it'],
             cardData['name_fr'],
             cardData['name_de'],
+            cardData['name_es'],
             cardData['name_pt'],
             now, now,
           ]);
@@ -2208,11 +2271,12 @@ class DatabaseHelper {
                   set_code_it, set_name_it, rarity_it, set_price_it,
                   set_code_fr, set_name_fr, rarity_fr, set_price_fr,
                   set_code_de, set_name_de, rarity_de, set_price_de,
+                  set_code_es, set_name_es, rarity_es, set_price_es,
                   set_code_pt, set_name_pt, rarity_pt, set_price_pt,
                   created_at, updated_at
                 ) VALUES (
                   (SELECT id FROM pokemon_cards WHERE api_id = ?),
-                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
               ''', [
                 cardData['api_id'],
@@ -2226,6 +2290,8 @@ class DatabaseHelper {
                 p['set_price_fr'] is num ? p['set_price_fr'] : double.tryParse(p['set_price_fr']?.toString() ?? ''),
                 p['set_code_de'], p['set_name_de'], p['rarity_de'],
                 p['set_price_de'] is num ? p['set_price_de'] : double.tryParse(p['set_price_de']?.toString() ?? ''),
+                p['set_code_es'], p['set_name_es'], p['rarity_es'],
+                p['set_price_es'] is num ? p['set_price_es'] : double.tryParse(p['set_price_es']?.toString() ?? ''),
                 p['set_code_pt'], p['set_name_pt'], p['rarity_pt'],
                 p['set_price_pt'] is num ? p['set_price_pt'] : double.tryParse(p['set_price_pt']?.toString() ?? ''),
                 now, now,
@@ -2292,27 +2358,27 @@ class DatabaseHelper {
         whereClause = '''WHERE (
           $nameCol LIKE ?
           OR pc.name LIKE ?
+          OR pc.name_it LIKE ? OR pc.name_fr LIKE ? OR pc.name_de LIKE ?
+          OR pc.name_es LIKE ? OR pc.name_pt LIKE ?
           OR pp.set_code LIKE ?
-          OR pp.set_code_it LIKE ?
-          OR pp.set_code_fr LIKE ?
-          OR pp.set_code_de LIKE ?
-          OR pp.set_code_pt LIKE ?
+          OR pp.set_name LIKE ? OR pp.set_name_it LIKE ?
         )''';
-        whereArgs = [q, q, q, q, q, q, q];
+        whereArgs = [q, q, q, q, q, q, q, q, q, q];
       } else {
         whereClause = '''WHERE (
           pc.name LIKE ?
+          OR pc.name_it LIKE ? OR pc.name_fr LIKE ? OR pc.name_de LIKE ?
+          OR pc.name_es LIKE ? OR pc.name_pt LIKE ?
           OR pp.set_code LIKE ?
-          OR pp.set_code_it LIKE ?
-          OR pp.set_code_fr LIKE ?
-          OR pp.set_code_de LIKE ?
-          OR pp.set_code_pt LIKE ?
+          OR pp.set_name LIKE ?
         )''';
-        whereArgs = [q, q, q, q, q, q];
+        whereArgs = [q, q, q, q, q, q, q, q];
       }
     }
 
     final isLocalizedPrint = hasLang ? 'CASE WHEN pp.set_name$suffix IS NOT NULL THEN 1 ELSE 0 END' : '1';
+    // CT price language: use selected language if valid, else fall back to EN
+    final ctLang = hasLang ? language.toLowerCase() : 'en';
 
     final sql = '''
       SELECT
@@ -2336,14 +2402,28 @@ class DatabaseHelper {
         $setNameCol AS localizedSetName,
         pp.rarity AS setRarity,
         $rarityCol AS localizedRarity,
-        pp.set_price AS setPrice,
-        $setPriceCol AS localizedSetPrice,
+        -- Prefer CT marketplace price (EUR) over TCGdex Cardmarket price when available
+        COALESCE(ctp.ct_price_cents / 100.0, pp.set_price) AS setPrice,
+        COALESCE(ctp.ct_price_cents / 100.0, $setPriceCol) AS localizedSetPrice,
         pp.artwork,
         'pokemon' AS collection,
         $isLocalizedPrint AS isLocalizedPrint,
         EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(pc.id AS TEXT) AND collection = 'pokemon') AS isOwned
       FROM pokemon_cards pc
       LEFT JOIN pokemon_prints pp ON pc.id = pp.card_id
+      LEFT JOIN (
+        SELECT
+          expansion_code,
+          CAST(collector_number AS INTEGER) AS cn_int,
+          MIN(min_price_any_cents) AS ct_price_cents
+        FROM cardtrader_prices
+        WHERE catalog = 'pokemon' AND language = '$ctLang'
+          AND min_price_any_cents IS NOT NULL
+        GROUP BY expansion_code, cn_int
+      ) ctp ON (
+        LOWER(pc.set_id) = ctp.expansion_code
+        AND CAST(pc.number AS INTEGER) = ctp.cn_int
+      )
       $whereClause
       ORDER BY pc.name, $setCodeCol
       LIMIT ? OFFSET ?
@@ -2636,9 +2716,10 @@ class DatabaseHelper {
   /// Lingue disponibili per una collezione (suffissi colonne, lowercase).
   List<String> _collectionLangs(String collection) {
     switch (collection) {
-      case 'yugioh':  return ['it', 'fr', 'de', 'pt', 'sp'];
-      case 'pokemon': return ['it', 'fr', 'de', 'pt'];
-      default:        return [];
+      case 'yugioh':   return ['it', 'fr', 'de', 'pt', 'sp'];
+      case 'pokemon':  return ['it', 'fr', 'de', 'es', 'pt'];
+      case 'onepiece': return ['fr', 'ko', 'zh'];
+      default:         return [];
     }
   }
 
@@ -2991,6 +3072,48 @@ class DatabaseHelper {
     return db.query('cardtrader_prices', where: 'catalog = ?', whereArgs: [catalog]);
   }
 
+  /// Returns CT coverage stats for each collection.
+  /// Each map has: catalog, localCards, ctBlueprints, ctPriced.
+  Future<List<Map<String, dynamic>>> getCardtraderCoverageStats() async {
+    final db = await database;
+
+    // Count local catalog cards per collection
+    final localCounts = <String, int>{};
+    for (final row in await db.rawQuery('''
+      SELECT 'yugioh' AS catalog, COUNT(*) AS n FROM yugioh_cards
+      UNION ALL
+      SELECT 'pokemon', COUNT(*) FROM pokemon_cards
+      UNION ALL
+      SELECT 'onepiece', COUNT(*) FROM onepiece_cards
+    ''')) {
+      localCounts[row['catalog'] as String] = (row['n'] as int? ?? 0);
+    }
+
+    // Count distinct CT blueprints per catalog (blueprint_id is per-card, not per-language)
+    final ctRows = await db.rawQuery('''
+      SELECT catalog,
+             COUNT(DISTINCT blueprint_id) AS ct_blueprints,
+             COUNT(DISTINCT CASE WHEN min_price_any_cents IS NOT NULL THEN blueprint_id END) AS ct_priced
+      FROM cardtrader_prices
+      GROUP BY catalog
+    ''');
+    final ctMap = <String, Map<String, int>>{};
+    for (final row in ctRows) {
+      final cat = row['catalog'] as String;
+      ctMap[cat] = {
+        'ct_blueprints': row['ct_blueprints'] as int? ?? 0,
+        'ct_priced': row['ct_priced'] as int? ?? 0,
+      };
+    }
+
+    return ['yugioh', 'pokemon', 'onepiece'].map((cat) => {
+      'catalog': cat,
+      'localCards': localCounts[cat] ?? 0,
+      'ctBlueprints': ctMap[cat]?['ct_blueprints'] ?? 0,
+      'ctPriced': ctMap[cat]?['ct_priced'] ?? 0,
+    }).toList();
+  }
+
   Future<List<Map<String, dynamic>>> getAllDecks() async {
     Database db = await database;
     return await db.query('decks');
@@ -3180,13 +3303,26 @@ class DatabaseHelper {
         op.rarity,
         $rarityCol AS localizedRarity,
         op.inventory_price AS inventoryPrice,
-        op.market_price AS marketPrice,
+        -- Prefer CT marketplace price (EUR) over OPTCG price (USD) when available
+        COALESCE(ctp.ct_price_cents / 100.0, op.market_price) AS marketPrice,
         op.artwork,
         'onepiece' AS collection,
         $isLocalizedPrint AS isLocalizedPrint,
         EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(oc.id AS TEXT) AND collection = 'onepiece') AS isOwned
       FROM onepiece_cards oc
       INNER JOIN onepiece_prints op ON oc.id = op.card_id
+      LEFT JOIN (
+        SELECT
+          expansion_code,
+          CAST(collector_number AS INTEGER) AS cn_int,
+          MIN(min_price_any_cents) AS ct_price_cents
+        FROM cardtrader_prices
+        WHERE catalog = 'onepiece' AND min_price_any_cents IS NOT NULL
+        GROUP BY expansion_code, cn_int
+      ) ctp ON (
+        LOWER(SUBSTR(op.card_set_id, 1, INSTR(op.card_set_id, '-') - 1)) = ctp.expansion_code
+        AND CAST(SUBSTR(op.card_set_id, INSTR(op.card_set_id, '-') + 1) AS INTEGER) = ctp.cn_int
+      )
       $whereClause
       GROUP BY oc.id, op.card_set_id, op.rarity, COALESCE(op.artwork, 0)
       ORDER BY op.card_set_id
@@ -3242,11 +3378,17 @@ class DatabaseHelper {
           WHERE set_id IS NOT NULL AND set_id != ''
         ''');
       case 'onepiece':
-        // onepiece_prints.set_id (e.g. "OP01")
+        // set_id (e.g. "OP01") when present; otherwise derive from card_set_id prefix
+        // (e.g. "OP01-001" → "op01") so prints with null set_id are still matched.
         rows = await db.rawQuery('''
-          SELECT DISTINCT LOWER(set_id) AS code
+          SELECT DISTINCT LOWER(COALESCE(
+            NULLIF(set_id, ''),
+            CASE WHEN card_set_id LIKE '%-%'
+                 THEN SUBSTR(card_set_id, 1, INSTR(card_set_id, '-') - 1)
+                 ELSE card_set_id END
+          )) AS code
           FROM onepiece_prints
-          WHERE set_id IS NOT NULL AND set_id != ''
+          WHERE card_set_id IS NOT NULL AND card_set_id != ''
         ''');
       default:
         return {};
@@ -3528,6 +3670,25 @@ class DatabaseHelper {
       mapRar   .putIfAbsent('$exp|$name|$lang|$rar',     () => Map<String, dynamic>.from(r));
       mapName  .putIfAbsent('$exp|$name|$lang',          () => Map<String, dynamic>.from(r));
       mapCnOnly.putIfAbsent('$exp|$lang|$cn',            () => Map<String, dynamic>.from(r));
+      // Pokémon CN zero-padding fix: CT stores "001" but _parseSerialForCt returns "1".
+      // Index also the numeric-only form (strip leading zeros) so both formats hit the same row.
+      if (cn.isNotEmpty) {
+        final cnNumeric = cn.replaceAll(RegExp(r'^0+'), ''); // "001" → "1"
+        if (cnNumeric != cn && cnNumeric.isNotEmpty) {
+          mapFull  .putIfAbsent('$exp|$name|$lang|$cnNumeric|$rar', () => Map<String, dynamic>.from(r));
+          mapCn    .putIfAbsent('$exp|$name|$lang|$cnNumeric',      () => Map<String, dynamic>.from(r));
+          mapCnOnly.putIfAbsent('$exp|$lang|$cnNumeric',            () => Map<String, dynamic>.from(r));
+        }
+        // Also index with slash stripped: "025/078" → "025"
+        final cnSlash = cn.contains('/') ? cn.split('/').first : cn;
+        if (cnSlash != cn) {
+          final cnSlashNumeric = cnSlash.replaceAll(RegExp(r'^0+'), '');
+          mapCn    .putIfAbsent('$exp|$name|$lang|$cnSlash',        () => Map<String, dynamic>.from(r));
+          mapCnOnly.putIfAbsent('$exp|$lang|$cnSlash',              () => Map<String, dynamic>.from(r));
+          mapCn    .putIfAbsent('$exp|$name|$lang|$cnSlashNumeric', () => Map<String, dynamic>.from(r));
+          mapCnOnly.putIfAbsent('$exp|$lang|$cnSlashNumeric',       () => Map<String, dynamic>.from(r));
+        }
+      }
     }
 
     // In-memory price lookup with 5-level fallback chain (zero DB queries).
@@ -3670,12 +3831,20 @@ class DatabaseHelper {
       cn = rawCn.toLowerCase(); // e.g. "IT001" → "it001", matches CT stored value
     } else if (catalog == 'onepiece') {
       cn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1).toLowerCase() : '';
-      // "001" or "SEC" → Japanese (no lang prefix); "EN001" → English
+      // Strip variant suffix: "001_p1" → "001", "en001_alt" → "en001"
+      final underscoreIdx = cn.indexOf('_');
+      if (underscoreIdx > 0) cn = cn.substring(0, underscoreIdx);
+      // "001" → Japanese (no lang prefix); "en001" → English
       final langMatch = RegExp(r'^([a-z]{2})\d').firstMatch(cn);
       lang = langMatch != null ? langMatch.group(1)! : 'ja';
     } else {
-      // Pokemon and others: lowercase CN to match CT stored values
-      cn = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1).toLowerCase() : '';
+      // Pokemon: CN from serial = part after first '-', e.g. "swsh1-1" → "1".
+      // CT stores collector_number with leading zeros ("001") and sometimes with
+      // suffix ("025/078"). Strip leading zeros here so "1" matches the
+      // indexed form from the zero-stripping in syncCollectionValuesFromCardtrader.
+      final raw = sn.contains('-') ? sn.substring(sn.indexOf('-') + 1).toLowerCase() : '';
+      // Strip leading zeros: "001" → "1", keep "tg01" unchanged (starts with letter)
+      cn = raw.replaceAll(RegExp(r'^0+(?=[0-9])'), '');
     }
 
     return (exp, lang, cn);
@@ -3767,119 +3936,192 @@ class DatabaseHelper {
   Future<int> syncCatalogPricesFromCardtrader(String catalog) async {
     final db = await database;
 
-    // Wrap all UPDATE statements in a single transaction so the write lock
-    // is acquired once and released once — no interleaving with other reads.
-    return db.transaction((txn) async {
-      int total = 0;
+    // Each rawUpdate runs as its own implicit transaction so the write lock
+    // is held only for the duration of that single statement. This allows
+    // UI reads to interleave between language-column updates and avoids the
+    // "database locked for 10 s" warning caused by one giant transaction
+    // covering all catalogs × languages.
+    int total = 0;
 
-      switch (catalog) {
-        case 'yugioh':
-          const ygoLangCols = <String, String>{
-            'en': 'set_price',
-            'it': 'set_price_it',
-            'fr': 'set_price_fr',
-            'de': 'set_price_de',
-            'pt': 'set_price_pt',
-            'es': 'set_price_sp',
-          };
-          for (final entry in ygoLangCols.entries) {
-            final lang = entry.key;
-            final col  = entry.value;
-            final n = await txn.rawUpdate('''
-              UPDATE yugioh_prints
-              SET $col = (
-                SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
-                FROM cardtrader_prices cp
+    switch (catalog) {
+      case 'yugioh':
+        const ygoLangCols = <String, String>{
+          'en': 'set_price',
+          'it': 'set_price_it',
+          'fr': 'set_price_fr',
+          'de': 'set_price_de',
+          'pt': 'set_price_pt',
+          'es': 'set_price_sp',
+        };
+        for (final entry in ygoLangCols.entries) {
+          final lang = entry.key;
+          final col  = entry.value;
+          total += await db.rawUpdate('''
+            UPDATE yugioh_prints
+            SET $col = (
+              SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+              FROM cardtrader_prices cp
+              JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
+              WHERE cp.catalog = 'yugioh'
+                AND cp.expansion_code = LOWER(yugioh_prints.set_id)
+                AND LOWER(cp.card_name_en) = LOWER(yc.name)
+                AND cp.language = ?
+                AND cp.min_price_any_cents IS NOT NULL
+              ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+              LIMIT 1
+            )
+            WHERE yugioh_prints.set_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM cardtrader_prices cp
                 JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
                 WHERE cp.catalog = 'yugioh'
                   AND cp.expansion_code = LOWER(yugioh_prints.set_id)
                   AND LOWER(cp.card_name_en) = LOWER(yc.name)
                   AND cp.language = ?
                   AND cp.min_price_any_cents IS NOT NULL
-                ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
-                LIMIT 1
               )
-              WHERE yugioh_prints.set_id IS NOT NULL
-                AND EXISTS (
-                  SELECT 1 FROM cardtrader_prices cp
-                  JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
-                  WHERE cp.catalog = 'yugioh'
-                    AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                    AND LOWER(cp.card_name_en) = LOWER(yc.name)
-                    AND cp.language = ?
-                    AND cp.min_price_any_cents IS NOT NULL
-                )
-            ''', [lang, lang]);
-            total += n;
-          }
+          ''', [lang, lang]);
+        }
 
-        case 'pokemon':
-          const pokeLangCols = <String, String>{
-            'en': 'set_price',
-            'it': 'set_price_it',
-            'fr': 'set_price_fr',
-            'de': 'set_price_de',
-            'pt': 'set_price_pt',
-          };
-          for (final entry in pokeLangCols.entries) {
-            final lang = entry.key;
-            final col  = entry.value;
-            final n = await txn.rawUpdate('''
-              UPDATE pokemon_prints
-              SET $col = (
-                SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
-                FROM cardtrader_prices cp
-                JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
-                WHERE cp.catalog = 'pokemon'
-                  AND cp.expansion_code = LOWER(pc.set_id)
-                  AND LOWER(cp.card_name_en) = LOWER(pc.name)
-                  AND cp.language = ?
-                  AND cp.min_price_any_cents IS NOT NULL
-                ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
-                LIMIT 1
-              )
-              WHERE EXISTS (
-                SELECT 1 FROM cardtrader_prices cp
-                JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
-                WHERE cp.catalog = 'pokemon'
-                  AND cp.expansion_code = LOWER(pc.set_id)
-                  AND LOWER(cp.card_name_en) = LOWER(pc.name)
-                  AND cp.language = ?
-                  AND cp.min_price_any_cents IS NOT NULL
-              )
-            ''', [lang, lang]);
-            total += n;
-          }
-
-        case 'onepiece':
-          final n = await txn.rawUpdate('''
-            UPDATE onepiece_prints
-            SET market_price = (
+      case 'pokemon':
+        // BUG #4 fix: aggiunto 'es' → set_price_es (colonna aggiunta in v25)
+        const pokeLangCols = <String, String>{
+          'en': 'set_price',
+          'it': 'set_price_it',
+          'fr': 'set_price_fr',
+          'de': 'set_price_de',
+          'es': 'set_price_es',
+          'pt': 'set_price_pt',
+        };
+        for (final entry in pokeLangCols.entries) {
+          final lang = entry.key;
+          final col  = entry.value;
+          total += await db.rawUpdate('''
+            UPDATE pokemon_prints
+            SET $col = (
               SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
               FROM cardtrader_prices cp
-              JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
-              WHERE cp.catalog = 'onepiece'
-                AND cp.expansion_code = LOWER(onepiece_prints.set_id)
-                AND LOWER(cp.card_name_en) = LOWER(oc.name)
+              JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
+              WHERE cp.catalog = 'pokemon'
+                AND cp.expansion_code = LOWER(pc.set_id)
+                AND LOWER(cp.card_name_en) = LOWER(pc.name)
+                AND cp.language = ?
                 AND cp.min_price_any_cents IS NOT NULL
-              ORDER BY (cp.language != 'en'), (cp.min_price_nm_cents IS NULL),
-                       cp.min_price_any_cents ASC
+              ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
               LIMIT 1
             )
-            WHERE onepiece_prints.set_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM cardtrader_prices cp
-                JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
-                WHERE cp.catalog = 'onepiece'
-                  AND cp.expansion_code = LOWER(onepiece_prints.set_id)
-                  AND LOWER(cp.card_name_en) = LOWER(oc.name)
-                  AND cp.min_price_any_cents IS NOT NULL
-              )
-          ''');
-          total += n;
-      }
+            WHERE EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
+              WHERE cp.catalog = 'pokemon'
+                AND cp.expansion_code = LOWER(pc.set_id)
+                AND LOWER(cp.card_name_en) = LOWER(pc.name)
+                AND cp.language = ?
+                AND cp.min_price_any_cents IS NOT NULL
+            )
+          ''', [lang, lang]);
+        }
 
-      return total;
-    });
+      case 'onepiece':
+        // CN extraction: strip variant suffix ("001_p1" → "001", "en001_alt" → "en001").
+        // Language detection: "en001" → 'en', "001" → 'ja' (default).
+        // expansion_code: use set_id when populated, else derive from card_set_id prefix.
+        total += await db.rawUpdate('''
+          UPDATE onepiece_prints
+          SET market_price = (
+            SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+            FROM cardtrader_prices cp
+            JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
+            WHERE cp.catalog = 'onepiece'
+              AND cp.expansion_code = LOWER(COALESCE(
+                NULLIF(onepiece_prints.set_id, ''),
+                CASE WHEN onepiece_prints.card_set_id LIKE '%-%'
+                     THEN SUBSTR(onepiece_prints.card_set_id, 1, INSTR(onepiece_prints.card_set_id, '-') - 1)
+                     ELSE onepiece_prints.card_set_id END
+              ))
+              AND (
+                LOWER(cp.card_name_en) = LOWER(oc.name)
+                OR (
+                  cp.collector_number != ''
+                  AND LOWER(cp.collector_number) = LOWER(
+                    CASE WHEN onepiece_prints.card_set_id LIKE '%-%'
+                         THEN (
+                           CASE WHEN INSTR(
+                                  SUBSTR(onepiece_prints.card_set_id,
+                                         INSTR(onepiece_prints.card_set_id, '-') + 1), '_') > 0
+                                THEN SUBSTR(
+                                  SUBSTR(onepiece_prints.card_set_id,
+                                         INSTR(onepiece_prints.card_set_id, '-') + 1),
+                                  1,
+                                  INSTR(SUBSTR(onepiece_prints.card_set_id,
+                                               INSTR(onepiece_prints.card_set_id, '-') + 1), '_') - 1)
+                                ELSE SUBSTR(onepiece_prints.card_set_id,
+                                            INSTR(onepiece_prints.card_set_id, '-') + 1)
+                           END
+                         )
+                         ELSE '' END
+                  )
+                )
+              )
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY
+              (LOWER(cp.card_name_en) != LOWER(oc.name)),
+              (cp.language != CASE
+                WHEN onepiece_prints.card_set_id LIKE '%-%'
+                     AND SUBSTR(SUBSTR(onepiece_prints.card_set_id,
+                                       INSTR(onepiece_prints.card_set_id, '-') + 1),
+                                1, 1) BETWEEN 'A' AND 'Z'
+                     AND SUBSTR(SUBSTR(onepiece_prints.card_set_id,
+                                       INSTR(onepiece_prints.card_set_id, '-') + 1),
+                                2, 1) BETWEEN 'A' AND 'Z'
+                THEN LOWER(SUBSTR(SUBSTR(onepiece_prints.card_set_id,
+                                         INSTR(onepiece_prints.card_set_id, '-') + 1), 1, 2))
+                ELSE 'ja'
+              END),
+              (cp.min_price_nm_cents IS NULL),
+              cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE onepiece_prints.card_set_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
+              WHERE cp.catalog = 'onepiece'
+                AND cp.expansion_code = LOWER(COALESCE(
+                  NULLIF(onepiece_prints.set_id, ''),
+                  CASE WHEN onepiece_prints.card_set_id LIKE '%-%'
+                       THEN SUBSTR(onepiece_prints.card_set_id, 1, INSTR(onepiece_prints.card_set_id, '-') - 1)
+                       ELSE onepiece_prints.card_set_id END
+                ))
+                AND (
+                  LOWER(cp.card_name_en) = LOWER(oc.name)
+                  OR (
+                    cp.collector_number != ''
+                    AND LOWER(cp.collector_number) = LOWER(
+                      CASE WHEN onepiece_prints.card_set_id LIKE '%-%'
+                           THEN (
+                             CASE WHEN INSTR(
+                                    SUBSTR(onepiece_prints.card_set_id,
+                                           INSTR(onepiece_prints.card_set_id, '-') + 1), '_') > 0
+                                  THEN SUBSTR(
+                                    SUBSTR(onepiece_prints.card_set_id,
+                                           INSTR(onepiece_prints.card_set_id, '-') + 1),
+                                    1,
+                                    INSTR(SUBSTR(onepiece_prints.card_set_id,
+                                                 INSTR(onepiece_prints.card_set_id, '-') + 1), '_') - 1)
+                                  ELSE SUBSTR(onepiece_prints.card_set_id,
+                                              INSTR(onepiece_prints.card_set_id, '-') + 1)
+                             END
+                           )
+                           ELSE '' END
+                    )
+                  )
+                )
+                AND cp.min_price_any_cents IS NOT NULL
+            )
+        ''');
+    }
+
+    return total;
   }
 }

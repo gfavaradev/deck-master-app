@@ -419,6 +419,8 @@ class _CardCell extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: imageUrl!,
                           fit: BoxFit.cover,
+                          memCacheWidth: 300,
+                          memCacheHeight: 420,
                           placeholder: (_, _) => const _ImagePlaceholder(),
                           errorWidget: (_, _, _) => const _ImagePlaceholder(),
                         )

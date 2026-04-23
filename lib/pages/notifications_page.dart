@@ -435,8 +435,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
     }
 
-    final appEntries = _history.where((e) => e.type == 'app_update').toList();
-    final catalogEntries = _history.where((e) => e.type == 'catalog_update').toList();
+    // Sorted newest first by detectedAt (ISO8601 string comparison works correctly)
+    final sorted = [..._history]
+      ..sort((a, b) => b.detectedAt.compareTo(a.detectedAt));
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -446,13 +447,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
           _buildSectionHeader('Aggiornamenti Disponibili', Icons.cloud_download_outlined),
           ...widget.pendingCatalogUpdates.map(_buildPendingUpdateTile),
         ],
-        if (appEntries.isNotEmpty) ...[
-          _buildSectionHeader('Novità dell\'App', Icons.system_update_alt),
-          ...appEntries.map(_buildAppEntry),
-        ],
-        if (catalogEntries.isNotEmpty) ...[
-          _buildSectionHeader('Aggiornamenti Catalogo', Icons.library_books),
-          ...catalogEntries.map(_buildCatalogTile),
+        if (sorted.isNotEmpty) ...[
+          if (hasPending)
+            _buildSectionHeader('Storico', Icons.history),
+          ...sorted.map((e) => e.type == 'app_update'
+              ? _buildAppEntry(e)
+              : _buildCatalogTile(e)),
         ],
       ],
     );
@@ -730,6 +730,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final List<String> details = ['Prezzi di mercato aggiornati'];
     if (newCards > 0) details.insert(0, '+$newCards nuove carte aggiunte');
 
+    // Always show a date: prefer lastUpdated (catalog update date), fallback detectedAt
+    final rawDate = lastUpdated.isNotEmpty ? lastUpdated : entry.detectedAt;
+    final displayDate = _formatDate(rawDate.split('T').first);
+
     return Dismissible(
       key: Key(entry.id),
       direction: DismissDirection.endToStart,
@@ -785,12 +789,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
                           ),
                         ),
                       ),
-                      if (lastUpdated.isNotEmpty)
-                        Text(
-                          _formatDate(lastUpdated.split('T').first),
-                          style: TextStyle(
-                              color: AppColors.textHint, fontSize: 12),
-                        ),
+                      Text(
+                        displayDate,
+                        style: TextStyle(color: AppColors.textHint, fontSize: 12),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),

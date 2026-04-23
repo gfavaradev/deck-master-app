@@ -252,6 +252,9 @@ class AdminCatalogService {
     }
 
     if (needsFallback) {
+      // Card index is stale or missing: one or more edited/deleted cards are not
+      // tracked in the index. Fall back to a full catalog download to locate them,
+      // then rebuild and persist the index so subsequent publishes use the fast path.
       await _publishWithFullDownloadAndRebuildIndex(
         catalogCollection: catalogCollection,
         sortedChanges: sortedChanges,
@@ -1110,7 +1113,7 @@ class AdminCatalogService {
 
   Map<String, String>? _parseSetCode(String setCode) {
     final match =
-        RegExp(r'^([A-Z0-9]+)-(EN|IT|FR|DE|PT|E|I|F|D|P)(.+)$')
+        RegExp(r'^([A-Z0-9]+)-(EN|IT|FR|DE|PT|SP|E|I|F|D|P|S)(.+)$')
             .firstMatch(setCode.toUpperCase());
     if (match == null) return null;
     return {
@@ -1136,6 +1139,9 @@ class AdminCatalogService {
       case 'PT':
       case 'P':
         return 'pt';
+      case 'SP':
+      case 'S':
+        return 'sp';
       default:
         return 'en';
     }
@@ -1150,6 +1156,7 @@ class AdminCatalogService {
       'fr' => isShort ? 'F' : 'FR',
       'de' => isShort ? 'D' : 'DE',
       'pt' => isShort ? 'P' : 'PT',
+      'sp' => isShort ? 'S' : 'SP',
       _ => null,
     };
     if (targetCode == null) return null;
@@ -1417,9 +1424,10 @@ class AdminCatalogService {
   }
 
   Future<List<dynamic>> _fetchOptcgEndpoint(String endpoint, {bool optional = false}) async {
-    final response = await http.get(Uri.parse('$_optcgBaseUrl/$endpoint'));
+    final response = await http
+        .get(Uri.parse('$_optcgBaseUrl/$endpoint'))
+        .timeout(const Duration(minutes: 3));
     if (response.statusCode == 404 && optional) {
-
       return [];
     }
     if (response.statusCode != 200) throw Exception('OPTCG API error $endpoint: ${response.statusCode}');
@@ -1473,7 +1481,10 @@ class AdminCatalogService {
       final cardSetId = (m['card_set_id'] as String? ?? '').trim();
       if (cardSetId.isEmpty || name.isEmpty) continue;
 
-      final groupKey = '$name\x00$type\x00$color\x00$cost\x00$power\x00$life';
+      // Use the base card_set_id as group key (strip variant suffix like _p1, _alt, etc.)
+      // e.g. "OP01-001_p1" → "OP01-001", so alternate arts are grouped as prints.
+      // This is more stable than a name+stats tuple which breaks on multi-color/errata cards.
+      final groupKey = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
 
       if (!cardIdMap.containsKey(groupKey)) {
         cardIdMap[groupKey] = nextId++;
@@ -1511,6 +1522,17 @@ class AdminCatalogService {
     }
 
     final mergedCards = cardMap.values.toList();
+
+    // Protezione anti-wipe: se l'API non ha restituito nulla non sovrascrivere
+    // il catalogo esistente (un clear + upload di 0 carte lo cancellerebbe).
+    if (mergedCards.isEmpty) {
+      throw Exception(
+        'Nessuna carta ricevuta dall\'OPTCG API — '
+        'catalogo non modificato per sicurezza. '
+        'Verifica che l\'API $_optcgBaseUrl sia raggiungibile.',
+      );
+    }
+
     onProgress('${mergedCards.length} carte uniche. Caricando su Firestore...', null);
 
     await _uploadCatalogChunks(
@@ -1646,16 +1668,16 @@ class AdminCatalogService {
   // SharedPreferences key to persist download progress between app restarts
   static const String _pokemonProgressKey = 'pokemon_download_progress_v2';
 
-  /// Simple GET with retry+backoff for TCGDex (no API key needed).
+  /// Robust GET with retry+backoff for TCGDex list/set endpoints (no API key needed).
   Future<dynamic> _tcgdexGet(String url) async {
-    const backoffs = [5, 15, 30, 60];
-    const maxAttempts = 5;
+    const backoffs = [5, 15, 30];
+    const maxAttempts = 4;
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         final response = await http
             .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 60));
+            .timeout(const Duration(seconds: 30));
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -1664,17 +1686,27 @@ class AdminCatalogService {
         if (attempt == maxAttempts) {
           throw Exception('TCGDex errore permanente: HTTP ${response.statusCode} — $url');
         }
-        final wait = backoffs[attempt - 1];
-
-        await Future.delayed(Duration(seconds: wait));
+        await Future.delayed(Duration(seconds: backoffs[attempt - 1]));
       } catch (e) { // ignore: empty_catches
         if (attempt == maxAttempts) rethrow;
-        final wait = backoffs[attempt - 1];
-
-        await Future.delayed(Duration(seconds: wait));
+        await Future.delayed(Duration(seconds: backoffs[attempt - 1]));
       }
     }
     throw Exception('TCGDex: tutti i tentativi falliti per $url');
+  }
+
+  /// Fast single-attempt GET for card detail endpoints.
+  /// Returns null on any failure so the caller can use fallback data immediately.
+  Future<dynamic> _tcgdexGetFast(String url) async {
+    try {
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode == 200) return json.decode(response.body);
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Fetches the list of all Pokémon sets from TCGDex.
@@ -1728,8 +1760,84 @@ class AdminCatalogService {
     await prefs.remove(_pokemonProgressKey);
   }
 
-  /// Fetches ALL Pokémon cards from TCGDex, set by set, with resume support.
-  /// Each set requires only ONE request (returns set info + cards together).
+  /// Fetches full card data from TCGDex EN endpoint (rarity, hp, types, pricing).
+  /// Falls back to the brief [fallback] map if the request fails (e.g. 404 for promos).
+  Future<Map<String, dynamic>> _fetchTcgdexCardDetail(
+      String setId, String localId, Map<String, dynamic> fallback) async {
+    final data = await _tcgdexGetFast('$_tcgdexBase/en/sets/$setId/$localId');
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return fallback;
+  }
+
+  /// Fetches card data for a non-EN language with 2 attempts.
+  /// Returns null if the card/set is not available in that language (404 or errors).
+  Future<Map<String, dynamic>?> _fetchTcgdexCardDetailLang(
+      String lang, String setId, String localId) async {
+    for (int attempt = 1; attempt <= 2; attempt++) {
+      try {
+        final response = await http
+            .get(Uri.parse('$_tcgdexBase/$lang/sets/$setId/$localId'))
+            .timeout(const Duration(seconds: 15));
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data is Map) return Map<String, dynamic>.from(data);
+          return null;
+        }
+        if (response.statusCode == 404) return null; // set/card not in this language
+        // Transient error (5xx): retry once
+        if (attempt == 2) return null;
+        await Future.delayed(const Duration(seconds: 3));
+      } catch (_) {
+        if (attempt == 2) return null;
+        await Future.delayed(const Duration(seconds: 3));
+      }
+    }
+    return null;
+  }
+
+  /// Fetches full card data for EN + IT + FR + DE + ES + PT sequentially per language
+  /// (not all in parallel) to avoid rate-limiting TCGDex.
+  /// Language fields (name_it, rarity_it, set_name_it, set_price_it, …) are
+  /// merged into the returned map alongside the base EN data.
+  Future<Map<String, dynamic>> _fetchTcgdexCardAllLangs(
+      String setId, String localId, Map<String, dynamic> fallback) async {
+    // EN is always fetched first (required); other languages are best-effort.
+    final enCard = await _fetchTcgdexCardDetail(setId, localId, fallback);
+    final merged = Map<String, dynamic>.from(enCard);
+
+    // Fetch the 5 non-EN languages in parallel (2 retries each, 15s timeout).
+    // Keeping it parallel per-card but with retries reduces total time while
+    // being gentler than 30 simultaneous requests (old: 5 cards × 6 langs).
+    const otherLangs = ['it', 'fr', 'de', 'es', 'pt'];
+    final langResults = await Future.wait(
+      otherLangs.map((l) => _fetchTcgdexCardDetailLang(l, setId, localId)),
+    );
+
+    for (int i = 0; i < otherLangs.length; i++) {
+      final langData = langResults[i];
+      if (langData == null) continue;
+      final lang = otherLangs[i];
+      final name = langData['name']?.toString();
+      final rarity = langData['rarity']?.toString();
+      final setName = (langData['set'] as Map?)?['name']?.toString();
+      final cm = (langData['pricing'] as Map?)?['cardmarket'] as Map?;
+      final price = (cm?['avg'] as num?)?.toDouble();
+      // Only merge fields that are actually non-null so EN fallback stays clean
+      if (name != null)    merged['name_$lang']     = name;
+      if (rarity != null)  merged['rarity_$lang']   = rarity;
+      if (setName != null) merged['set_name_$lang']  = setName;
+      if (price != null)   merged['set_price_$lang'] = price;
+    }
+    return merged;
+  }
+
+  /// Fetches ALL Pokémon cards from TCGDex with full card details (rarity, hp, types,
+  /// Cardmarket pricing). Each set requires one request for the card list, then
+  /// per-card detail requests fetched in parallel batches of [_detailConcurrency].
+  /// Supports resuming an interrupted download via SharedPreferences progress.
+  // 2 card × 5 lingue = 10 richieste simultànee — compromesso tra velocità e gentilezza
+  static const int _detailConcurrency = 2;
+
   Future<List<Map<String, dynamic>>> _fetchAllPokemonCards(
       Function(String, double?) onProgress) async {
     onProgress('Recupero lista espansioni da TCGDex...', null);
@@ -1743,7 +1851,6 @@ class AdminCatalogService {
     final skippedCount = completedSetIds.length;
 
     if (skippedCount > 0) {
-
       onProgress('Riprendo download: $skippedCount/$total set già completati...', skippedCount / total);
     }
 
@@ -1759,14 +1866,25 @@ class AdminCatalogService {
       );
 
       // Small pause between sets to be polite to the server
-      if (allCards.isNotEmpty) await Future.delayed(const Duration(milliseconds: 500));
+      if (allCards.isNotEmpty) await Future.delayed(const Duration(milliseconds: 200));
 
       final result = await _fetchTcgdexSetData(setId);
       final serieId = (result.setInfo['serie'] as Map?)?['id']?.toString() ?? '';
+      final briefs = result.cards;
 
-      for (final card in result.cards) {
-        allCards.add(_transformTcgdexCard(card, result.setInfo, serieId));
+      // Fetch full card details for all 6 languages in parallel batches.
+      // Each card fires 6 simultaneous requests (EN + IT + FR + DE + ES + PT).
+      for (int j = 0; j < briefs.length; j += _detailConcurrency) {
+        final batch = briefs.sublist(j, (j + _detailConcurrency).clamp(0, briefs.length));
+        final details = await Future.wait(
+          batch.map((brief) => _fetchTcgdexCardAllLangs(
+            setId, brief['localId']?.toString() ?? '', brief)),
+        );
+        for (final detail in details) {
+          allCards.add(_transformTcgdexCard(detail, result.setInfo, serieId));
+        }
       }
+
       completedSetIds.add(setId);
 
       // Persist progress after every set so we can resume on failure
@@ -1776,62 +1894,144 @@ class AdminCatalogService {
     return allCards;
   }
 
-  /// Transforms a raw TCGDex card brief + set info into the Firestore storage format.
+  /// Transforms a TCGDex full card detail + set info into the Firestore storage format.
+  /// Populates: rarity, hp, types, supertype, and Cardmarket EUR pricing.
   Map<String, dynamic> _transformTcgdexCard(
       Map<String, dynamic> card,
       Map<String, dynamic> setInfo,
       String serieId) {
     final localId = card['localId']?.toString() ?? card['id']?.toString() ?? '';
     final setId = setInfo['id']?.toString() ?? '';
-    // Compose a unique api_id matching the TCGDex card ID format: "{setId}-{localId}"
     final apiId = card['id']?.toString() ?? '$setId-$localId';
 
     // TCGDex image URL pattern: {image}/high.webp
-    // 'image' field is the base URL without quality/extension suffix
     final imageBase = card['image']?.toString();
     final imageUrl = imageBase != null ? '$imageBase/high.webp' : null;
 
     final setName = setInfo['name']?.toString();
     final serieName = (setInfo['serie'] as Map?)?['name']?.toString();
 
+    // Types: list → comma-separated string (e.g. ["Grass","Colorless"] → "Grass,Colorless")
+    final typesList = card['types'] as List?;
+    final types = typesList != null && typesList.isNotEmpty
+        ? typesList.map((t) => t.toString()).join(',')
+        : null;
+
+    // Cardmarket EUR pricing from TCGDex full card endpoint
+    final pricing = card['pricing'] as Map?;
+    final cm = pricing?['cardmarket'] as Map?;
+    final cmAvg = (cm?['avg'] as num?)?.toDouble();
+
     return {
       'api_id': apiId,
       'name': card['name']?.toString() ?? '',
-      'supertype': null,   // not available in brief — can be filled via migration
-      'subtype': null,
-      'hp': null,
-      'types': null,
-      'rarity': null,      // not in brief listing
+      'supertype': card['category']?.toString(),
+      'subtype': card['suffix']?.toString(),
+      'hp': card['hp'] as int?,
+      'types': types,
+      'rarity': card['rarity']?.toString(),
       'set_id': setId,
       'set_name': setName,
       'set_series': serieName,
       'number': localId,
-      // image_url = source URL (will be migrated to Firebase Storage)
+      // Multilingual card names (Pokémon names are usually identical across languages)
+      'name_it': card['name_it']?.toString(),
+      'name_fr': card['name_fr']?.toString(),
+      'name_de': card['name_de']?.toString(),
+      'name_es': card['name_es']?.toString(),
+      'name_pt': card['name_pt']?.toString(),
       if (imageUrl != null) 'image_url': imageUrl,
-      'prints': [
-        {
-          'set_code': apiId,
-          'set_name': setName,
-          'rarity': null,
-          'set_price': null,
-          if (imageUrl != null) 'artwork': imageUrl,
-        }
-      ],
+      'sets': {
+        'en': [
+          {
+            'set_code': apiId,
+            'set_name': setName,
+            'rarity': card['rarity']?.toString(),
+            'set_price': cmAvg,
+            if (imageUrl != null) 'image_url': imageUrl,
+          }
+        ],
+        if (card['set_name_it'] != null || card['rarity_it'] != null)
+          'it': [
+            {
+              'set_code': apiId,
+              'set_name': card['set_name_it'],
+              'rarity': card['rarity_it'],
+              'set_price': card['set_price_it'],
+            }
+          ],
+        if (card['set_name_fr'] != null || card['rarity_fr'] != null)
+          'fr': [
+            {
+              'set_code': apiId,
+              'set_name': card['set_name_fr'],
+              'rarity': card['rarity_fr'],
+              'set_price': card['set_price_fr'],
+            }
+          ],
+        if (card['set_name_de'] != null || card['rarity_de'] != null)
+          'de': [
+            {
+              'set_code': apiId,
+              'set_name': card['set_name_de'],
+              'rarity': card['rarity_de'],
+              'set_price': card['set_price_de'],
+            }
+          ],
+        if (card['set_name_es'] != null || card['rarity_es'] != null)
+          'es': [
+            {
+              'set_code': apiId,
+              'set_name': card['set_name_es'],
+              'rarity': card['rarity_es'],
+              'set_price': card['set_price_es'],
+            }
+          ],
+        if (card['set_name_pt'] != null || card['rarity_pt'] != null)
+          'pt': [
+            {
+              'set_code': apiId,
+              'set_name': card['set_name_pt'],
+              'rarity': card['rarity_pt'],
+              'set_price': card['set_price_pt'],
+            }
+          ],
+      },
     };
   }
 
   /// Downloads the **full** Pokémon catalog from TCGDex, uploads every image to
   /// Firebase Storage (compressing to ~80 KB JPEG), then saves metadata to Firestore.
   /// Images already present in Storage are skipped (getDownloadURL check).
+  ///
+  /// Supports resuming an interrupted download: if a previous run was interrupted
+  /// after saving progress, this call will skip already-completed sets and append
+  /// the remaining cards to Firestore (incremental upload).
   Future<Map<String, dynamic>> downloadPokemonCatalogFromAPI({
     required String adminUid,
     required Function(String status, double? progress) onProgress,
   }) async {
-    // Cancella eventuale progresso parziale salvato da run precedenti
-    await _clearPokemonProgress();
+    // Check for saved progress BEFORE clearing it, so we can resume if interrupted.
+    final savedProgress = await _loadPokemonProgress();
+    final isResuming = savedProgress != null && savedProgress.completedSetIds.isNotEmpty;
+    if (!isResuming) {
+      // Fresh start — discard any stale state
+      await _clearPokemonProgress();
+    }
 
     // 1. Fetch + transform all cards from TCGDex
-    final cards = await _fetchAllPokemonCards(onProgress);
+    var cards = await _fetchAllPokemonCards(onProgress);
+    var effectiveResuming = isResuming;
+
+    // If resuming caused ALL sets to be skipped (stale/complete progress with no
+    // new cards to fetch), the result is empty — auto-clear and retry fresh.
+    if (cards.isEmpty && isResuming) {
+      onProgress('Progresso precedente obsoleto — riavvio download da zero...', 0);
+      await _clearPokemonProgress();
+      effectiveResuming = false;
+      cards = await _fetchAllPokemonCards(onProgress);
+    }
+
     if (cards.isEmpty) throw Exception('Nessuna carta ricevuta da TCGDex');
 
     final total = cards.length;
@@ -1852,10 +2052,21 @@ class AdminCatalogService {
           done++;
           card.remove('image_url');
           card['imageUrl'] = storageUrl;
-          final prints = (card['prints'] as List<dynamic>?)
-              ?.map((p) => Map<String, dynamic>.from(p as Map)..['artwork'] = storageUrl)
-              .toList();
-          if (prints != null) card['prints'] = prints;
+          // Update image_url in the 'en' set entry (new sets-map format)
+          final rawSets = card['sets'] as Map<String, dynamic>?;
+          if (rawSets != null) {
+            final enList = rawSets['en'] as List?;
+            if (enList != null && enList.isNotEmpty) {
+              final enEntry = Map<String, dynamic>.from(enList[0] as Map)..['image_url'] = storageUrl;
+              card['sets'] = {...rawSets, 'en': [enEntry]};
+            }
+          } else {
+            // Backward compat: old flat prints format
+            final prints = (card['prints'] as List<dynamic>?)
+                ?.map((p) => Map<String, dynamic>.from(p as Map)..['artwork'] = storageUrl)
+                .toList();
+            if (prints != null) card['prints'] = prints;
+          }
         } else {
           failed++;
         }
@@ -1873,12 +2084,14 @@ class AdminCatalogService {
 
     onProgress('Immagini completate. Salvataggio catalogo su Firestore...', null);
 
-    // 3. Upload chunks to Firestore
+    // 3. Upload chunks to Firestore.
+    // When resuming an interrupted run, append the new cards to the existing catalog
+    // (the completed sets are already in Firestore from the previous run).
     await _uploadCatalogChunks(
       catalogCollection: 'pokemon_catalog',
       cards: processedCards,
       adminUid: adminUid,
-      isIncremental: false,
+      isIncremental: effectiveResuming,
       onProgress: (cur, tot) =>
           onProgress('Caricando chunk $cur di $tot...', cur / tot),
     );
@@ -1941,15 +2154,21 @@ class AdminCatalogService {
           final card = Map<String, dynamic>.from(chunkMap[item.chunkId]![item.cardIndex]);
           card.remove('image_url');
           card['imageUrl'] = storageUrl;
-          // Update artwork in each print
-          final prints = (card['prints'] as List<dynamic>?)
-              ?.map((p) {
-                final pm = Map<String, dynamic>.from(p as Map);
-                pm['artwork'] = storageUrl;
-                return pm;
-              })
-              .toList();
-          if (prints != null) card['prints'] = prints;
+          // Update image_url in the 'en' set entry (new sets-map format)
+          final rawSets = card['sets'] as Map<String, dynamic>?;
+          if (rawSets != null) {
+            final enList = rawSets['en'] as List?;
+            if (enList != null && enList.isNotEmpty) {
+              final enEntry = Map<String, dynamic>.from(enList[0] as Map)..['image_url'] = storageUrl;
+              card['sets'] = {...rawSets, 'en': [enEntry]};
+            }
+          } else {
+            // Backward compat: old flat prints format
+            final prints = (card['prints'] as List<dynamic>?)
+                ?.map((p) => Map<String, dynamic>.from(p as Map)..['artwork'] = storageUrl)
+                .toList();
+            if (prints != null) card['prints'] = prints;
+          }
           chunkMap[item.chunkId]![item.cardIndex] = card;
           affectedChunkIds.add(item.chunkId);
           migrated++;
@@ -1984,6 +2203,292 @@ class AdminCatalogService {
       'migrated': migrated,
       'failed': failed,
       'chunksUpdated': affectedChunkIds.length,
+    };
+  }
+
+  // ============================================================
+  // CardTrader price → Firestore catalog sync
+  // ============================================================
+
+  /// Sincronizza i prezzi CardTrader nei chunk Firestore del catalogo,
+  /// così TUTTI gli utenti vedono i prezzi aggiornati al prossimo download.
+  ///
+  /// Legge i prezzi già salvati nella tabella SQLite locale [cardtrader_prices],
+  /// scarica i chunk Firestore uno per volta, aggiorna i campi
+  /// [set_price] / [market_price] e riscrive solo i chunk effettivamente
+  /// modificati. Infine incrementa [version] nei metadati per forzare il
+  /// re-download sui client.
+  ///
+  /// Deve essere chiamato DOPO che i prezzi CT sono stati salvati in SQLite.
+  Future<Map<String, dynamic>> syncCatalogPricesToFirestore({
+    required String catalog,
+    required String adminUid,
+    required void Function(String msg, double? progress) onProgress,
+  }) async {
+    final catalogCollection = '${catalog}_catalog';
+
+    // ── 1. Carica tutti i prezzi CT locali in memoria ─────────────────────────
+    onProgress('Caricamento prezzi CT locali…', null);
+    final allPrices = await _dbHelper.getAllCardtraderPrices(catalog);
+
+    if (allPrices.isEmpty) {
+      throw Exception(
+        'Nessun prezzo CT trovato localmente per $catalog. '
+        'Esegui prima il sync CardTrader.',
+      );
+    }
+
+    // Costruisci lookup maps:
+    //   priceByNameLang: '$expCode|$nameEnLower|$lang' → prezzo più basso in €
+    //   priceByCNLang:   '$expCode|$cnLower|$lang'     → prezzo più basso in €
+    final priceByNameLang = <String, double>{};
+    final priceByCNLang   = <String, double>{};
+
+    for (final row in allPrices) {
+      final priceCents =
+          (row['min_price_nm_cents'] as int?) ?? (row['min_price_any_cents'] as int?);
+      if (priceCents == null || priceCents <= 0) continue;
+      final price = double.parse((priceCents / 100.0).toStringAsFixed(2));
+
+      final expCode = (row['expansion_code'] as String).toLowerCase();
+      final nameEn  = (row['card_name_en']   as String).toLowerCase();
+      final lang    = (row['language']        as String).toLowerCase();
+      final cn      = (row['collector_number'] as String? ?? '').toLowerCase();
+
+      final nameKey = '$expCode|$nameEn|$lang';
+      if (price < (priceByNameLang[nameKey] ?? double.infinity)) {
+        priceByNameLang[nameKey] = price;
+      }
+      if (cn.isNotEmpty) {
+        final cnKey = '$expCode|$cn|$lang';
+        if (price < (priceByCNLang[cnKey] ?? double.infinity)) {
+          priceByCNLang[cnKey] = price;
+        }
+      }
+    }
+
+    // ── 2. Legge metadati Firestore ───────────────────────────────────────────
+    onProgress('Lettura metadati catalogo Firestore…', null);
+    final metadataDoc =
+        await _firestore.collection(catalogCollection).doc('metadata').get();
+    final totalChunks =
+        metadataDoc.exists ? (metadataDoc.data()?['totalChunks'] as int? ?? 0) : 0;
+    if (totalChunks == 0) throw Exception('Catalogo vuoto su Firestore');
+
+    int processedChunks = 0;
+    int modifiedChunks  = 0;
+    int updatedPrices   = 0;
+    final modifiedChunkIds = <String>[];
+
+    // ── 3. Itera i chunk, aggiorna prezzi, riscrivi solo quelli modificati ────
+    for (int i = 0; i < totalChunks; i++) {
+      final chunkId = 'chunk_${(i + 1).toString().padLeft(3, '0')}';
+      processedChunks++;
+      onProgress(
+        'Chunk $processedChunks/$totalChunks'
+        '${updatedPrices > 0 ? " ($updatedPrices aggiornati)" : ""}…',
+        processedChunks / totalChunks,
+      );
+
+      final chunkDoc = await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+
+      if (!chunkDoc.exists) continue;
+
+      final rawCards = chunkDoc.data()?['cards'] as List<dynamic>? ?? [];
+      bool chunkModified = false;
+
+      final updatedCards = rawCards.map((raw) {
+        final card = Map<String, dynamic>.from(raw as Map);
+        bool cardModified = false;
+
+        switch (catalog) {
+          // ── Yu-Gi-Oh! ────────────────────────────────────────────────────
+          case 'yugioh':
+            final nameEn  = (card['name'] as String? ?? '').toLowerCase();
+            final rawSets = card['sets'] as Map<dynamic, dynamic>?;
+            if (rawSets == null) break;
+
+            final newSets = <String, dynamic>{};
+            for (final langEntry in rawSets.entries) {
+              final lang   = langEntry.key.toString().toLowerCase();
+              // CardTrader usa 'es' per lo spagnolo, il catalogo usa 'sp'
+              final ctLang = lang == 'sp' ? 'es' : lang;
+              final sets   = (langEntry.value as List)
+                  .map((s) => Map<String, dynamic>.from(s as Map))
+                  .toList();
+
+              final updatedSets = sets.map((s) {
+                final rawCode = (s['set_code'] as String? ?? '').toUpperCase();
+                // expansion_code = prefisso prima del primo '-' (es. 'LOB' da 'LOB-EN001')
+                final expCode = rawCode.contains('-')
+                    ? rawCode.split('-')[0].toLowerCase()
+                    : rawCode.toLowerCase();
+
+                // Ricerca per nome (primaria)
+                double? price = priceByNameLang['$expCode|$nameEn|$ctLang'];
+
+                // Fallback: ricerca per collector-number (parte dopo l'ultimo '-')
+                if (price == null) {
+                  final cn = rawCode.contains('-')
+                      ? rawCode.split('-').last.toLowerCase()
+                      : '';
+                  if (cn.isNotEmpty) {
+                    price = priceByCNLang['$expCode|$cn|$ctLang'];
+                  }
+                }
+
+                if (price != null) {
+                  cardModified = true;
+                  updatedPrices++;
+                  return {...s, 'set_price': price};
+                }
+                return s;
+              }).toList();
+
+              newSets[langEntry.key.toString()] = updatedSets;
+            }
+            if (cardModified) {
+              card['sets'] = newSets;
+              chunkModified = true;
+            }
+
+          // ── Pokémon ──────────────────────────────────────────────────────
+          case 'pokemon':
+            final nameEn = (card['name'] as String? ?? '').toLowerCase();
+            // New format: sets map keyed by language
+            final rawSetsPok = card['sets'] as Map<dynamic, dynamic>?;
+            if (rawSetsPok != null) {
+              final newSets = <String, dynamic>{};
+              for (final langEntry in rawSetsPok.entries) {
+                final lang = langEntry.key.toString().toLowerCase();
+                final setsList = (langEntry.value as List)
+                    .map((s) => Map<String, dynamic>.from(s as Map))
+                    .toList();
+                newSets[langEntry.key.toString()] = setsList.map((s) {
+                  final expCode = (s['set_code'] as String? ?? '').toLowerCase();
+                  if (expCode.isEmpty) return s;
+                  final price = priceByNameLang['$expCode|$nameEn|$lang'];
+                  if (price != null) {
+                    cardModified = true;
+                    updatedPrices++;
+                    return {...s, 'set_price': price};
+                  }
+                  return s;
+                }).toList();
+              }
+              if (cardModified) {
+                card['sets'] = newSets;
+                chunkModified = true;
+              }
+            } else {
+              // Backward compat: old flat prints format
+              final rawPrints = card['prints'] as List<dynamic>?;
+              if (rawPrints != null) {
+                // BUG #5 fix: aggiunto 'es' per Pokémon spagnolo
+                const pokeLangCols = <String, String>{
+                  'en': 'set_price', 'it': 'set_price_it', 'fr': 'set_price_fr',
+                  'de': 'set_price_de', 'es': 'set_price_es', 'pt': 'set_price_pt',
+                };
+                final updatedPrintsList = rawPrints.map((raw) {
+                  final p = Map<String, dynamic>.from(raw as Map);
+                  final expCode = (p['set_code'] as String? ?? '').toLowerCase();
+                  if (expCode.isEmpty) return p;
+                  bool printModified = false;
+                  for (final le in pokeLangCols.entries) {
+                    final price = priceByNameLang['$expCode|$nameEn|${le.key}'];
+                    if (price != null) { p[le.value] = price; printModified = true; updatedPrices++; }
+                  }
+                  if (printModified) cardModified = true;
+                  return p;
+                }).toList();
+                if (cardModified) { card['prints'] = updatedPrintsList; chunkModified = true; }
+              }
+            }
+
+          // ── One Piece ────────────────────────────────────────────────────
+          case 'onepiece':
+            final nameEn    = (card['name'] as String? ?? '').toLowerCase();
+            final rawPrints = card['prints'] as List<dynamic>?;
+            if (rawPrints == null) break;
+
+            final updatedPrintsList = rawPrints.map((raw) {
+              final p       = Map<String, dynamic>.from(raw as Map);
+              final expCode = (p['set_id'] as String? ?? '').toLowerCase();
+              if (expCode.isEmpty) return p;
+
+              // Ricava CN e lingua da card_set_id (es. 'OP01-001' → cn='001', lang='ja')
+              final cardSetId = p['card_set_id'] as String? ?? '';
+              final rawCN = cardSetId.contains('-')
+                  ? cardSetId.split('-').last.toLowerCase()
+                  : '';
+              final langMatch = RegExp(r'^([a-z]{2})\d').firstMatch(rawCN);
+              final ctLang    = langMatch != null ? langMatch.group(1)! : 'ja';
+
+              // Ricerca per nome (primaria, lingua specifica poi fallback su 'en')
+              double? price = priceByNameLang['$expCode|$nameEn|$ctLang'];
+              price ??= priceByNameLang['$expCode|$nameEn|en'];
+
+              // Fallback: ricerca per CN
+              if (price == null && rawCN.isNotEmpty) {
+                price = priceByCNLang['$expCode|$rawCN|$ctLang'];
+                price ??= priceByCNLang['$expCode|$rawCN|en'];
+                price ??= priceByCNLang['$expCode|$rawCN|ja'];
+              }
+
+              if (price != null) {
+                cardModified = true;
+                updatedPrices++;
+                return {...p, 'market_price': price};
+              }
+              return p;
+            }).toList();
+
+            if (cardModified) {
+              card['prints'] = updatedPrintsList;
+              chunkModified = true;
+            }
+        }
+
+        return card;
+      }).toList();
+
+      if (chunkModified) {
+        modifiedChunkIds.add(chunkId);
+        modifiedChunks++;
+        await _firestore
+            .collection(catalogCollection)
+            .doc('chunks')
+            .collection('items')
+            .doc(chunkId)
+            .set({'cards': updatedCards});
+      }
+    }
+
+    // ── 4. Aggiorna metadati prezzi senza bumpare 'version' ──────────────────
+    // BUG #2 fix: 'version' viene bumped solo dai publish di carte (non di prezzi).
+    // Se bumpassimo version qui, checkCatalogUpdates vedrebbe un aggiornamento,
+    // leggerebbe 'modifiedChunks' (vuoto o sbagliato), e farebbe un download
+    // incrementale con i chunk sbagliati o un redownload full non necessario.
+    // I client ricevono i prezzi embedded tramite 'priceModifiedChunks' +
+    // 'pricesSyncedAt' letti da getCatalogPriceSyncInfo → _onCatalogPriceUpdate.
+    if (modifiedChunks > 0) {
+      await _firestore.collection(catalogCollection).doc('metadata').set({
+        'lastUpdated': FieldValue.serverTimestamp(),
+        'updatedBy': adminUid,
+        'pricesSyncedAt': FieldValue.serverTimestamp(),
+        'priceModifiedChunks': modifiedChunkIds,
+      }, SetOptions(merge: true));
+    }
+
+    return {
+      'modifiedChunks': modifiedChunks,
+      'totalChunks': totalChunks,
+      'updatedPrices': updatedPrices,
     };
   }
 

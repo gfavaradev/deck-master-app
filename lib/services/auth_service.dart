@@ -214,9 +214,13 @@ class AuthService {
     await setOfflineMode(false);
   }
 
-  /// Check if current user is administrator
+  /// Verifica se l'utente corrente è admin leggendo il campo `role` da Firestore.
+  /// Il ruolo va settato manualmente dalla Firebase Console:
+  ///   users/{uid} → role: "admin"
+  /// Lancia eccezione se Firestore non è raggiungibile (gestita dal chiamante).
   Future<bool> isCurrentUserAdmin() async {
-    return await _userService.isCurrentUserAdmin();
+    return await _userService.isCurrentUserAdmin()
+        .timeout(const Duration(seconds: 10));
   }
 
   /// Get UserService instance for advanced user management

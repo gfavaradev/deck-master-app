@@ -17,8 +17,8 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
     with SingleTickerProviderStateMixin {
   static const _collections = [
     {'key': 'yugioh',   'name': 'Yu-Gi-Oh!',  'langs': ['it','fr','de','pt','sp']},
-    {'key': 'pokemon',  'name': 'Pokémon',     'langs': ['it','fr','de','pt']},
-    {'key': 'onepiece', 'name': 'One Piece',   'langs': <String>[]},
+    {'key': 'pokemon',  'name': 'Pokémon',     'langs': ['it','fr','de','es','pt']},
+    {'key': 'onepiece', 'name': 'One Piece',   'langs': ['fr', 'ko', 'zh']},
   ];
 
   late final TabController _tabController;
@@ -291,7 +291,7 @@ class _DataListState extends State<_DataList> {
     _future = widget.loader();
   }
 
-  void _reload() => setState(() => _future = widget.loader());
+  void _reload() => setState(() { _future = widget.loader(); });
 
   String _colKey(String lang) => '${widget.nameKey}_$lang';
 
@@ -490,8 +490,12 @@ class _LangBadge extends StatelessWidget {
     'IT': Colors.green,
     'FR': Colors.blue,
     'DE': Colors.amber,
+    'ES': Colors.orange,
     'PT': Colors.teal,
-    'SP': Colors.orange,
+    'SP': Colors.deepOrange,
+    'KO': Colors.red,
+    'ZH': Colors.pink,
+    'JA': Colors.indigo,
   };
 
   @override

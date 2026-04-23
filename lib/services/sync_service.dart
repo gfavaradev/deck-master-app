@@ -42,6 +42,13 @@ class SyncService {
   final _remoteChangeController = StreamController<String>.broadcast();
   Stream<String> get onRemoteChange => _remoteChangeController.stream;
 
+  Future<void> Function(String catalog, List<String> chunkIds)? _catalogPriceUpdateListener;
+
+  void registerCatalogPriceUpdateListener(
+      Future<void> Function(String, List<String>) listener) {
+    _catalogPriceUpdateListener = listener;
+  }
+
   // I listener real-time Firestore sono stati rimossi per azzerare le letture
   // passive (ogni riconnessione costava N reads = tutti i documenti).
   // La UI si aggiorna tramite onRemoteChange emesso da pullFromCloud() e dai push locali.
@@ -297,27 +304,60 @@ class SyncService {
   Future<void> _syncCardtraderPrices() async {
     try {
       for (final catalog in ['yugioh', 'pokemon', 'onepiece']) {
-        final remoteSyncedAt = await _firestoreService.getCardtraderPricesSyncedAt(catalog);
-        if (remoteSyncedAt == null) continue;
-
-        // Skip if local prices are already up to date
         final prefs = await SharedPreferences.getInstance();
-        final localKey = 'ct_prices_synced_at_$catalog';
-        final localStr = prefs.getString(localKey);
-        if (localStr != null) {
-          final localSyncedAt = DateTime.tryParse(localStr);
-          if (localSyncedAt != null && !remoteSyncedAt.isAfter(localSyncedAt)) continue;
+        int updated = 0;
+
+        // ── Part A: raw cardtrader_prices collection ──────────────────────────
+        // Indipendente da Part B: viene saltato se già aggiornato, ma Part B
+        // viene sempre eseguito (BUG #3 fix).
+        final remoteSyncedAt = await _firestoreService
+            .getCardtraderPricesSyncedAt(catalog)
+            .timeout(const Duration(seconds: 10), onTimeout: () => null);
+
+        if (remoteSyncedAt != null) {
+          final localKey = 'ct_prices_synced_at_$catalog';
+          final localStr = prefs.getString(localKey);
+          final localSyncedAt = localStr != null ? DateTime.tryParse(localStr) : null;
+
+          if (localSyncedAt == null || remoteSyncedAt.isAfter(localSyncedAt)) {
+            final prices = await _firestoreService
+                .fetchCardtraderPrices(catalog)
+                .timeout(const Duration(seconds: 20), onTimeout: () => []);
+            if (prices.isNotEmpty) {
+              await _dbHelper.upsertCardtraderPrices(prices);
+              updated = await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
+              await _dbHelper.syncCatalogPricesFromCardtrader(catalog);
+              await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
+            }
+          }
         }
 
-        final prices = await _firestoreService.fetchCardtraderPrices(catalog);
-        if (prices.isEmpty) continue;
+        // ── Part B: prezzi embedded nei chunk del catalogo (sempre controllato)
+        // Se l'admin ha eseguito syncCatalogPricesToFirestore, i chunk sono stati
+        // aggiornati con prezzi embedded. Questo blocco è indipendente da Part A
+        // e non viene saltato anche se i raw cardtrader_prices sono già in sync.
+        try {
+          final priceSyncInfo = await _firestoreService
+              .getCatalogPriceSyncInfo(catalog)
+              .timeout(const Duration(seconds: 10), onTimeout: () => null);
+          if (priceSyncInfo != null) {
+            final syncedAt = priceSyncInfo['syncedAt'] as DateTime;
+            final chunkIds = priceSyncInfo['modifiedChunks'] as List<String>;
+            final localCatalogKey = 'ct_catalog_prices_synced_at_$catalog';
+            final localCatalogStr = prefs.getString(localCatalogKey);
+            final localCatalogSyncedAt = localCatalogStr != null
+                ? DateTime.tryParse(localCatalogStr)
+                : null;
+            if ((localCatalogSyncedAt == null || syncedAt.isAfter(localCatalogSyncedAt)) &&
+                chunkIds.isNotEmpty) {
+              // BUG #1 fix: await il listener e salva il flag SOLO al completamento.
+              await _catalogPriceUpdateListener?.call(catalog, chunkIds);
+              await prefs.setString(localCatalogKey, syncedAt.toIso8601String());
+            }
+          }
+        } catch (_) {}
 
-        await _dbHelper.upsertCardtraderPrices(prices);
-        final updated = await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
-        await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
-
-
-        // Notify user only if they have this collection unlocked
+        // ── Notifica utente ───────────────────────────────────────────────────
         if (updated > 0) {
           final collections = await _dbHelper.getCollections();
           final isUnlocked = collections.any((c) => c.key == catalog && c.isUnlocked);
@@ -515,18 +555,28 @@ class SyncService {
     try {
       switch (changeType) {
         case 'insert':
-          // Get the album's firestoreId for the reference
           String? albumFirestoreId;
           if (card.albumId > 0) {
             albumFirestoreId = await _dbHelper.getFirestoreId('albums', card.albumId);
           }
-          final firestoreId = await _firestoreService.insertCard(
-            userId,
-            card,
-            albumFirestoreId: albumFirestoreId,
-          ).timeout(const Duration(seconds: 10));
-          if (card.id != null) {
-            await _dbHelper.updateFirestoreId('cards', card.id!, firestoreId);
+          // BUG #10 fix: se la carta ha già un firestoreId (sync parziale precedente)
+          // aggiorna invece di inserire di nuovo per evitare duplicati su Firestore.
+          if (card.firestoreId != null) {
+            await _firestoreService.updateCard(
+              userId,
+              card.firestoreId!,
+              card,
+              albumFirestoreId: albumFirestoreId,
+            ).timeout(const Duration(seconds: 10));
+          } else {
+            final firestoreId = await _firestoreService.insertCard(
+              userId,
+              card,
+              albumFirestoreId: albumFirestoreId,
+            ).timeout(const Duration(seconds: 10));
+            if (card.id != null) {
+              await _dbHelper.updateFirestoreId('cards', card.id!, firestoreId);
+            }
           }
           break;
         case 'update':
@@ -570,6 +620,21 @@ class SyncService {
     try {
       final firestoreId = await _dbHelper.getFirestoreId('decks', deckId);
       switch (changeType) {
+        // BUG #12 fix: gestisce 'insert' per deck creati offline.
+        case 'insert':
+          if (firestoreId == null) {
+            final decks = await _dbHelper.getAllDecks();
+            final deck = decks.where((d) => d['id'] == deckId).firstOrNull;
+            if (deck != null) {
+              final newFirestoreId = await _firestoreService.insertDeck(
+                userId,
+                deck['name'] as String? ?? '',
+                deck['collection'] as String? ?? '',
+              ).timeout(const Duration(seconds: 10));
+              await _dbHelper.updateFirestoreId('decks', deckId, newFirestoreId);
+            }
+          }
+          break;
         case 'delete':
           if (firestoreId != null) {
             await _firestoreService.deleteDeck(userId, firestoreId)

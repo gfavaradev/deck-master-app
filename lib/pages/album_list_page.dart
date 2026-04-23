@@ -171,6 +171,7 @@ class _AlbumListPageState extends State<AlbumListPage> {
           ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 720), child: body))
           : body,
       floatingActionButton: FloatingActionButton(
+        heroTag: null,
         onPressed: () => _showAddAlbumDialog(),
         child: const Icon(Icons.add),
       ),

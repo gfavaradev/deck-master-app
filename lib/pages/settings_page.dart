@@ -39,10 +39,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isResetting = false;
   String _resetStatus = '';
 
-  bool _isRestoring = false;
-  String _restoreStatus = '';
-  double _restoreProgress = 0.0;
-
   Set<String> _unlockedCatalogKeys = {};
 
   @override
@@ -251,73 +247,8 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  String _catalogLabel(String key) {
-    switch (key) {
-      case 'yugioh': return 'Yu-Gi-Oh!';
-      case 'pokemon': return 'Pokémon';
-      case 'onepiece': return 'One Piece';
-      default: return key;
-    }
-  }
-
-  Future<void> _restoreCatalog(String collectionKey) async {
-    final keys = collectionKey == 'all'
-        ? _unlockedCatalogKeys.toList()
-        : [collectionKey];
-
-    setState(() {
-      _isRestoring = true;
-      _restoreStatus = 'Connessione...';
-      _restoreProgress = 0.0;
-    });
-
-    try {
-      for (int i = 0; i < keys.length; i++) {
-        final key = keys[i];
-        final label = _catalogLabel(key);
-        final base = i / keys.length;
-        final slice = 1.0 / keys.length;
-
-        void onFetch(int current, int total) {
-          if (!mounted) return;
-          setState(() {
-            _restoreProgress = base + (total > 0 ? current / total * slice * 0.5 : 0.0);
-            _restoreStatus = '$label: scaricamento $current/$total';
-          });
-        }
-
-        void onSave(double p) {
-          if (!mounted) return;
-          setState(() {
-            _restoreProgress = base + slice * 0.5 + p * slice * 0.5;
-            _restoreStatus = '$label: salvataggio ${(p * 100).round()}%';
-          });
-        }
-
-        switch (key) {
-          case 'yugioh':
-            await _repo.redownloadYugiohCatalog(onProgress: onFetch, onSaveProgress: onSave);
-          case 'pokemon':
-            await _repo.redownloadPokemonCatalog(onProgress: onFetch, onSaveProgress: onSave);
-          case 'onepiece':
-            await _repo.redownloadOnepieceCatalog(onProgress: onFetch, onSaveProgress: onSave);
-        }
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(collectionKey == 'all'
-            ? 'Tutti i cataloghi ripristinati!'
-            : '${_catalogLabel(collectionKey)} ripristinato con successo!'),
-        backgroundColor: AppColors.success,
-      ));
-    } catch (e) { // ignore: empty_catches
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore ripristino: $e'), backgroundColor: AppColors.error),
-      );
-    } finally {
-      if (mounted) setState(() { _isRestoring = false; _restoreStatus = ''; _restoreProgress = 0.0; });
-    }
+  void _restoreCatalog(String collectionKey) {
+    Navigator.pop(context, {'restore': collectionKey});
   }
 
   static const _catalogMeta = [
@@ -327,7 +258,7 @@ class _SettingsPageState extends State<SettingsPage> {
   ];
 
   void _showRestoreDialog() {
-    if (_isRestoring || _isOffline) return;
+    if (_isOffline) return;
 
     final unlocked = _catalogMeta
         .where((m) => _unlockedCatalogKeys.contains(m.key))
@@ -430,9 +361,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_isRestoring,
-      child: Scaffold(
+    return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgMedium,
@@ -471,7 +400,6 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 32),
         ],
       ),
-    ),
     );
   }
 
@@ -921,42 +849,13 @@ class _SettingsPageState extends State<SettingsPage> {
         _buildTile(
           icon: Icons.download_for_offline_outlined,
           title: 'Ripristina Catalogo',
-          subtitle: _isRestoring
-              ? _restoreStatus
-              : 'Riscarica dal server e aggiorna il catalogo locale',
+          subtitle: 'Riscarica dal server e aggiorna il catalogo locale',
           iconColor: AppColors.info,
-          enabled: !_isRestoring && !_isOffline,
-          isLast: !_isRestoring,
-          trailing: _isRestoring
-              ? const SizedBox(width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.info))
-              : const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
+          enabled: !_isOffline,
+          isLast: true,
+          trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
           onTap: _showRestoreDialog,
         ),
-        if (_isRestoring) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: _restoreProgress,
-                    backgroundColor: AppColors.bgDark,
-                    valueColor: const AlwaysStoppedAnimation(AppColors.info),
-                    minHeight: 4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${(_restoreProgress * 100).round()}%',
-                  style: const TextStyle(color: AppColors.textHint, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        ],
       ],
     );
   }

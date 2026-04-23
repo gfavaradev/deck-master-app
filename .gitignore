@@ -44,9 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Environment variables
+# Environment variables / secrets (mai in git)
 .env
 *.env
+dart_defines.json
+lib/config/app_secrets.dart
 
 # Firebase sensitive files (DO NOT COMMIT)
 android/app/google-services.json

@@ -1062,11 +1062,18 @@ class XpService {
         .catchError((_) {});
   }
 
-  /// Sincronizza XP e avatar selezionato da Firestore (chiamare al login).
+  /// Sincronizza XP e avatar selezionato da Firestore (al più una volta ogni 24h).
   Future<void> syncFromFirestore() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
+      final prefs = await SharedPreferences.getInstance();
+      // Evita letture Firestore superflue: sync solo se il dato è stale (> 24h)
+      final lastSynced = prefs.getString('xp_synced_at_$uid');
+      if (lastSynced != null) {
+        final last = DateTime.tryParse(lastSynced);
+        if (last != null && DateTime.now().difference(last).inHours < 24) return;
+      }
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
@@ -1076,12 +1083,12 @@ class XpService {
       if (data == null) return;
       final remoteXp = data['xp'] as int? ?? 0;
       final remoteAvatarId = data['selectedAvatarId'] as String?;
-      final prefs = await SharedPreferences.getInstance();
       final localXp = prefs.getInt(_xpKey) ?? 0;
       if (remoteXp > localXp) await prefs.setInt(_xpKey, remoteXp);
       if (remoteAvatarId != null && prefs.getString(_avatarKey) == null) {
         await prefs.setString(_avatarKey, remoteAvatarId);
       }
+      await prefs.setString('xp_synced_at_$uid', DateTime.now().toIso8601String());
     } catch (_) {}
   }
 

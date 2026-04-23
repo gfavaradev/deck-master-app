@@ -220,6 +220,8 @@ class _CardScannerPageState extends State<CardScannerPage> {
                         ? CachedNetworkImage(
                             imageUrl: imageUrl,
                             fit: BoxFit.cover,
+                            memCacheWidth: 160,
+                            memCacheHeight: 220,
                             placeholder: (ctx, url) => Container(color: AppColors.bgLight),
                             errorWidget: (ctx, url, err) => const _CardPlaceholder(),
                           )

@@ -36,14 +36,23 @@ class _DonationsPageState extends State<DonationsPage> {
   }
 
   Future<void> _load() async {
-    final user = await _service.getCurrentUserModel();
-    final wall = await _service.getWallOfFame();
-    if (!mounted) return;
-    setState(() {
-      _user = user;
-      _wallOfFame = wall;
-      _loading = false;
-    });
+    try {
+      final results = await Future.wait([
+        _service.getCurrentUserModel()
+            .timeout(const Duration(seconds: 8), onTimeout: () => null),
+        _service.getWallOfFame()
+            .timeout(const Duration(seconds: 8), onTimeout: () => <Map<String, String>>[]),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _user = results[0] as UserModel?;
+        _wallOfFame = results[1] as List<Map<String, String>>;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
   }
 
   Future<void> _openDonation(double amount) async {

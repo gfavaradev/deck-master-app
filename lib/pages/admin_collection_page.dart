@@ -26,6 +26,10 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
   final AuthService _authService = AuthService();
   final TextEditingController _searchController = TextEditingController();
 
+  // Static in-memory cache shared across page instances.
+  // Keyed by collectionKey; cleared only on explicit refresh or after publishing.
+  static final Map<String, List<Map<String, dynamic>>> _catalogCache = {};
+
   List<Map<String, dynamic>> _allCards = [];
   List<Map<String, dynamic>> _filteredCards = [];
   List<PendingCatalogChange> _pendingChanges = [];
@@ -45,7 +49,23 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
     super.dispose();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool forceRefresh = false}) async {
+    final pending = await _catalogService.getPendingChanges();
+
+    // Use in-memory cache when available and not explicitly refreshing
+    if (!forceRefresh && _catalogCache.containsKey(widget.collectionKey)) {
+      if (!mounted) return;
+      setState(() {
+        _allCards = List.from(_catalogCache[widget.collectionKey]!);
+        _filteredCards = _allCards;
+        _pendingChanges = pending;
+        _isLoading = false;
+        _loadStatus = '';
+      });
+      _filterCards(_searchController.text);
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _loadProgress = null;
@@ -53,7 +73,6 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
     });
 
     try {
-      final pending = await _catalogService.getPendingChanges();
       final cards = await _catalogService.downloadCurrentCatalog(
         widget.collectionKey,
         onProgress: (current, total) {
@@ -67,6 +86,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
       );
 
       if (!mounted) return;
+      _catalogCache[widget.collectionKey] = cards;
       setState(() {
         _allCards = cards;
         _filteredCards = cards;
@@ -256,6 +276,8 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
         },
       );
       if (!mounted) return;
+      // Invalidate cache so the next open fetches fresh data from Firestore
+      _catalogCache.remove(widget.collectionKey);
       setState(() {
         _pendingChanges = [];
         _isLoading = false;
@@ -307,8 +329,8 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
             ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Ricarica',
-            onPressed: _loadData,
+            tooltip: 'Ricarica da Firestore',
+            onPressed: () => _loadData(forceRefresh: true),
           ),
         ],
       ),

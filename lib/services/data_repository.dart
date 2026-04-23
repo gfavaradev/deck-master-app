@@ -5,6 +5,7 @@ import 'firestore_service.dart';
 import 'sync_service.dart';
 import 'auth_service.dart';
 import 'xp_service.dart';
+import 'cardtrader_service.dart';
 import '../constants/app_constants.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
@@ -17,12 +18,45 @@ import '../models/collection_model.dart';
 class DataRepository {
   static final DataRepository _instance = DataRepository._internal();
   factory DataRepository() => _instance;
-  DataRepository._internal();
+  DataRepository._internal() {
+    SyncService().registerCatalogPriceUpdateListener(_onCatalogPriceUpdate);
+  }
 
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final SyncService _syncService = SyncService();
   final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
+
+  // Called by SyncService when the admin has embedded new prices in Firestore
+  // catalog chunks (via syncCatalogPricesToFirestore). Downloads only the
+  // modified chunks so devices with the catalog already cached get prices too.
+  Future<void> _onCatalogPriceUpdate(String catalog, List<String> chunkIds) async {
+    try {
+      final localMeta = await _dbHelper.getCatalogMetadata(catalog);
+      if (localMeta == null) return; // catalog not downloaded on this device
+      final updateInfo = {
+        'canDoIncremental': true,
+        'modifiedChunks': chunkIds,
+        'deletedCards': <dynamic>[],
+      };
+      switch (catalog) {
+        case 'yugioh':
+          await downloadYugiohCatalog(updateInfo: updateInfo);
+        case 'pokemon':
+          await downloadPokemonCatalog(updateInfo: updateInfo);
+        case 'onepiece':
+          await downloadOnepieceCatalog(updateInfo: updateInfo);
+      }
+      // BUG #6 fix: ricalcola cardtrader_value sulle carte possedute dopo
+      // il price update incrementale (il download aggiorna solo *_prints,
+      // non la colonna cardtrader_value nella tabella cards).
+      await CardtraderService().applyLocalPricesToCollection(catalog);
+      // BUG #8 (web): invalida la cache in-memory per forzare il reload.
+      _webCatalogCache.remove(catalog);
+      if (catalog == 'yugioh') _webCatalogCache.clear(); // keyed per lingua
+      _syncService.notifyLocalChange('catalog_$catalog');
+    } catch (_) {}
+  }
 
   // ============================================================
   // Yu-Gi-Oh Catalog (from Firestore)
@@ -124,6 +158,7 @@ class DataRepository {
     final itLookup = buildLookup(getSets('it'));
     final frLookup = buildLookup(getSets('fr'));
     final deLookup = buildLookup(getSets('de'));
+    final spLookup = buildLookup(getSets('sp')); // BUG #13 fix: spagnolo YGO
     final ptLookup = buildLookup(getSets('pt'));
 
     // Derives the localized set code from an EN set code.
@@ -140,6 +175,7 @@ class DataRepository {
         'it' => '$prefix-${isShort ? 'I' : 'IT'}$num',
         'fr' => '$prefix-${isShort ? 'F' : 'FR'}$num',
         'de' => '$prefix-${isShort ? 'D' : 'DE'}$num',
+        'sp' => '$prefix-${isShort ? 'S' : 'SP'}$num', // BUG #13 fix
         'pt' => '$prefix-${isShort ? 'P' : 'PT'}$num',
         _    => null,
       };
@@ -157,6 +193,7 @@ class DataRepository {
       final it = itLookup[lookupKey(toLocalCode(enCode, 'it'), enRarity)];
       final fr = frLookup[lookupKey(toLocalCode(enCode, 'fr'), enRarity)];
       final de = deLookup[lookupKey(toLocalCode(enCode, 'de'), enRarity)];
+      final sp = spLookup[lookupKey(toLocalCode(enCode, 'sp'), enRarity)]; // BUG #13
       final pt = ptLookup[lookupKey(toLocalCode(enCode, 'pt'), enRarity)];
       // Use per-set image_url if specified by admin, otherwise fall back to card-level artwork URL
       final artworkUrl = (en['image_url'] as String?)?.isNotEmpty == true
@@ -178,6 +215,9 @@ class DataRepository {
         'set_code_de':    de?['set_code'],  'set_name_de':    de?['set_name'],
         'rarity_de':      de?['rarity'],    'rarity_code_de': de?['rarity_code'],
         'set_price_de':   de?['set_price'],
+        'set_code_sp':    sp?['set_code'],  'set_name_sp':    sp?['set_name'],
+        'rarity_sp':      sp?['rarity'],    'rarity_code_sp': sp?['rarity_code'],
+        'set_price_sp':   sp?['set_price'],
         'set_code_pt':    pt?['set_code'],  'set_name_pt':    pt?['set_name'],
         'rarity_pt':      pt?['rarity'],    'rarity_code_pt': pt?['rarity_code'],
         'set_price_pt':   pt?['set_price'],
@@ -191,6 +231,58 @@ class DataRepository {
       ..['prints'] = prints
       ..['image_url'] = resolvedImageUrl;
     return updated;
+  }
+
+  /// Converts a Pokémon card from the Firestore `sets`-map format to the flat
+  /// `prints` list expected by [DatabaseHelper.insertPokemonCards].
+  /// Cards already in the old `prints` format are passed through unchanged.
+  static Map<String, dynamic> _normalizePokemonCardForSQLite(Map<String, dynamic> card) {
+    if (card.containsKey('prints') || !card.containsKey('sets')) return card;
+    final rawSets = card['sets'];
+    if (rawSets is! Map) return card;
+
+    List<Map<String, dynamic>> getSets(String l) {
+      final s = rawSets[l];
+      if (s is! List) return [];
+      return s.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+
+    final enSets = getSets('en');
+    if (enSets.isEmpty) return card;
+
+    // For Pokémon, all languages share the same set_code (api_id).
+    final itByCode = {for (final s in getSets('it')) s['set_code']?.toString() ?? '': s};
+    final frByCode = {for (final s in getSets('fr')) s['set_code']?.toString() ?? '': s};
+    final deByCode = {for (final s in getSets('de')) s['set_code']?.toString() ?? '': s};
+    final esByCode = {for (final s in getSets('es')) s['set_code']?.toString() ?? '': s};
+    final ptByCode = {for (final s in getSets('pt')) s['set_code']?.toString() ?? '': s};
+
+    final prints = enSets.map((en) {
+      final code = en['set_code']?.toString() ?? '';
+      final it = itByCode[code];
+      final fr = frByCode[code];
+      final de = deByCode[code];
+      final es = esByCode[code];
+      final pt = ptByCode[code];
+      return {
+        'set_code': code,
+        'set_name': en['set_name'],
+        'rarity':   en['rarity'],
+        'set_price': en['set_price'],
+        'artwork':   en['image_url'],
+        'set_code_it': code, 'set_name_it': it?['set_name'], 'rarity_it': it?['rarity'], 'set_price_it': it?['set_price'],
+        'set_code_fr': code, 'set_name_fr': fr?['set_name'], 'rarity_fr': fr?['rarity'], 'set_price_fr': fr?['set_price'],
+        'set_code_de': code, 'set_name_de': de?['set_name'], 'rarity_de': de?['rarity'], 'set_price_de': de?['set_price'],
+        'set_code_es': code, 'set_name_es': es?['set_name'], 'rarity_es': es?['rarity'], 'set_price_es': es?['set_price'],
+        'set_code_pt': code, 'set_name_pt': pt?['set_name'], 'rarity_pt': pt?['rarity'], 'set_price_pt': pt?['set_price'],
+      };
+    }).toList();
+
+    final resolvedImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
+    return Map<String, dynamic>.from(card)
+      ..remove('sets')
+      ..['prints'] = prints
+      ..['image_url'] = resolvedImageUrl;
   }
 
   Future<void> downloadYugiohCatalog({
@@ -348,6 +440,8 @@ class DataRepository {
 
     // Step 4: rebuild espansioni/rarità dedicate.
     await _dbHelper.rebuildExpansionsAndRarities('yugioh');
+    // Re-apply CT prices now that the catalog tables are populated.
+    await CardtraderService().applyLocalPricesToCollection('yugioh');
   }
 
   // ============================================================
@@ -917,13 +1011,15 @@ class DataRepository {
     try {
       switch (collectionKey) {
         case 'onepiece':
-          await redownloadOnepieceCatalog(
+          await downloadOnepieceCatalog(
+            updateInfo: updateInfo,
             onProgress: onProgress,
             onSaveProgress: onSaveProgress,
           );
           break;
         case 'pokemon':
-          await redownloadPokemonCatalog(
+          await downloadPokemonCatalog(
+            updateInfo: updateInfo,
             onProgress: onProgress,
             onSaveProgress: onSaveProgress,
           );
@@ -1459,6 +1555,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
+    await CardtraderService().applyLocalPricesToCollection('onepiece');
   }
 
   Future<void> _applyOnepieceIncrementalUpdate({
@@ -1516,6 +1613,8 @@ class DataRepository {
       );
     }
     await _dbHelper.rebuildExpansionsAndRarities('onepiece');
+    // Re-apply CT prices now that the catalog tables are populated.
+    await CardtraderService().applyLocalPricesToCollection('onepiece');
   }
 
   Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
@@ -1687,7 +1786,8 @@ class DataRepository {
       final deletedIds = deletedCards.whereType<num>().map((e) => e.toInt()).toList();
       if (deletedIds.isNotEmpty) await _dbHelper.deletePokemonCardsByIds(deletedIds);
       if (modifiedCards.isNotEmpty) {
-        await _dbHelper.insertPokemonCards(modifiedCards, onProgress: onSaveProgress);
+        final normalizedCards = modifiedCards.map(_normalizePokemonCardForSQLite).toList();
+        await _dbHelper.insertPokemonCards(normalizedCards, onProgress: onSaveProgress);
       }
       if (remoteMetadata != null) {
         await _dbHelper.saveCatalogMetadata(
@@ -1708,7 +1808,8 @@ class DataRepository {
     );
     if (cards.isEmpty) return;
 
-    await _dbHelper.insertPokemonCards(cards, onProgress: onSaveProgress);
+    final normalizedCards = cards.map(_normalizePokemonCardForSQLite).toList();
+    await _dbHelper.insertPokemonCards(normalizedCards, onProgress: onSaveProgress);
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
@@ -1719,7 +1820,8 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    await _dbHelper.refreshCardValuesFromCatalog('pokemon');
+    // Re-apply CT prices now that the catalog tables are populated.
+    await CardtraderService().applyLocalPricesToCollection('pokemon');
   }
 
   Future<void> redownloadPokemonCatalog({
@@ -1735,7 +1837,8 @@ class DataRepository {
     if (cards.isEmpty) return;
 
     await _dbHelper.clearPokemonCatalog();
-    await _dbHelper.insertPokemonCards(cards, onProgress: onSaveProgress);
+    final normalizedCards = cards.map(_normalizePokemonCardForSQLite).toList();
+    await _dbHelper.insertPokemonCards(normalizedCards, onProgress: onSaveProgress);
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
@@ -1747,6 +1850,8 @@ class DataRepository {
       );
     }
     await _dbHelper.rebuildExpansionsAndRarities('pokemon');
+    // Re-apply CT prices now that the catalog tables are populated.
+    await CardtraderService().applyLocalPricesToCollection('pokemon');
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCatalogCards({

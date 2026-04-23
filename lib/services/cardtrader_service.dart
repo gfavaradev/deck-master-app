@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+import '../config/app_secrets.dart';
+import 'admin_catalog_service.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'sync_service.dart';
@@ -88,7 +90,7 @@ class CardtraderService {
     }
   }
 
-  String get _jwt => const String.fromEnvironment('CARDTRADER_JWT');
+  String get _jwt => AppSecrets.cardtraderJwt;
 
   Map<String, String> get _headers => {
         'Authorization': 'Bearer $_jwt',
@@ -132,13 +134,47 @@ class CardtraderService {
     onProgress('Caricamento set locali…', null);
     final localCodes = await _db.getDistinctSetCodesForCardtrader(catalog);
 
-    // Match CT codes (lowercase) against local set_id codes (lowercase)
+    // Build a map from CT code → local code with multi-level normalization:
+    //   1. Exact match:            "op01"     → "op01"
+    //   2. Remove dashes:          "op-01"    → "op01"
+    //   3. Strip all punctuation:  "sv3.5"    → "sv35"  (handles dotted Pokémon set codes)
+    //   4. Pokémon "pt" suffix:    "sv35"     ↔ "sv3pt5" (e.g. Pokémon 151 = sv3pt5 on TCGDex)
+    final ctToLocal = <String, String>{};
+    // Pre-build reverse lookup: stripped-local → original-local for fuzzy match
+    final strippedLocalToLocal = <String, String>{};
+    for (final lc in localCodes) {
+      final stripped = lc.replaceAll(RegExp(r'[^a-z0-9]'), '');
+      strippedLocalToLocal.putIfAbsent(stripped, () => lc);
+      // Also index with "pt" replaced by "" for Pokémon sets like "sv3pt5" ↔ "sv35"
+      final noPt = stripped.replaceAll('pt', '');
+      strippedLocalToLocal.putIfAbsent(noPt, () => lc);
+    }
+    for (final e in ctExpansions) {
+      final ctCode = (e['code'] as String? ?? '').toLowerCase();
+      if (localCodes.contains(ctCode)) {
+        ctToLocal[ctCode] = ctCode;
+      } else {
+        final noDash = ctCode.replaceAll('-', '');
+        if (localCodes.contains(noDash)) {
+          ctToLocal[ctCode] = noDash;
+        } else {
+          // Strip all non-alphanumeric and try fuzzy match
+          final stripped = ctCode.replaceAll(RegExp(r'[^a-z0-9]'), '');
+          final fuzzy = strippedLocalToLocal[stripped] ??
+              strippedLocalToLocal[stripped.replaceAll('pt', '')];
+          if (fuzzy != null) ctToLocal[ctCode] = fuzzy;
+        }
+      }
+    }
     final matched = ctExpansions.where((e) {
-      final code = (e['code'] as String? ?? '').toLowerCase();
-      return localCodes.contains(code);
+      final ctCode = (e['code'] as String? ?? '').toLowerCase();
+      return ctToLocal.containsKey(ctCode);
     }).toList();
 
-
+    onProgress(
+      'Trovati ${localCodes.length} set locali · ${ctExpansions.length} espansioni CT · ${matched.length} corrispondenze',
+      null,
+    );
 
     int totalBlueprints = 0;  // blueprints seeded (from /blueprints endpoint)
     int pricedBlueprints = 0; // blueprints with active marketplace listings
@@ -148,7 +184,8 @@ class CardtraderService {
     for (int i = 0; i < matched.length; i++) {
       final exp = matched[i];
       final expId = exp['id'] as int;
-      final expCode = (exp['code'] as String).toLowerCase();
+      // Use the LOCAL code so cardtrader_prices.expansion_code matches the catalog DB.
+      final expCode = ctToLocal[(exp['code'] as String).toLowerCase()]!;
       final expName = exp['name'] as String? ?? expCode;
 
       onProgress(
@@ -191,12 +228,22 @@ class CardtraderService {
 
     onProgress('Aggiornamento valori collezione…', null);
     final valuesUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
-    if (valuesUpdated > 0) {
-      await _pushCardValuesToFirestore(catalog);
-    }
+    // Always push prices to Firestore so other users can download them,
+    // regardless of whether this device has any cards in the collection.
+    await _pushCardValuesToFirestore(catalog);
+    if (valuesUpdated > 0) {}
 
-    onProgress('Aggiornamento prezzi catalogo…', null);
+    onProgress('Aggiornamento prezzi catalogo locale…', null);
     final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
+
+    // Scrivi i prezzi CT nei chunk Firestore così tutti gli utenti
+    // li vedono al prossimo download del catalogo.
+    onProgress('Pubblicazione prezzi su Firestore…', null);
+    final firestoreResult = await AdminCatalogService().syncCatalogPricesToFirestore(
+      catalog: catalog,
+      adminUid: adminUid,
+      onProgress: onProgress,
+    );
 
     if (valuesUpdated > 0) {
       SyncService().notifyLocalChange('cards');
@@ -205,6 +252,8 @@ class CardtraderService {
     return {
       'success': true,
       'expansions': matched.length,
+      'ctExpansionsTotal': ctExpansions.length,
+      'localSets': localCodes.length,
       'blueprints': totalBlueprints,
       'pricedBlueprints': pricedBlueprints,
       'skipped': skipped,
@@ -212,6 +261,8 @@ class CardtraderService {
       'catalog': catalog,
       'valuesUpdated': valuesUpdated,
       'catalogUpdated': catalogUpdated,
+      'firestoreChunksUpdated': firestoreResult['modifiedChunks'],
+      'firestorePricesUpdated': firestoreResult['updatedPrices'],
     };
   }
 
@@ -271,13 +322,12 @@ class CardtraderService {
   }
 
   /// Ricalcola `cards.value` e aggiorna i prezzi del catalogo dai prezzi CT in cache locale.
-  /// Utile dopo un riavvio o un sync Firestore che ha azzerato i valori.
+  /// Utile dopo un riavvio, un re-download del catalogo o un sync Firestore.
   /// Returns a map with 'collectionUpdated' and 'catalogUpdated' counts.
-  /// Updates `cards.cardtrader_value` for the user's owned cards.
-  /// Does NOT touch catalog prints (that only runs during a full CT price download).
   Future<Map<String, int>> applyLocalPricesToCollection(String catalog) async {
     final collectionUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
-    return {'collectionUpdated': collectionUpdated, 'catalogUpdated': 0};
+    final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
+    return {'collectionUpdated': collectionUpdated, 'catalogUpdated': catalogUpdated};
   }
 
   // ─── Web-specific sync (Firestore-only, no SQLite) ───────────────────────
@@ -297,9 +347,32 @@ class CardtraderService {
     onProgress('Lettura set da Firestore…', null);
     final localCodes = await _getSetCodesFromFirestore(catalog);
 
+    final ctToLocalWeb = <String, String>{};
+    final strippedLocalToLocalWeb = <String, String>{};
+    for (final lc in localCodes) {
+      final stripped = lc.replaceAll(RegExp(r'[^a-z0-9]'), '');
+      strippedLocalToLocalWeb.putIfAbsent(stripped, () => lc);
+      strippedLocalToLocalWeb.putIfAbsent(stripped.replaceAll('pt', ''), () => lc);
+    }
+    for (final e in ctExpansions) {
+      final ctCode = (e['code'] as String? ?? '').toLowerCase();
+      if (localCodes.contains(ctCode)) {
+        ctToLocalWeb[ctCode] = ctCode;
+      } else {
+        final noDash = ctCode.replaceAll('-', '');
+        if (localCodes.contains(noDash)) {
+          ctToLocalWeb[ctCode] = noDash;
+        } else {
+          final stripped = ctCode.replaceAll(RegExp(r'[^a-z0-9]'), '');
+          final fuzzy = strippedLocalToLocalWeb[stripped] ??
+              strippedLocalToLocalWeb[stripped.replaceAll('pt', '')];
+          if (fuzzy != null) ctToLocalWeb[ctCode] = fuzzy;
+        }
+      }
+    }
     final matched = ctExpansions.where((e) {
-      final code = (e['code'] as String? ?? '').toLowerCase();
-      return localCodes.contains(code);
+      final ctCode = (e['code'] as String? ?? '').toLowerCase();
+      return ctToLocalWeb.containsKey(ctCode);
     }).toList();
 
     int totalBlueprints = 0;
@@ -310,7 +383,7 @@ class CardtraderService {
     for (int i = 0; i < matched.length; i++) {
       final exp = matched[i];
       final expId = exp['id'] as int;
-      final expCode = (exp['code'] as String).toLowerCase();
+      final expCode = ctToLocalWeb[(exp['code'] as String).toLowerCase()]!;
       final expName = exp['name'] as String? ?? expCode;
 
       onProgress('$expName — ${i + 1}/${matched.length}', (i + 1) / matched.length);

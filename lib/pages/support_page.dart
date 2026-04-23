@@ -150,7 +150,7 @@ class SupportPage extends StatelessWidget {
 }
 
 class _DonateCard extends StatelessWidget {
-  static const String _donationUrl = 'https://paypal.me/clashkiller97';
+  static const String _donationUrl = 'https://ko-fi.com/deckmaster';
 
   Future<void> _openDonation(BuildContext context) async {
     final uri = Uri.parse(_donationUrl);
