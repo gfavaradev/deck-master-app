@@ -3204,27 +3204,61 @@ class DatabaseHelper {
       await db.transaction((txn) async {
         for (final card in batch) {
           final prints = card['prints'] as List<dynamic>? ?? [];
+          final now = DateTime.now().toIso8601String();
 
-          final cardId = await txn.insert(
-            'onepiece_cards',
-            {
-              if (card['id'] != null) 'id': card['id'],
-              'name': card['name'] ?? '',
-              'card_type': card['card_type'],
-              'color': card['color'],
-              'cost': card['cost'],
-              'power': card['power'],
-              'life': card['life'],
-              'sub_types': card['sub_types'],
-              'counter_amount': card['counter_amount'],
-              'attribute': card['attribute'],
-              'card_text': card['card_text'],
-              'image_url': card['image_url'],
-              'created_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
+          // Usa ON CONFLICT DO UPDATE invece di REPLACE per evitare che la
+          // CASCADE DELETE cancelli i print esistenti (con artwork Firebase).
+          int cardId;
+          if (card['id'] != null) {
+            await txn.rawInsert('''
+              INSERT INTO onepiece_cards
+                (id, name, card_type, color, cost, power, life,
+                 sub_types, counter_amount, attribute, card_text, image_url,
+                 created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                name           = excluded.name,
+                card_type      = excluded.card_type,
+                color          = excluded.color,
+                cost           = excluded.cost,
+                power          = excluded.power,
+                life           = excluded.life,
+                sub_types      = excluded.sub_types,
+                counter_amount = excluded.counter_amount,
+                attribute      = excluded.attribute,
+                card_text      = excluded.card_text,
+                image_url      = excluded.image_url,
+                updated_at     = excluded.updated_at
+            ''', [
+              card['id'], card['name'] ?? '',
+              card['card_type'], card['color'],
+              card['cost'], card['power'], card['life'],
+              card['sub_types'], card['counter_amount'],
+              card['attribute'], card['card_text'], card['image_url'],
+              now, now,
+            ]);
+            cardId = card['id'] as int;
+          } else {
+            cardId = await txn.insert(
+              'onepiece_cards',
+              {
+                'name': card['name'] ?? '',
+                'card_type': card['card_type'],
+                'color': card['color'],
+                'cost': card['cost'],
+                'power': card['power'],
+                'life': card['life'],
+                'sub_types': card['sub_types'],
+                'counter_amount': card['counter_amount'],
+                'attribute': card['attribute'],
+                'card_text': card['card_text'],
+                'image_url': card['image_url'],
+                'created_at': now,
+                'updated_at': now,
+              },
+              conflictAlgorithm: ConflictAlgorithm.ignore,
+            );
+          }
 
           // Solo URL Firebase Storage sono accettati come immagini valide
           bool isFbStorage(String? url) =>
@@ -3235,22 +3269,38 @@ class DatabaseHelper {
             final print = Map<String, dynamic>.from(p as Map);
             final rawArtwork = print['artwork'] as String? ?? cardImageUrl;
             final artwork = isFbStorage(rawArtwork) ? rawArtwork : cardArtwork;
-            await txn.insert(
-              'onepiece_prints',
-              {
-                'card_id': cardId,
-                'card_set_id': print['card_set_id'],
-                'set_id': print['set_id'],
-                'set_name': print['set_name'],
-                'rarity': print['rarity'],
-                'inventory_price': print['inventory_price'],
-                'market_price': print['market_price'],
-                'artwork': artwork,
-                'created_at': DateTime.now().toIso8601String(),
-                'updated_at': DateTime.now().toIso8601String(),
-              },
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
+            // ON CONFLICT: aggiorna tutti i campi eccetto artwork — se il nuovo
+            // valore non è Firebase Storage, preserva quello già in SQLite.
+            await txn.rawInsert('''
+              INSERT INTO onepiece_prints
+                (card_id, card_set_id, set_id, set_name, rarity,
+                 inventory_price, market_price, artwork,
+                 created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(card_set_id) DO UPDATE SET
+                card_id          = excluded.card_id,
+                set_id           = excluded.set_id,
+                set_name         = excluded.set_name,
+                rarity           = excluded.rarity,
+                inventory_price  = excluded.inventory_price,
+                market_price     = excluded.market_price,
+                artwork          = COALESCE(
+                  CASE WHEN excluded.artwork LIKE '%firebasestorage%'
+                       THEN excluded.artwork END,
+                  artwork
+                ),
+                updated_at       = excluded.updated_at
+            ''', [
+              cardId,
+              print['card_set_id'],
+              print['set_id'],
+              print['set_name'],
+              print['rarity'],
+              print['inventory_price'],
+              print['market_price'],
+              artwork,
+              now, now,
+            ]);
           }
         }
       });

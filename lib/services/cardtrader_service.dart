@@ -239,11 +239,14 @@ class CardtraderService {
     // Scrivi i prezzi CT nei chunk Firestore così tutti gli utenti
     // li vedono al prossimo download del catalogo.
     onProgress('Pubblicazione prezzi su Firestore…', null);
-    final firestoreResult = await AdminCatalogService().syncCatalogPricesToFirestore(
-      catalog: catalog,
-      adminUid: adminUid,
-      onProgress: onProgress,
-    );
+    Map<String, dynamic> firestoreResult = {'modifiedChunks': 0, 'totalChunks': 0, 'updatedPrices': 0};
+    try {
+      firestoreResult = await AdminCatalogService().syncCatalogPricesToFirestore(
+        catalog: catalog,
+        adminUid: adminUid,
+        onProgress: onProgress,
+      );
+    } catch (_) {}
 
     if (valuesUpdated > 0) {
       SyncService().notifyLocalChange('cards');

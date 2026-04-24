@@ -340,6 +340,7 @@ class DataRepository {
 
       }
     }
+    await CardtraderService().applyLocalPricesToCollection('yugioh');
   }
 
   /// Applies an incremental catalog update: fetches only the modified chunks,
@@ -390,6 +391,7 @@ class DataRepository {
 
       }
     }
+    await CardtraderService().applyLocalPricesToCollection('yugioh');
   }
 
   /// Cancella e riscarica il catalogo Yu-Gi-Oh da Firestore.
@@ -1586,6 +1588,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
+    await CardtraderService().applyLocalPricesToCollection('onepiece');
   }
 
   Future<void> redownloadOnepieceCatalog({

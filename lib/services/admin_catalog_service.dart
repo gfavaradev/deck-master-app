@@ -2370,7 +2370,13 @@ class AdminCatalogService {
                     .map((s) => Map<String, dynamic>.from(s as Map))
                     .toList();
                 newSets[langEntry.key.toString()] = setsList.map((s) {
-                  final expCode = (s['set_code'] as String? ?? '').toLowerCase();
+                  // set_code for Pokémon is the api_id (e.g. "swsh1-1").
+                  // CT expansion_code is the set-level code ("swsh1").
+                  // Extract by stripping the last "-NNN" segment.
+                  final rawCode = (s['set_code'] as String? ?? '').toLowerCase();
+                  final expCode = rawCode.contains('-')
+                      ? rawCode.substring(0, rawCode.lastIndexOf('-'))
+                      : rawCode;
                   if (expCode.isEmpty) return s;
                   final price = priceByNameLang['$expCode|$nameEn|$lang'];
                   if (price != null) {
@@ -2413,8 +2419,9 @@ class AdminCatalogService {
           // ── One Piece ────────────────────────────────────────────────────
           case 'onepiece':
             final nameEn    = (card['name'] as String? ?? '').toLowerCase();
-            final rawPrints = card['prints'] as List<dynamic>?;
-            if (rawPrints == null) break;
+            final rawPrintsField = card['prints'];
+            if (rawPrintsField is! List) break;
+            final rawPrints = rawPrintsField;
 
             final updatedPrintsList = rawPrints.map((raw) {
               final p       = Map<String, dynamic>.from(raw as Map);
