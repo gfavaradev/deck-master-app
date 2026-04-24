@@ -5,7 +5,6 @@ import 'firestore_service.dart';
 import 'sync_service.dart';
 import 'auth_service.dart';
 import 'xp_service.dart';
-import 'cardtrader_service.dart';
 import '../constants/app_constants.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
@@ -32,6 +31,9 @@ class DataRepository {
   // modified chunks so devices with the catalog already cached get prices too.
   Future<void> _onCatalogPriceUpdate(String catalog, List<String> chunkIds) async {
     try {
+      // BUG C fix: se un download manuale è in corso, salta per evitare
+      // accessi SQLite concorrenti che causano database lock / crash.
+      if (_isDownloadingCatalog) return;
       final localMeta = await _dbHelper.getCatalogMetadata(catalog);
       if (localMeta == null) return; // catalog not downloaded on this device
       final updateInfo = {
@@ -47,10 +49,9 @@ class DataRepository {
         case 'onepiece':
           await downloadOnepieceCatalog(updateInfo: updateInfo);
       }
-      // BUG #6 fix: ricalcola cardtrader_value sulle carte possedute dopo
-      // il price update incrementale (il download aggiorna solo *_prints,
-      // non la colonna cardtrader_value nella tabella cards).
-      await CardtraderService().applyLocalPricesToCollection(catalog);
+      // Aggiorna cardtrader_value nelle carte possedute (solo syncCollectionValues,
+      // syncCatalogPricesFromCardtrader è ridondante e troppo lenta qui).
+      await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
       // BUG #8 (web): invalida la cache in-memory per forzare il reload.
       _webCatalogCache.remove(catalog);
       if (catalog == 'yugioh') _webCatalogCache.clear(); // keyed per lingua
@@ -340,7 +341,7 @@ class DataRepository {
 
       }
     }
-    await CardtraderService().applyLocalPricesToCollection('yugioh');
+    await _dbHelper.syncCollectionValuesFromCardtrader('yugioh');
   }
 
   /// Applies an incremental catalog update: fetches only the modified chunks,
@@ -391,7 +392,8 @@ class DataRepository {
 
       }
     }
-    await CardtraderService().applyLocalPricesToCollection('yugioh');
+    // _onCatalogPriceUpdate gestisce syncCollectionValuesFromCardtrader dopo
+    // il ritorno di questa funzione — non duplicare qui.
   }
 
   /// Cancella e riscarica il catalogo Yu-Gi-Oh da Firestore.
@@ -442,8 +444,7 @@ class DataRepository {
 
     // Step 4: rebuild espansioni/rarità dedicate.
     await _dbHelper.rebuildExpansionsAndRarities('yugioh');
-    // Re-apply CT prices now that the catalog tables are populated.
-    await CardtraderService().applyLocalPricesToCollection('yugioh');
+    await _dbHelper.syncCollectionValuesFromCardtrader('yugioh');
   }
 
   // ============================================================
@@ -1557,7 +1558,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    await CardtraderService().applyLocalPricesToCollection('onepiece');
+    await _dbHelper.syncCollectionValuesFromCardtrader('onepiece');
   }
 
   Future<void> _applyOnepieceIncrementalUpdate({
@@ -1588,7 +1589,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    await CardtraderService().applyLocalPricesToCollection('onepiece');
+    // _onCatalogPriceUpdate gestisce syncCollectionValuesFromCardtrader — non duplicare qui.
   }
 
   Future<void> redownloadOnepieceCatalog({
@@ -1616,8 +1617,7 @@ class DataRepository {
       );
     }
     await _dbHelper.rebuildExpansionsAndRarities('onepiece');
-    // Re-apply CT prices now that the catalog tables are populated.
-    await CardtraderService().applyLocalPricesToCollection('onepiece');
+    await _dbHelper.syncCollectionValuesFromCardtrader('onepiece');
   }
 
   Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
@@ -1823,8 +1823,7 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    // Re-apply CT prices now that the catalog tables are populated.
-    await CardtraderService().applyLocalPricesToCollection('pokemon');
+    await _dbHelper.syncCollectionValuesFromCardtrader('pokemon');
   }
 
   Future<void> redownloadPokemonCatalog({
@@ -1853,8 +1852,7 @@ class DataRepository {
       );
     }
     await _dbHelper.rebuildExpansionsAndRarities('pokemon');
-    // Re-apply CT prices now that the catalog tables are populated.
-    await CardtraderService().applyLocalPricesToCollection('pokemon');
+    await _dbHelper.syncCollectionValuesFromCardtrader('pokemon');
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCatalogCards({
