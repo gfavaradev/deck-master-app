@@ -3,6 +3,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'cardtrader_service.dart' show CardtraderService;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -83,24 +84,40 @@ class AdminCatalogService {
       // Store Firebase Storage URL at card level (backward compat for web / old clients)
       updatedCard['imageUrl'] = storageUrl;
 
-      // Add per-set image_url to each EN set entry (only if not already set by admin)
-      final sets = updatedCard['sets'];
-      if (sets is Map) {
-        final updatedSets = Map<String, dynamic>.from(sets);
-        final enSets = updatedSets['en'];
-        if (enSets is List) {
-          updatedSets['en'] = enSets.map((s) {
-            final entry = Map<String, dynamic>.from(s as Map);
-            final existingUrl = entry['image_url'] as String?;
-            // Replace ygoprodeck URLs with Firebase Storage URL; preserve admin-set Storage URLs
-            if (existingUrl == null || existingUrl.isEmpty ||
-                !existingUrl.contains('firebasestorage')) {
-              entry['image_url'] = storageUrl;
+      if (catalog == 'onepiece') {
+        // One Piece: update artwork in each print entry
+        final prints = updatedCard['prints'];
+        if (prints is List) {
+          updatedCard['prints'] = prints.map((p) {
+            final print = Map<String, dynamic>.from(p as Map);
+            final existingArtwork = print['artwork'] as String?;
+            if (existingArtwork == null || existingArtwork.isEmpty ||
+                !existingArtwork.contains('firebasestorage')) {
+              print['artwork'] = storageUrl;
             }
-            return entry;
+            return print;
           }).toList();
         }
-        updatedCard['sets'] = updatedSets;
+      } else {
+        // Other catalogs: add per-set image_url to each EN set entry
+        final sets = updatedCard['sets'];
+        if (sets is Map) {
+          final updatedSets = Map<String, dynamic>.from(sets);
+          final enSets = updatedSets['en'];
+          if (enSets is List) {
+            updatedSets['en'] = enSets.map((s) {
+              final entry = Map<String, dynamic>.from(s as Map);
+              final existingUrl = entry['image_url'] as String?;
+              // Replace ygoprodeck URLs with Firebase Storage URL; preserve admin-set Storage URLs
+              if (existingUrl == null || existingUrl.isEmpty ||
+                  !existingUrl.contains('firebasestorage')) {
+                entry['image_url'] = storageUrl;
+              }
+              return entry;
+            }).toList();
+          }
+          updatedCard['sets'] = updatedSets;
+        }
       }
     }
 
@@ -2497,6 +2514,328 @@ class AdminCatalogService {
       'totalChunks': totalChunks,
       'updatedPrices': updatedPrices,
     };
+  }
+
+  // ============================================================
+  // CardTrader Catalog Download (Pokemon & One Piece)
+  // ============================================================
+
+  /// Downloads the complete catalog for [catalog] ('pokemon' or 'onepiece')
+  /// from CardTrader blueprints API and uploads to Firestore.
+  /// Images are downloaded from CT CDN and stored in Firebase Storage.
+  Future<Map<String, dynamic>> downloadCatalogFromCardtrader({
+    required String catalog,
+    required String adminUid,
+    required void Function(String status, double? progress) onProgress,
+  }) async {
+    if (catalog != 'pokemon' && catalog != 'onepiece') {
+      throw Exception('downloadCatalogFromCardtrader: solo pokemon e onepiece');
+    }
+
+    final ctService = CardtraderService();
+
+    onProgress('Caricamento espansioni da CardTrader…', null);
+    final expansions = await ctService.fetchExpansionsForCatalog(catalog);
+    if (expansions.isEmpty) {
+      throw Exception('Nessuna espansione trovata per $catalog su CardTrader');
+    }
+    onProgress('${expansions.length} espansioni trovate.', null);
+
+    final List<Map<String, dynamic>> allCards;
+    if (catalog == 'pokemon') {
+      allCards = await _buildPokemonCatalogFromCT(
+        expansions: expansions,
+        ctService: ctService,
+        onProgress: onProgress,
+      );
+    } else {
+      allCards = await _buildOnepieceCatalogFromCT(
+        expansions: expansions,
+        ctService: ctService,
+        onProgress: onProgress,
+      );
+    }
+
+    if (allCards.isEmpty) throw Exception('Nessuna carta estratta da CT');
+
+    onProgress('Caricamento ${allCards.length} carte su Firestore…', null);
+    await _uploadCatalogChunks(
+      catalogCollection: '${catalog}_catalog',
+      cards: allCards,
+      adminUid: adminUid,
+      isIncremental: false,
+      onProgress: (cur, tot) =>
+          onProgress('Chunk $cur/$tot caricato', tot > 0 ? cur / tot : null),
+    );
+
+    return {
+      'totalCards': allCards.length,
+      'totalExpansions': expansions.length,
+    };
+  }
+
+  /// Builds Pokemon catalog cards from CT blueprints.
+  /// Output format: Firestore `sets` map (compatible with _normalizePokemonCardForSQLite).
+  Future<List<Map<String, dynamic>>> _buildPokemonCatalogFromCT({
+    required List<Map<String, dynamic>> expansions,
+    required CardtraderService ctService,
+    required void Function(String, double?) onProgress,
+  }) async {
+    final allCards = <Map<String, dynamic>>[];
+    final errors = <String>[];
+    int skippedEmpty = 0;
+
+    for (int i = 0; i < expansions.length; i++) {
+      final exp = expansions[i];
+      final expId = exp['id'] as int;
+      final expCode = (exp['code'] as String? ?? '').toLowerCase();
+      final expName = exp['name'] as String? ?? expCode;
+
+      onProgress(
+        'Pokémon — $expName (${i + 1}/${expansions.length})',
+        (i + 1) / expansions.length,
+      );
+
+      try {
+        final blueprints = await ctService.fetchBlueprintsForExpansion(expId);
+        if (blueprints.isEmpty) { skippedEmpty++; continue; }
+
+        // Helper: extract a field checking top-level first, then fixed_properties
+        Map<String, dynamic> bpProps(Map<String, dynamic> bp) =>
+            (bp['fixed_properties'] as Map<String, dynamic>?) ?? {};
+
+        String bpLang(Map<String, dynamic> bp) {
+          // CT may expose language as top-level 'language' or inside fixed_properties
+          final top = bp['language']?.toString() ?? '';
+          if (top.isNotEmpty) return CardtraderService.normalizeLang(top);
+          final p = bpProps(bp);
+          return CardtraderService.normalizeLang(
+              (p['pokemon_language'] ?? p['language'])?.toString() ?? 'en');
+        }
+
+        String bpCollectorNumber(Map<String, dynamic> bp) {
+          // CT may expose collector_number as top-level or inside fixed_properties
+          final top = bp['collector_number'] ?? bp['number'];
+          if (top != null) return top.toString().trim();
+          final p = bpProps(bp);
+          final nested = p['collector_number'] ?? p['number'];
+          if (nested != null) return nested.toString().trim();
+          return bp['id']?.toString() ?? '';
+        }
+
+        String bpRarityFn(Map<String, dynamic> bp, String fallback) {
+          final top = bp['rarity']?.toString() ?? '';
+          if (top.isNotEmpty) return top;
+          final p = bpProps(bp);
+          return (p['pokemon_rarity'] ?? p['rarity'])?.toString() ?? fallback;
+        }
+
+        // Group blueprints by collector_number — same number = same card across languages
+        final byNumber = <String, List<Map<String, dynamic>>>{};
+        for (final bp in blueprints) {
+          final num = bpCollectorNumber(bp);
+          if (num.isEmpty) continue;
+          byNumber.putIfAbsent(num, () => []).add(bp);
+        }
+
+        for (final entry in byNumber.entries) {
+          final collectorNumber = entry.key;
+          final langBps = entry.value;
+
+          // EN blueprint as base; fallback to first available
+          final enBp = langBps.firstWhere(
+            (bp) => bpLang(bp) == 'en',
+            orElse: () => langBps.first,
+          );
+
+          final nameEn = (enBp['name_en'] as String?)?.trim() ??
+              (enBp['name'] as String?)?.trim() ?? '';
+          if (nameEn.isEmpty) continue;
+          final rarity = bpRarityFn(enBp, '');
+
+          // Upload EN image to Firebase Storage once per card
+          final ctImageUrl = CardtraderService.extractBlueprintImageUrl(enBp);
+          final apiId = '$expCode-$collectorNumber';
+          final storageUrl = ctImageUrl != null
+              ? await _uploadCardImageIfNeeded('pokemon', apiId, ctImageUrl)
+              : null;
+
+          // Build sets map: one entry per language
+          final setsMap = <String, dynamic>{};
+          for (final bp in langBps) {
+            final lang = bpLang(bp);
+            final bpRarity = bpRarityFn(bp, rarity);
+            setsMap[lang] = [
+              {
+                'set_code': collectorNumber,
+                'set_name': expName,
+                'rarity': bpRarity,
+                if (storageUrl != null) 'artwork': storageUrl,
+              }
+            ];
+          }
+          setsMap.putIfAbsent('en', () => [
+            {
+              'set_code': collectorNumber,
+              'set_name': expName,
+              'rarity': rarity,
+              if (storageUrl != null) 'artwork': storageUrl,
+            }
+          ]);
+
+          allCards.add({
+            'api_id': apiId,
+            'name': nameEn,
+            'catalog': 'pokemon',
+            'rarity': rarity,
+            'sets': setsMap,
+          });
+        }
+        await Future.delayed(const Duration(milliseconds: 150));
+      } catch (e) {
+        errors.add('$expName: $e');
+      }
+    }
+
+    if (allCards.isEmpty) {
+      final detail = [
+        if (skippedEmpty > 0) '$skippedEmpty/${expansions.length} espansioni con 0 blueprint',
+        if (errors.isNotEmpty) 'errori: ${errors.take(3).join(' | ')}',
+        if (skippedEmpty == 0 && errors.isEmpty) 'tutte le espansioni erano vuote',
+      ].join('; ');
+      throw Exception('Nessuna carta Pokémon estratta da CT. $detail');
+    }
+    return allCards;
+  }
+
+  /// Builds One Piece catalog cards from CT blueprints.
+  /// Output format: flat `prints` list (compatible with insertOnepieceCards).
+  Future<List<Map<String, dynamic>>> _buildOnepieceCatalogFromCT({
+    required List<Map<String, dynamic>> expansions,
+    required CardtraderService ctService,
+    required void Function(String, double?) onProgress,
+  }) async {
+    final allCards = <Map<String, dynamic>>[];
+    final errors = <String>[];
+    int skippedEmpty = 0;
+    int nextId = 1;
+
+    for (int i = 0; i < expansions.length; i++) {
+      final exp = expansions[i];
+      final expId = exp['id'] as int;
+      final expCodeRaw = (exp['code'] as String? ?? '');
+      final expCode = expCodeRaw.toUpperCase(); // e.g. "OP01"
+      final expName = exp['name'] as String? ?? expCodeRaw;
+
+      onProgress(
+        'One Piece — $expName (${i + 1}/${expansions.length})',
+        (i + 1) / expansions.length,
+      );
+
+      try {
+        final blueprints = await ctService.fetchBlueprintsForExpansion(expId);
+        if (blueprints.isEmpty) { skippedEmpty++; continue; }
+
+        // Helpers: check top-level field first, then fixed_properties
+        Map<String, dynamic> bpProps(Map<String, dynamic> bp) =>
+            (bp['fixed_properties'] as Map<String, dynamic>?) ?? {};
+
+        String bpLang(Map<String, dynamic> bp) {
+          final top = bp['language']?.toString() ?? '';
+          if (top.isNotEmpty) return CardtraderService.normalizeLang(top);
+          final p = bpProps(bp);
+          return CardtraderService.normalizeLang(
+              (p['onepiece_language'] ?? p['language'])?.toString() ?? 'ja');
+        }
+
+        String bpCollNum(Map<String, dynamic> bp) {
+          final top = bp['collector_number'] ?? bp['number'];
+          if (top != null) return top.toString().trim();
+          final p = bpProps(bp);
+          final nested = p['collector_number'] ?? p['number'];
+          if (nested != null) return nested.toString().trim();
+          return bp['id']?.toString() ?? '';
+        }
+
+        String bpRarityFn(Map<String, dynamic> bp, String fallback) {
+          final top = bp['rarity']?.toString() ?? '';
+          if (top.isNotEmpty) return top;
+          final p = bpProps(bp);
+          return (p['onepiece_rarity'] ?? p['rarity'])?.toString() ?? fallback;
+        }
+
+        // Group by name_en — same card printed in different languages
+        final byNameEn = <String, List<Map<String, dynamic>>>{};
+        for (final bp in blueprints) {
+          final nameEn = (bp['name_en'] as String?)?.trim() ??
+              (bp['name'] as String?)?.trim() ?? '';
+          if (nameEn.isEmpty) continue;
+          byNameEn.putIfAbsent(nameEn, () => []).add(bp);
+        }
+
+        for (final entry in byNameEn.entries) {
+          final nameEn = entry.key;
+          final langBps = entry.value;
+
+          // JA blueprint as base (OP is Japanese-origin); fallback to first
+          final jaBp = langBps.firstWhere(
+            (bp) => bpLang(bp) == 'ja',
+            orElse: () => langBps.first,
+          );
+          final rarity = bpRarityFn(jaBp, '');
+          final jaName = (jaBp['name'] as String?)?.trim() ?? nameEn;
+
+          final prints = <Map<String, dynamic>>[];
+          for (final bp in langBps) {
+            final collNum = bpCollNum(bp);
+            if (collNum.isEmpty) continue;
+
+            // Build card_set_id: prepend expansion code if not already present
+            final collUpper = collNum.toUpperCase();
+            final cardSetId = collUpper.startsWith(expCode)
+                ? collUpper
+                : '$expCode-$collUpper';
+
+            final bpRarity = bpRarityFn(bp, rarity);
+            final ctImageUrl = CardtraderService.extractBlueprintImageUrl(bp);
+            final storageUrl = ctImageUrl != null
+                ? await _uploadCardImageIfNeeded(
+                    'onepiece', '${expCode}_$collNum', ctImageUrl)
+                : null;
+            prints.add({
+              'card_set_id': cardSetId,
+              'set_id': expCode,
+              'set_name': expName,
+              'rarity': bpRarity,
+              if (storageUrl != null) 'artwork': storageUrl,
+            });
+          }
+          if (prints.isEmpty) continue;
+
+          allCards.add({
+            'id': nextId++,
+            'name': nameEn,
+            if (jaName != nameEn) 'name_ja': jaName,
+            'catalog': 'onepiece',
+            'rarity': rarity,
+            'prints': prints,
+          });
+        }
+        await Future.delayed(const Duration(milliseconds: 150));
+      } catch (e) {
+        errors.add('$expName: $e');
+      }
+    }
+
+    if (allCards.isEmpty) {
+      final detail = [
+        if (skippedEmpty > 0) '$skippedEmpty/${expansions.length} espansioni con 0 blueprint',
+        if (errors.isNotEmpty) 'errori: ${errors.take(3).join(' | ')}',
+        if (skippedEmpty == 0 && errors.isEmpty) 'tutte le espansioni erano vuote',
+      ].join('; ');
+      throw Exception('Nessuna carta One Piece estratta da CT. $detail');
+    }
+    return allCards;
   }
 
   // ============================================================

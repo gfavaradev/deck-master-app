@@ -15,7 +15,6 @@ import '../widgets/top_undo_bar.dart';
 import 'support_page.dart';
 import 'card_detail_page.dart';
 import '../services/language_service.dart';
-import '../services/cardtrader_service.dart';
 
 class CardListPage extends StatefulWidget {
   final String collectionName;
@@ -51,15 +50,12 @@ class _CardListPageState extends State<CardListPage> {
   bool _catalogSearching = false;
   int? _lastUsedAlbumId;
   String _preferredLanguage = 'EN';
-  bool _isApplyingCtPrices = false;
-
   @override
   void initState() {
     super.initState();
     _refreshCards();
-    // Re-apply CT prices whenever the admin pushes a price sync
     _syncSub = SyncService().onRemoteChange.listen((_) {
-      if (mounted) _refreshCards().then((_) => _applyCtPricesIfNeeded());
+      if (mounted) _refreshCards();
     });
     LanguageService.getPreferredLanguageForCollection(widget.collectionKey).then((lang) {
       if (mounted) setState(() => _preferredLanguage = lang);
@@ -73,23 +69,9 @@ class _CardListPageState extends State<CardListPage> {
     super.dispose();
   }
 
-  Future<void> _applyCtPricesIfNeeded() async {
-    if (_isApplyingCtPrices) return;
-    final hasMissing = _allCards.any((c) => (c.cardtraderValue ?? 0) <= 0);
-    if (!hasMissing) return;
-    _isApplyingCtPrices = true;
-    try {
-      final updated = await CardtraderService().applyLocalPricesToCollection(widget.collectionKey);
-      if ((updated['collectionUpdated'] ?? 0) > 0 && mounted) await _refreshCards();
-    } finally {
-      _isApplyingCtPrices = false;
-    }
-  }
-
   Future<void> _onRefresh() async {
     await _repo.fullSync();
     await _refreshCards();
-    await _applyCtPricesIfNeeded();
   }
 
   Future<void> _refreshCards() async {
@@ -189,7 +171,7 @@ class _CardListPageState extends State<CardListPage> {
       initialCatalogCard: catalogCard,
       onCardAdded: (int usedAlbumId, String _) {
         setState(() => _lastUsedAlbumId = usedAlbumId);
-        _refreshCards().then((_) => _applyCtPricesIfNeeded());
+        _refreshCards();
       },
       getOrCreateDuplicatesAlbum: _getOrCreateDuplicatesAlbum,
     );
@@ -217,7 +199,7 @@ class _CardListPageState extends State<CardListPage> {
       );
       if (!context.mounted || selectedId == null) return;
       await _repo.insertCard(card.copyWith(resetId: true, albumId: selectedId, quantity: delta));
-      _refreshCards().then((_) => _applyCtPricesIfNeeded());
+      _refreshCards();
       return;
     }
 

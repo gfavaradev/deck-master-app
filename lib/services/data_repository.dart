@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'sync_service.dart';
 import 'auth_service.dart';
+import 'cardtrader_service.dart';
 import 'xp_service.dart';
 import '../constants/app_constants.dart';
 import '../models/album_model.dart';
@@ -26,36 +28,53 @@ class DataRepository {
   final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
 
+  // ── Pending catalog updates (persisted across sessions) ──────────────────
+
+  static const kPendingCatalogUpdatesKey = 'pending_catalog_updates';
+
+  static String _catalogDisplayName(String key) => switch (key) {
+    'yugioh'   => 'Yu-Gi-Oh!',
+    'pokemon'  => 'Pokémon',
+    'onepiece' => 'One Piece TCG',
+    _          => key,
+  };
+
+  Future<void> savePendingCatalogUpdate(String catalog, Map<String, dynamic> updateInfo) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = loadPendingCatalogUpdatesFromPrefs(prefs);
+    pending.removeWhere((u) => u['collectionKey'] == catalog);
+    pending.add({...updateInfo, 'collectionKey': catalog, 'collectionName': _catalogDisplayName(catalog)});
+    await prefs.setString(kPendingCatalogUpdatesKey, jsonEncode(pending));
+  }
+
+  static List<Map<String, dynamic>> loadPendingCatalogUpdatesFromPrefs(SharedPreferences prefs) {
+    final raw = prefs.getString(kPendingCatalogUpdatesKey);
+    if (raw == null) return [];
+    try {
+      return (jsonDecode(raw) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) { return []; }
+  }
+
+  Future<void> clearPendingCatalogUpdates() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(kPendingCatalogUpdatesKey);
+  }
+
   // Called by SyncService when the admin has embedded new prices in Firestore
-  // catalog chunks (via syncCatalogPricesToFirestore). Downloads only the
-  // modified chunks so devices with the catalog already cached get prices too.
+  // catalog chunks. Instead of auto-downloading, saves a pending flag so the
+  // user can manually trigger the download via the cloud icon in the AppBar.
   Future<void> _onCatalogPriceUpdate(String catalog, List<String> chunkIds) async {
     try {
-      // BUG C fix: se un download manuale è in corso, salta per evitare
-      // accessi SQLite concorrenti che causano database lock / crash.
       if (_isDownloadingCatalog) return;
       final localMeta = await _dbHelper.getCatalogMetadata(catalog);
-      if (localMeta == null) return; // catalog not downloaded on this device
-      final updateInfo = {
+      if (localMeta == null) return; // catalogo non ancora scaricato su questo device
+      await savePendingCatalogUpdate(catalog, {
         'canDoIncremental': true,
         'modifiedChunks': chunkIds,
         'deletedCards': <dynamic>[],
-      };
-      switch (catalog) {
-        case 'yugioh':
-          await downloadYugiohCatalog(updateInfo: updateInfo);
-        case 'pokemon':
-          await downloadPokemonCatalog(updateInfo: updateInfo);
-        case 'onepiece':
-          await downloadOnepieceCatalog(updateInfo: updateInfo);
-      }
-      // Aggiorna cardtrader_value nelle carte possedute (solo syncCollectionValues,
-      // syncCatalogPricesFromCardtrader è ridondante e troppo lenta qui).
-      await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
-      // BUG #8 (web): invalida la cache in-memory per forzare il reload.
-      _webCatalogCache.remove(catalog);
-      if (catalog == 'yugioh') _webCatalogCache.clear(); // keyed per lingua
-      _syncService.notifyLocalChange('catalog_$catalog');
+        'isFirstDownload': false,
+      });
+      _syncService.notifyLocalChange('catalog_update_pending');
     } catch (_) {}
   }
 
@@ -341,7 +360,8 @@ class DataRepository {
 
       }
     }
-    await _dbHelper.syncCollectionValuesFromCardtrader('yugioh');
+
+    try { await CardtraderService().applyLocalPricesToCollection('yugioh'); } catch (_) {}
   }
 
   /// Applies an incremental catalog update: fetches only the modified chunks,
@@ -392,8 +412,8 @@ class DataRepository {
 
       }
     }
-    // _onCatalogPriceUpdate gestisce syncCollectionValuesFromCardtrader dopo
-    // il ritorno di questa funzione — non duplicare qui.
+
+    try { await CardtraderService().applyLocalPricesToCollection('yugioh'); } catch (_) {}
   }
 
   /// Cancella e riscarica il catalogo Yu-Gi-Oh da Firestore.
@@ -444,7 +464,6 @@ class DataRepository {
 
     // Step 4: rebuild espansioni/rarità dedicate.
     await _dbHelper.rebuildExpansionsAndRarities('yugioh');
-    await _dbHelper.syncCollectionValuesFromCardtrader('yugioh');
   }
 
   // ============================================================
@@ -585,12 +604,6 @@ class DataRepository {
       return _webGetCardLocalId(firestoreId);
     }
     final localId = await _dbHelper.insertCard(card);
-    // Apply CT price BEFORE notifying the UI so the first refresh already
-    // shows the correct price instead of a blank value.
-    await _dbHelper.applyCtPriceToCard(
-      localId, card.collection, card.serialNumber, card.name, card.rarity,
-      catalogId: card.catalogId?.toString(),
-    ).catchError((_) {});
     final savedCard = card.copyWith(id: localId);
     await _syncService.pushCardChange(savedCard, 'insert');
     _syncService.notifyLocalChange('cards');
@@ -693,7 +706,11 @@ class DataRepository {
         );
       }).toList();
     }
-    return await _dbHelper.getCardsByCollection(collection);
+    final prefs = await SharedPreferences.getInstance();
+    const validLangs = {'en', 'it', 'fr', 'de', 'es', 'pt'};
+    final rawLang = prefs.getString('preferred_language') ?? 'en';
+    final lang = validLangs.contains(rawLang) ? rawLang : 'en';
+    return await _dbHelper.getCardsByCollection(collection, language: lang);
   }
 
   Future<Map<String, double>> getCollectionCompletions() async {
@@ -1558,7 +1575,8 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    await _dbHelper.syncCollectionValuesFromCardtrader('onepiece');
+
+    try { await CardtraderService().applyLocalPricesToCollection('onepiece'); } catch (_) {}
   }
 
   Future<void> _applyOnepieceIncrementalUpdate({
@@ -1589,7 +1607,8 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    // _onCatalogPriceUpdate gestisce syncCollectionValuesFromCardtrader — non duplicare qui.
+
+    try { await CardtraderService().applyLocalPricesToCollection('onepiece'); } catch (_) {}
   }
 
   Future<void> redownloadOnepieceCatalog({
@@ -1617,7 +1636,6 @@ class DataRepository {
       );
     }
     await _dbHelper.rebuildExpansionsAndRarities('onepiece');
-    await _dbHelper.syncCollectionValuesFromCardtrader('onepiece');
   }
 
   Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
@@ -1801,6 +1819,7 @@ class DataRepository {
           lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
         );
       }
+      try { await CardtraderService().applyLocalPricesToCollection('pokemon'); } catch (_) {}
       return;
     }
 
@@ -1823,7 +1842,8 @@ class DataRepository {
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
     }
-    await _dbHelper.syncCollectionValuesFromCardtrader('pokemon');
+
+    try { await CardtraderService().applyLocalPricesToCollection('pokemon'); } catch (_) {}
   }
 
   Future<void> redownloadPokemonCatalog({
@@ -1852,7 +1872,6 @@ class DataRepository {
       );
     }
     await _dbHelper.rebuildExpansionsAndRarities('pokemon');
-    await _dbHelper.syncCollectionValuesFromCardtrader('pokemon');
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCatalogCards({

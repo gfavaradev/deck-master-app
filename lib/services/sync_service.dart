@@ -325,8 +325,7 @@ class SyncService {
                 .timeout(const Duration(seconds: 20), onTimeout: () => []);
             if (prices.isNotEmpty) {
               await _dbHelper.upsertCardtraderPrices(prices);
-              updated = await _dbHelper.syncCollectionValuesFromCardtrader(catalog);
-              await _dbHelper.syncCatalogPricesFromCardtrader(catalog);
+              updated = await _dbHelper.syncCatalogPricesFromCardtrader(catalog);
               await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
             }
           }
@@ -359,6 +358,7 @@ class SyncService {
 
         // ── Notifica utente ───────────────────────────────────────────────────
         if (updated > 0) {
+          notifyLocalChange('cards');
           final collections = await _dbHelper.getCollections();
           final isUnlocked = collections.any((c) => c.key == catalog && c.isUnlocked);
           if (isUnlocked) {
@@ -389,36 +389,48 @@ class SyncService {
     if (kIsWeb) return;
     if (_isSyncing) return;
 
-    // Controlla se ci sono item pending: se sì, non applicare il cooldown
+    // Ripristina il lastSyncTime fra riavvii — era in-memory e si azzerava
+    // ad ogni apertura dell'app, causando un pullFromCloud (centinaia di reads
+    // Firestore) ad ogni avvio invece di rispettare il cooldown.
+    if (_lastSyncTime == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_lastSyncKey);
+      if (saved != null) _lastSyncTime = DateTime.tryParse(saved);
+    }
+
     final pendingCount = await _dbHelper.getPendingSyncCount();
     final hasPending = pendingCount > 0;
 
-    if (!hasPending && _lastSyncTime != null &&
-        DateTime.now().difference(_lastSyncTime!) < _syncCooldown) {
+    final withinCooldown = _lastSyncTime != null &&
+        DateTime.now().difference(_lastSyncTime!) < _syncCooldown;
 
-      return;
-    }
+    if (!hasPending && withinCooldown) return;
 
     _isSyncing = true;
-
     try {
       final userId = _userId;
       if (userId == null) return;
 
-      // Letture in parallelo
+      // Nel cooldown ma ci sono pending: flush solo scritture, NO pullFromCloud.
+      // pullFromCloud legge TUTTE le carte Firestore — non va eseguito ad ogni
+      // modifica locale, solo quando il cooldown è scaduto.
+      if (withinCooldown) {
+        await flushPendingQueue();
+        return;
+      }
+
+      // Fuori dal cooldown: sync completo
       final cachedHasRemote = await _getCachedHasRemote(userId);
 
-      final syncCollsFuture   = _syncCollections(userId);
-      final hasRemoteFuture   = cachedHasRemote
+      final hasRemoteFuture = cachedHasRemote
           ? Future.value(true)
           : _firestoreService.hasUserData(userId);
-      final albumsFuture      = _dbHelper.getAllAlbums();
-      final cardsFuture       = _dbHelper.getAllCards();
+      final albumsFuture = _dbHelper.getAllAlbums();
+      final cardsFuture  = _dbHelper.getAllCards();
 
-      await syncCollsFuture;
-      final hasRemoteData  = await hasRemoteFuture;
-      final localAlbums    = await albumsFuture;
-      final localCards     = await cardsFuture;
+      final hasRemoteData = await hasRemoteFuture;
+      final localAlbums   = await albumsFuture;
+      final localCards    = await cardsFuture;
 
       if (hasRemoteData) await _setCachedHasRemote(userId);
 
@@ -429,21 +441,12 @@ class SyncService {
       final hasLocalData = localAlbums.isNotEmpty && localCards.isNotEmpty;
 
       if (hasRemoteData && !hasLocalData) {
-        // Cloud ha dati, locale vuoto o incompleto → flush pending, poi scarica dal cloud
         if (hasPending) await flushPendingQueue();
         await pullFromCloud();
       } else if (hasLocalData && !hasRemoteData) {
-        // Locale ha dati, cloud vuoto → carica sul cloud
         await initialUpload();
       } else if (hasRemoteData && hasLocalData) {
-        // Entrambi hanno dati.
-        // 1. Flush pending: pusha su Firestore solo le modifiche in coda
-        //    (carte/album creati/modificati offline o con sync fallita).
-        //    initialUpload() NON va usato qui — reinseriscerebbe tutti gli item
-        //    come nuovi documenti Firestore, causando duplicati.
         if (hasPending) await flushPendingQueue();
-
-        // 2. Pull: riceve le modifiche dal cloud (altri dispositivi, ecc.)
         await pullFromCloud();
       }
 
@@ -454,31 +457,6 @@ class SyncService {
 
     } finally {
       _isSyncing = false;
-    }
-  }
-
-  /// Sync collections (unlocked status) from Firestore
-  Future<void> _syncCollections(String userId) async {
-    if (kIsWeb) return;
-    try {
-      final remoteCollections = await _firestoreService.getCollections(userId)
-          .timeout(const Duration(seconds: 8));
-
-      // Se la lista è vuota potremmo essere offline (getCollections ritorna []
-      // in caso di errore). Non resettare lo stato locale per evitare di
-      // bloccare tutte le collezioni sbloccate dell'utente.
-      if (remoteCollections.isEmpty) {
-
-        return;
-      }
-
-      await _dbHelper.resetCollectionsLockState();
-      for (var col in remoteCollections) {
-        if (col.isUnlocked) await _dbHelper.unlockCollection(col.key);
-      }
-
-    } catch (e) { // ignore: empty_catches
-
     }
   }
 

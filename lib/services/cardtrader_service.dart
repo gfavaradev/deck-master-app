@@ -81,13 +81,31 @@ class CardtraderService {
 
   /// Normalizes CardTrader API language codes to internal codes.
   /// CT uses 'jp' for Japanese, 'kr' for Korean, 'zh-CN' for Chinese.
-  static String _normalizeLang(String ctLang) {
+  static String normalizeLang(String ctLang) {
     switch (ctLang.toLowerCase()) {
       case 'jp': return 'ja';
       case 'kr': return 'ko';
       case 'zh-cn': return 'zh';
       default: return ctLang.toLowerCase();
     }
+  }
+
+  static String _normalizeLang(String ctLang) => normalizeLang(ctLang);
+
+  /// Extracts the image URL from a CT blueprint map.
+  /// CT may return image as a String URL or as a nested map {original, show}.
+  static String? extractBlueprintImageUrl(Map<String, dynamic> blueprint) {
+    final image = blueprint['image'];
+    if (image is String && image.isNotEmpty) return image;
+    if (image is Map) {
+      final show = image['show'];
+      if (show is String && show.isNotEmpty) return show;
+      final original = image['original'];
+      if (original is String && original.isNotEmpty) return original;
+    }
+    final imageUrl = blueprint['image_url'];
+    if (imageUrl is String && imageUrl.isNotEmpty) return imageUrl;
+    return null;
   }
 
   String get _jwt => AppSecrets.cardtraderJwt;
@@ -226,12 +244,8 @@ class CardtraderService {
       }
     }
 
-    onProgress('Aggiornamento valori collezione…', null);
-    final valuesUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
-    // Always push prices to Firestore so other users can download them,
-    // regardless of whether this device has any cards in the collection.
+    // Always push prices to Firestore so other users can download them.
     await _pushCardValuesToFirestore(catalog);
-    if (valuesUpdated > 0) {}
 
     onProgress('Aggiornamento prezzi catalogo locale…', null);
     final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
@@ -248,7 +262,7 @@ class CardtraderService {
       );
     } catch (_) {}
 
-    if (valuesUpdated > 0) {
+    if (catalogUpdated > 0) {
       SyncService().notifyLocalChange('cards');
     }
 
@@ -262,7 +276,6 @@ class CardtraderService {
       'skipped': skipped,
       'errors': errors,
       'catalog': catalog,
-      'valuesUpdated': valuesUpdated,
       'catalogUpdated': catalogUpdated,
       'firestoreChunksUpdated': firestoreResult['modifiedChunks'],
       'firestorePricesUpdated': firestoreResult['updatedPrices'],
@@ -324,13 +337,10 @@ class CardtraderService {
     return rows.map(CardtraderPrice.fromMap).toList();
   }
 
-  /// Ricalcola `cards.value` e aggiorna i prezzi del catalogo dai prezzi CT in cache locale.
-  /// Utile dopo un riavvio, un re-download del catalogo o un sync Firestore.
-  /// Returns a map with 'collectionUpdated' and 'catalogUpdated' counts.
-  Future<Map<String, int>> applyLocalPricesToCollection(String catalog) async {
-    final collectionUpdated = await _db.syncCollectionValuesFromCardtrader(catalog);
-    final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
-    return {'collectionUpdated': collectionUpdated, 'catalogUpdated': catalogUpdated};
+  /// Aggiorna i prezzi del catalogo dai prezzi CT in cache locale.
+  /// Returns the number of catalog print rows updated.
+  Future<int> applyLocalPricesToCollection(String catalog) async {
+    return await _db.syncCatalogPricesFromCardtrader(catalog);
   }
 
   // ─── Web-specific sync (Firestore-only, no SQLite) ───────────────────────
@@ -555,6 +565,19 @@ class CardtraderService {
     }
   }
 
+  // ─── Public catalog-fetch API (used by AdminCatalogService) ───────────────
+
+  /// Fetches all CT expansions for [catalog] (e.g. 'pokemon', 'onepiece').
+  Future<List<Map<String, dynamic>>> fetchExpansionsForCatalog(String catalog) async {
+    final gameId = gameIds[catalog];
+    if (gameId == null) return [];
+    return _fetchExpansions(gameId);
+  }
+
+  /// Fetches all blueprints for the given CT expansion ID.
+  Future<List<Map<String, dynamic>>> fetchBlueprintsForExpansion(int expansionId) =>
+      _fetchBlueprints(expansionId);
+
   // ─── HTTP helpers ──────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> _fetchExpansions(int gameId) async {
@@ -631,9 +654,19 @@ class CardtraderService {
     try {
       raw = json.decode(response.body);
     } catch (e) { // ignore: empty_catches
-      throw Exception('Errore parsing blueprints: $e');
+      throw Exception('Errore parsing blueprints: $e\nBody: ${response.body.substring(0, response.body.length.clamp(0, 300))}');
     }
-    if (raw is! List) return [];
+
+    // CT may return a plain array OR a wrapped object like {"blueprints":[...]}
+    if (raw is Map) {
+      raw = raw['blueprints'] ?? raw['cards'] ?? raw['data'] ?? raw['items'];
+    }
+    if (raw is! List) {
+      throw Exception(
+        'Risposta blueprints non è una lista. '
+        'Body: ${response.body.substring(0, response.body.length.clamp(0, 300))}',
+      );
+    }
     return raw.cast<Map<String, dynamic>>();
   }
 

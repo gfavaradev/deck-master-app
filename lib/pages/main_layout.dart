@@ -57,6 +57,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   final DataRepository _repo = DataRepository();
   User? _currentUser;
   StreamSubscription<int>? _levelUpSub;
+  StreamSubscription<String>? _remoteSub;
   int _avatarVersion = 0;
 
   // Catalog update state
@@ -80,6 +81,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     XpService().syncFromFirestore();
     _levelUpSub = XpService().onLevelUp.listen(_onLevelUp);
     SyncService().startListening();
+    _remoteSub = SyncService().onRemoteChange.listen((event) {
+      if (event == 'catalog_update_pending' && mounted) _loadPersistedPendingUpdates();
+    });
     // Backfill XP for cards added before the XP system existed (one-time, idempotent)
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) _repo.backfillXpFromExistingCards().catchError((_) {});
@@ -90,6 +94,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _checkPendingCatalogNavigation();
+      _loadPersistedPendingUpdates();
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) _checkCatalogUpdate();
     });
@@ -114,6 +119,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _popoverEntry?.remove();
     _popoverEntry = null;
     _levelUpSub?.cancel();
+    _remoteSub?.cancel();
     SyncService().stopListening();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -141,13 +147,12 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // paused   = app in background (iOS: hidden, Android: onPause)
-    // detached = engine staccato (app swipata via / terminata)
-    // hidden   = app non visibile (iOS specifico)
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
       _flushOnBackground();
+    } else if (state == AppLifecycleState.resumed) {
+      _loadPersistedPendingUpdates();
     }
   }
 
@@ -276,12 +281,21 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   }
 
   static const _kCatalogCheckedAtKey = 'catalog_update_checked_at';
-  // Controlla aggiornamenti catalogo al più ogni ora (3 read Firestore per check)
   static const _kCatalogCheckTtl = Duration(hours: 1);
 
+  void _loadPersistedPendingUpdates() async {
+    final prefs = await SharedPreferences.getInstance();
+    final updates = DataRepository.loadPendingCatalogUpdatesFromPrefs(prefs);
+    if (!mounted) return;
+    setState(() {
+      _pendingUpdates = updates;
+      _hasPendingCatalogUpdate = updates.isNotEmpty;
+    });
+  }
+
   Future<void> _checkCatalogUpdate({bool force = false}) async {
-    // Se ci sono già aggiornamenti in coda (utente ha rimandato), non serve ricontrollare
-    if (!force && _pendingUpdates.isNotEmpty) return;
+    // Se c'è già un pending persistito, non serve ricontrollare
+    if (!force && _hasPendingCatalogUpdate) return;
     try {
       if (!force) {
         final prefs = await SharedPreferences.getInstance();
@@ -294,64 +308,20 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       }
       final updates = await _repo.checkAllUnlockedCatalogUpdates();
       if (!mounted || updates.isEmpty) return;
-      setState(() => _pendingUpdates = updates);
+      // Persiste ogni update in SharedPreferences (sopravvive a navigazione e resume)
+      for (final update in updates) {
+        await _repo.savePendingCatalogUpdate(
+          update['collectionKey'] as String, update,
+        );
+      }
+      setState(() {
+        _pendingUpdates = updates;
+        _hasPendingCatalogUpdate = true;
+      });
       await setPendingUpdatesCount(updates.length);
       await detectAndSaveNotifications();
       if (mounted) _checkUnreadNotifications();
     } catch (_) {}
-  }
-
-  String _estimateUpdatesSize(List<Map<String, dynamic>> updates) {
-    double totalMb = 0;
-    for (final info in updates) {
-      if (info['canDoIncremental'] == true) {
-        final chunks = (info['modifiedChunks'] as List?)?.length ?? 1;
-        totalMb += (chunks * 0.3).clamp(0.1, 999.0);
-      } else {
-        final totalCards = info['totalCards'] as int? ?? 0;
-        totalMb += (totalCards * 3 / 1024).clamp(1.0, 999.0);
-      }
-    }
-    return '~${totalMb.toStringAsFixed(0)} MB';
-  }
-
-  void _showCatalogUpdateDialog(List<Map<String, dynamic>> updates) {
-    final sizeStr = _estimateUpdatesSize(updates);
-    final firstNames = updates
-        .where((u) => u['isFirstDownload'] == true)
-        .map((u) => u['collectionName'] as String? ?? u['collectionKey'] as String)
-        .toList();
-    final updateNames = updates
-        .where((u) => u['isFirstDownload'] != true)
-        .map((u) => u['collectionName'] as String? ?? u['collectionKey'] as String)
-        .toList();
-    final lines = <String>[];
-    if (firstNames.isNotEmpty) lines.add('Nuovi cataloghi: ${firstNames.join(', ')}');
-    if (updateNames.isNotEmpty) lines.add('Aggiornamenti: ${updateNames.join(', ')}');
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Catalogo'),
-        content: Text('${lines.join('\n')}\nDimensione stimata: $sizeStr\n\nVuoi scaricarlo adesso?'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() => _hasPendingCatalogUpdate = true);
-            },
-            child: const Text('Più tardi'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _startCatalogDownload();
-            },
-            child: const Text('Subito'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _startCatalogDownload() async {
@@ -413,9 +383,11 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     } finally {
       // Ferma sempre il Foreground Service, anche in caso di errore
       await BackgroundDownloadService.stopDownload();
+      if (successCount > 0) await _repo.clearPendingCatalogUpdates();
       if (mounted) {
         setState(() {
           _isCatalogDownloading = false;
+          _hasPendingCatalogUpdate = false;
           _catalogDownloadProgress = null;
           _currentDownloadingName = null;
           _currentDownloadingIndex = 0;
@@ -773,8 +745,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               children: [
                 IconButton(
                   icon: const Icon(Icons.cloud_download_outlined),
-                  tooltip: 'Aggiornamento catalogo disponibile — tocca per installare',
-                  onPressed: () => _showCatalogUpdateDialog(_pendingUpdates),
+                  tooltip: 'Aggiornamento catalogo disponibile — tocca per scaricare',
+                  onPressed: _startCatalogDownload,
                 ),
                 Positioned(
                   right: 8,

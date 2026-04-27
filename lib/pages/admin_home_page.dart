@@ -214,6 +214,24 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             : '${r['modifiedCards']} carte aggiornate in ${r['modifiedChunks']} chunk.',
       );
 
+  // ─── CardTrader-based catalog download (Pokemon & One Piece) ─────────────
+
+  Future<void> _downloadFromCardtrader(String catalog) => _confirmAndRun(
+        catalog,
+        'Download Catalogo da CardTrader',
+        'Scarica Catalogo da CardTrader',
+        'Scarica il catalogo $catalog completo da CardTrader (blueprint + immagini) '
+            'e sostituisce il catalogo su Firestore.\n\n'
+            'Carte aggiunte manualmente vengono preservate al prossimo publish.\n\n'
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.downloadCatalogFromCardtrader(
+          catalog: catalog,
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => 'Completato! ${r['totalCards']} carte da ${r['totalExpansions']} espansioni CT.',
+      );
+
   // ─── One Piece action handlers ─────────────────────────────────────────────
 
   Future<void> _downloadFullOnePiece() => _confirmAndRun(
@@ -247,23 +265,6 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
             ? 'Tutte le immagini erano già migrate.'
             : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
-      );
-
-  Future<void> _forceMigrateOnePieceImages() => _confirmAndRun(
-        'onepiece',
-        'Ri-migrazione Forzata One Piece',
-        'Ri-migrazione Forzata Immagini',
-        'Ri-carica TUTTE le immagini One Piece su Firebase Storage, '
-            'anche quelle già presenti.\n\n'
-            'Usare dopo aver eliminato le immagini dallo Storage. '
-            'Può richiedere diversi minuti. Continuare?',
-        (uid) => _service.migrateOnepieceImagesToStorage(
-          adminUid: uid,
-          onProgress: (cur, tot) =>
-              _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
-          force: true,
-        ),
-        (r) => '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
       );
 
   // ─── Pokémon action handlers ──────────────────────────────────────────────
@@ -301,22 +302,6 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
             ? 'Tutte le immagini erano già migrate.'
             : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
-      );
-
-  Future<void> _forceMigratePokemonImages() => _confirmAndRun(
-        'pokemon',
-        'Ri-migrazione Forzata Pokémon',
-        'Ri-migrazione Forzata Immagini Pokémon',
-        'Ri-carica TUTTE le immagini Pokémon su Firebase Storage, '
-            'anche quelle già presenti.\n\n'
-            'Può richiedere molto tempo. Continuare?',
-        (uid) => _service.migratePokemonImagesToStorage(
-          adminUid: uid,
-          onProgress: (cur, tot) =>
-              _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
-          force: true,
-        ),
-        (r) => '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
       );
 
   Future<void> _fillMissingSetsOnePiece() => _confirmAndRun(
@@ -637,16 +622,16 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         ];
       case 'onepiece':
         return [
-          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da OPTCG API', _downloadFullOnePiece),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', _migrateOnePieceImages),
-          _StepDef(Icons.refresh, 'Ri-migra Tutto', 'Forza ri-migrazione di tutte le immagini', _forceMigrateOnePieceImages),
+          _StepDef(Icons.cloud_download, 'Scarica da CardTrader', 'Catalogo + immagini da CT (raccomandato)', () => _downloadFromCardtrader('onepiece')),
+          _StepDef(Icons.download_for_offline, 'Scarica da OPTCG API', 'Fonte alternativa (solo se CT non funziona)', _downloadFullOnePiece),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Ri-carica immagini su Firebase Storage', _migrateOnePieceImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsOnePiece),
         ];
       case 'pokemon':
         return [
-          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da pokemontcg.io', _downloadFullPokemon),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', _migratePokemonImages),
-          _StepDef(Icons.refresh, 'Ri-migra Tutto', 'Forza ri-migrazione di tutte le immagini', _forceMigratePokemonImages),
+          _StepDef(Icons.cloud_download, 'Scarica da CardTrader', 'Catalogo + immagini da CT (raccomandato)', () => _downloadFromCardtrader('pokemon')),
+          _StepDef(Icons.download_for_offline, 'Scarica da pokemontcg.io', 'Fonte alternativa (solo se CT non funziona)', _downloadFullPokemon),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Ri-carica immagini su Firebase Storage', _migratePokemonImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsPokemon),
         ];
       default:

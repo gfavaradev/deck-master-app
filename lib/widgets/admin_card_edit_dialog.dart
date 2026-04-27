@@ -62,8 +62,11 @@ class AdminSuggestionsService {
 /// Tabs: Info Base | Traduzioni | Meccaniche/Stats | Set per Lingua
 class AdminCardEditDialog extends StatefulWidget {
   final Map<String, dynamic>? initialCard;
+  /// Optionally override the catalog (pokemon / onepiece / yugioh / magic).
+  /// Takes priority over initialCard['catalog'].
+  final String? initialCatalog;
 
-  const AdminCardEditDialog({super.key, this.initialCard});
+  const AdminCardEditDialog({super.key, this.initialCard, this.initialCatalog});
 
   @override
   State<AdminCardEditDialog> createState() => _AdminCardEditDialogState();
@@ -178,7 +181,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     // Basic info
     _nameEnController = TextEditingController(text: card['name'] ?? '');
     _archetypeController = TextEditingController(text: card['archetype'] ?? '');
-    _catalog = card['catalog'] ?? 'yugioh';
+    _catalog = widget.initialCatalog ?? card['catalog'] ?? 'yugioh';
     _cardType = card['type'] ?? 'Monster Card';
     _frameType = card['frame_type'] ?? 'Normal';
     _race = card['race'] ?? 'Dragon';
@@ -1593,6 +1596,32 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
       if (_opAttribute.isNotEmpty) cardData['op_attribute'] = _opAttribute;
       if (_opSubTypesController.text.isNotEmpty) cardData['op_subtypes'] = _opSubTypesController.text.trim();
       if (_opTriggerController.text.isNotEmpty) cardData['op_trigger'] = _opTriggerController.text.trim();
+    }
+
+    // One Piece: convert sets map → prints array (CT-compatible format)
+    if (_catalog == 'onepiece' && cardData.containsKey('sets')) {
+      final setsMap = cardData['sets'] as Map<String, dynamic>;
+      final prints = <Map<String, dynamic>>[];
+      for (final lang in _currentSetLanguages) {
+        final langSets = setsMap[lang] as List<dynamic>?;
+        if (langSets == null) continue;
+        for (final s in langSets) {
+          final sm = Map<String, dynamic>.from(s as Map);
+          final code = (sm['set_code'] ?? '').toString();
+          final setId = code.contains('-') ? code.split('-').first : code;
+          prints.add({
+            'card_set_id': code,
+            'set_id': setId,
+            'set_name': sm['set_name'] ?? '',
+            'rarity': sm['rarity'] ?? '',
+            // artwork set by _processCardForStorage during publish
+          });
+        }
+      }
+      if (prints.isNotEmpty) {
+        cardData.remove('sets');
+        cardData['prints'] = prints;
+      }
     }
 
     Navigator.pop(context, cardData);

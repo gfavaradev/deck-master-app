@@ -169,7 +169,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
   Future<void> _addCard() async {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => AdminCardEditDialog(initialCard: {'catalog': widget.collectionKey}),
+      builder: (_) => AdminCardEditDialog(initialCatalog: widget.collectionKey),
     );
     if (result == null) return;
 

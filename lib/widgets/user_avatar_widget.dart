@@ -53,8 +53,20 @@ class _UserAvatarWidgetState extends State<UserAvatarWidget> {
     } else if (widget.photoUrl != null) {
       circle = CircleAvatar(
         radius: widget.radius,
-        backgroundImage: NetworkImage(widget.photoUrl!),
         backgroundColor: AppColors.bgLight,
+        child: ClipOval(
+          child: Image.network(
+            widget.photoUrl!,
+            width: widget.radius * 2,
+            height: widget.radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => Icon(
+              Icons.person,
+              size: widget.radius,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
       );
     } else {
       circle = CircleAvatar(
