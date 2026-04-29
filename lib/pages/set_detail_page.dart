@@ -6,6 +6,7 @@ import '../services/language_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/cardtrader_price_badge.dart';
+import '../widgets/op_lang_badge.dart';
 
 class SetDetailPage extends StatefulWidget {
   final String collectionKey;
@@ -161,21 +162,32 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
             leading: SizedBox(
               width: thumbW,
               height: thumbH,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: imageUrl != null && imageUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: imageUrl,
-                        fit: BoxFit.cover,
-                        memCacheWidth: 132,
-                        memCacheHeight: 180,
-                        placeholder: (ctx, url) => Container(color: AppColors.bgLight),
-                        errorWidget: (ctx, url, err) => const Icon(Icons.image_not_supported, color: AppColors.textHint, size: 20),
-                      )
-                    : Container(
-                        color: AppColors.bgLight,
-                        child: const Icon(Icons.style, color: AppColors.textHint, size: 20),
+              child: Stack(
+                children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: imageUrl != null && imageUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          fit: BoxFit.cover,
+                          width: thumbW,
+                          height: thumbH,
+                          memCacheWidth: 132,
+                          memCacheHeight: 180,
+                          placeholder: (ctx, url) => Container(color: AppColors.bgLight),
+                          errorWidget: (ctx, url, err) => const Icon(Icons.image_not_supported, color: AppColors.textHint, size: 20),
+                        )
+                      : Container(
+                          color: AppColors.bgLight,
+                          child: const Icon(Icons.style, color: AppColors.textHint, size: 20),
                       ),
+                ),
+                if (widget.collectionKey == 'onepiece')
+                  Positioned(
+                    top: 2, left: 2,
+                    child: OpLangBadge(serialNumber: serial, compact: true),
+                  ),
+                ],
               ),
             ),
             title: Text(

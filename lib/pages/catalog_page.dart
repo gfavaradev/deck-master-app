@@ -9,6 +9,7 @@ import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/card_dialogs.dart';
 import '../widgets/full_screen_gallery.dart';
+import '../widgets/op_lang_badge.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 
@@ -582,6 +583,15 @@ class _CatalogPageState extends State<CatalogPage> {
                                           fit: StackFit.expand,
                                           children: [
                                             _buildCardImage(card, isYugioh, index),
+                                            // Badge lingua One Piece (top-left)
+                                            if (isOnePiece)
+                                              Positioned(
+                                                top: 4,
+                                                left: 4,
+                                                child: OpLangBadge(
+                                                  serialNumber: (card['setCode'] ?? '').toString(),
+                                                ),
+                                              ),
                                             if (ownedQty > 0)
                                               Positioned(
                                                 bottom: 4,
@@ -874,19 +884,25 @@ class _CatalogPageState extends State<CatalogPage> {
     return Colors.grey;
   }
 
-  /// Detect the language of a print based on which localized set_name field is populated
+  /// Detect the language of a print based on set code pattern.
+  /// YuGiOh: LOB-EN005 → EN, LOB-IT005 → IT
+  /// One Piece: OP01-001 → JP, OP01-EN001 → EN, OP01-FR001 → FR
   String _detectPrintLanguage(Map<String, dynamic> card) {
     final setCode = (card['setCode'] ?? '').toString().toUpperCase();
-    // Try to detect from set code pattern (e.g., LOB-EN005, LOB-IT005)
-    final match = RegExp(r'-([A-Z]{2})\d').firstMatch(setCode);
+    if (!setCode.contains('-')) return 'JP';
+    final afterDash = setCode.substring(setCode.indexOf('-') + 1);
+    if (afterDash.isEmpty) return 'JP';
+    // One Piece JP: collector number starts with a digit
+    if (afterDash[0].compareTo('0') >= 0 && afterDash[0].compareTo('9') <= 0) return 'JP';
+    // 2-letter language prefix (EN, FR, IT, DE, PT, KO, ZH, ...)
+    final match = RegExp(r'^([A-Z]{2})').firstMatch(afterDash);
     if (match != null) {
-      final code = match.group(1)!;
-      const langMap = {'EN': 'EN', 'IT': 'IT', 'FR': 'FR', 'DE': 'DE', 'PT': 'PT', 'SP': 'ES'};
-      if (langMap.containsKey(code)) return langMap[code]!;
+      return match.group(1)!; // Ritorna direttamente il codice (EN, FR, KO, ZH, …)
     }
     return 'EN';
   }
 
+  /// Badge lingua per carte One Piece.
   Widget _buildLanguageButton() {
     final flag = LanguageService.flagEmoji[_preferredLanguage] ?? '🌐';
     return GestureDetector(
@@ -910,12 +926,18 @@ class _CatalogPageState extends State<CatalogPage> {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.bgMedium,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, scrollController) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
           Container(
             margin: const EdgeInsets.symmetric(vertical: 12),
             width: 36,
@@ -945,6 +967,10 @@ class _CatalogPageState extends State<CatalogPage> {
             ),
           ),
           Container(height: 0.5, color: AppColors.divider),
+          Expanded(
+            child: ListView(
+              controller: scrollController,
+              children: [
           for (final code in _supportedLanguages) ...[
             Builder(
               builder: (_) {
@@ -999,8 +1025,12 @@ class _CatalogPageState extends State<CatalogPage> {
             ),
             Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 58)),
           ],
-          SizedBox(height: MediaQuery.of(ctx).viewInsets.bottom + 20),
+              ],
+            ),
+          ),
+          SizedBox(height: MediaQuery.of(ctx).viewInsets.bottom + 12),
         ],
+        ),
       ),
     );
   }

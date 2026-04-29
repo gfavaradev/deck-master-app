@@ -37,18 +37,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Servizio per operazioni in background (download catalogo, migrazione immagini) -->
-        <service
-            android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false"
-            tools:replace="android:exported" />
-
-        <!-- Disabilita il BootReceiver del plugin: autoStart=false, non serve avviarsi al boot.
-             Su Android 15 (targetSdk 35) avviare dataSync da BOOT_COMPLETED causa un crash. -->
-        <receiver
-            android:name="id.flutter.flutter_background_service.BootReceiver"
-            tools:node="remove" />
 
         <!-- Facebook SDK -->
         <meta-data

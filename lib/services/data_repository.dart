@@ -6,6 +6,7 @@ import 'firestore_service.dart';
 import 'sync_service.dart';
 import 'auth_service.dart';
 import 'cardtrader_service.dart';
+import 'language_service.dart';
 import 'xp_service.dart';
 import '../constants/app_constants.dart';
 import '../models/album_model.dart';
@@ -706,10 +707,17 @@ class DataRepository {
         );
       }).toList();
     }
-    final prefs = await SharedPreferences.getInstance();
-    const validLangs = {'en', 'it', 'fr', 'de', 'es', 'pt'};
-    final rawLang = prefs.getString('preferred_language') ?? 'en';
-    final lang = validLangs.contains(rawLang) ? rawLang : 'en';
+    // Legge la lingua preferita dalla chiave corretta di LanguageService (per collezione).
+    // LanguageService usa UPPERCASE (EN, IT, SP); il DB usa lowercase (en, it, es).
+    // 'SP' → 'es': le colonne Pokémon usano _es, non _sp; il CT usa 'es' per lo spagnolo.
+    // validLangs include le lingue YGO/Pokémon + lingue One Piece (jp/ko/zh).
+    // 'sp' (LanguageConstants) → 'es' (CT/DB); 'jp' (LanguageService) → rimane 'jp'
+    // perché onepiece_prints usa 'market_price' (base) per il giapponese.
+    const validLangs = {'en', 'it', 'fr', 'de', 'es', 'pt', 'jp', 'ko', 'zh'};
+    final rawLang = await LanguageService.getPreferredLanguageForCollection(collection);
+    final lower = rawLang.toLowerCase();
+    final mapped = lower == 'sp' ? 'es' : lower;
+    final lang = validLangs.contains(mapped) ? mapped : 'en';
     return await _dbHelper.getCardsByCollection(collection, language: lang);
   }
 

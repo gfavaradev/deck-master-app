@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 28,
+      version: 29,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -362,6 +362,14 @@ class DatabaseHelper {
         'CREATE INDEX IF NOT EXISTS idx_onepiece_prints_card_set_id ON onepiece_prints(card_set_id)',
       );
     }
+    if (oldVersion < 29) {
+      // Prezzi per lingua su onepiece_prints: una sola stampa per carta (JP base)
+      // con colonne separate per EN, FR, KO, ZH — stesso pattern di YuGiOh/Pokémon.
+      // market_price (colonna esistente) = prezzo JP.
+      for (final col in ['market_price_en', 'market_price_fr', 'market_price_ko', 'market_price_zh']) {
+        await _addColumnIfMissing(db, 'onepiece_prints', col, 'REAL');
+      }
+    }
   }
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
@@ -583,6 +591,10 @@ class DatabaseHelper {
         rarity TEXT,
         inventory_price REAL,
         market_price REAL,
+        market_price_en REAL,
+        market_price_fr REAL,
+        market_price_ko REAL,
+        market_price_zh REAL,
         artwork TEXT,
         set_name_jp TEXT,
         rarity_jp TEXT,
@@ -1385,13 +1397,57 @@ class DatabaseHelper {
                COALESCE(u.type, oc.card_type) as type,
                COALESCE(u.description, oc.card_text) as description,
                COALESCE(u.collection, a.collection, 'onepiece') as collection,
-               COALESCE(NULLIF(u.value, 0), op.market_price) as value,
+               -- Prezzo lingua-specifico: jp=market_price, en=market_price_en, ecc.
+               -- Fallback alla colonna jp se la lingua non è ancora popolata,
+               -- poi a cardtrader_prices (cache raw CT) se anche quella è null.
                COALESCE(
-                 op.artwork,
-                 oc.image_url,
-                 u.imageUrl
-               ) as imageUrl,
-               op.market_price as cardtrader_value
+                 NULLIF(u.value, 0),
+                 CASE '$language'
+                   WHEN 'en' THEN COALESCE(op.market_price_en, op.market_price)
+                   WHEN 'fr' THEN COALESCE(op.market_price_fr, op.market_price)
+                   WHEN 'ko' THEN COALESCE(op.market_price_ko, op.market_price)
+                   WHEN 'zh' THEN COALESCE(op.market_price_zh, op.market_price)
+                   ELSE op.market_price
+                 END,
+                 (SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+                  FROM cardtrader_prices cp
+                  WHERE cp.catalog = 'onepiece'
+                    AND cp.min_price_any_cents IS NOT NULL
+                    AND cp.expansion_code = LOWER(
+                      CASE WHEN u.serialNumber LIKE '%-%'
+                           THEN SUBSTR(u.serialNumber, 1, INSTR(u.serialNumber, '-') - 1)
+                           ELSE u.serialNumber END)
+                    AND LOWER(cp.card_name_en) = LOWER(COALESCE(oc.name, u.name))
+                    AND cp.language = CASE '$language'
+                      WHEN 'en' THEN 'en' WHEN 'fr' THEN 'fr'
+                      WHEN 'ko' THEN 'ko' WHEN 'zh' THEN 'zh'
+                      ELSE 'ja' END
+                  ORDER BY cp.min_price_any_cents ASC LIMIT 1)
+               ) as value,
+               COALESCE(op.artwork, oc.image_url, u.imageUrl) as imageUrl,
+               COALESCE(
+                 CASE '$language'
+                   WHEN 'en' THEN COALESCE(op.market_price_en, op.market_price)
+                   WHEN 'fr' THEN COALESCE(op.market_price_fr, op.market_price)
+                   WHEN 'ko' THEN COALESCE(op.market_price_ko, op.market_price)
+                   WHEN 'zh' THEN COALESCE(op.market_price_zh, op.market_price)
+                   ELSE op.market_price
+                 END,
+                 (SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+                  FROM cardtrader_prices cp
+                  WHERE cp.catalog = 'onepiece'
+                    AND cp.min_price_any_cents IS NOT NULL
+                    AND cp.expansion_code = LOWER(
+                      CASE WHEN u.serialNumber LIKE '%-%'
+                           THEN SUBSTR(u.serialNumber, 1, INSTR(u.serialNumber, '-') - 1)
+                           ELSE u.serialNumber END)
+                    AND LOWER(cp.card_name_en) = LOWER(COALESCE(oc.name, u.name))
+                    AND cp.language = CASE '$language'
+                      WHEN 'en' THEN 'en' WHEN 'fr' THEN 'fr'
+                      WHEN 'ko' THEN 'ko' WHEN 'zh' THEN 'zh'
+                      ELSE 'ja' END
+                  ORDER BY cp.min_price_any_cents ASC LIMIT 1)
+               ) as cardtrader_value
         FROM cards u
         LEFT JOIN onepiece_cards oc ON oc.id = CAST(u.catalogId AS INTEGER)
         LEFT JOIN onepiece_prints op ON op.card_id = oc.id AND op.card_set_id = u.serialNumber
@@ -2316,13 +2372,26 @@ class DatabaseHelper {
       }
     } else if (collectionKey == 'onepiece') {
       final db = await database;
-      // Lingue ufficiali One Piece TCG rilevanti: JP e FR
-      const langs = ['jp', 'fr'];
-      for (final lang in langs) {
-        final rows = await db.rawQuery(
-          "SELECT 1 FROM onepiece_prints WHERE set_name_$lang IS NOT NULL AND set_name_$lang != '' LIMIT 1",
-        );
-        if (rows.isNotEmpty) result.add(lang.toUpperCase());
+      // JP: prints dove il collector-number inizia con cifra (es. OP01-001)
+      // EN/FR/etc: prints dove il collector-number inizia con il codice a 2 lettere
+      // La lingua si ricava dal card_set_id, NON dalle colonne set_name_jp ecc.
+      // che invece contengono traduzioni supplementari del nome del set.
+      final jpRows = await db.rawQuery('''
+        SELECT 1 FROM onepiece_prints
+        WHERE card_set_id LIKE '%-%'
+          AND SUBSTR(card_set_id, INSTR(card_set_id, '-') + 1, 1) BETWEEN '0' AND '9'
+        LIMIT 1
+      ''');
+      if (jpRows.isNotEmpty) result.add('JP');
+
+      for (final lang in ['EN', 'FR', 'KO', 'ZH']) {
+        final rows = await db.rawQuery('''
+          SELECT 1 FROM onepiece_prints
+          WHERE INSTR(card_set_id, '-') > 0
+            AND UPPER(SUBSTR(card_set_id, INSTR(card_set_id, '-') + 1, 2)) = ?
+          LIMIT 1
+        ''', [lang]);
+        if (rows.isNotEmpty) result.add(lang);
       }
     }
     return result;
@@ -3415,16 +3484,21 @@ class DatabaseHelper {
             await txn.rawInsert('''
               INSERT INTO onepiece_prints
                 (card_id, card_set_id, set_id, set_name, rarity,
-                 inventory_price, market_price, artwork,
+                 inventory_price, market_price, market_price_en, market_price_fr,
+                 market_price_ko, market_price_zh, artwork,
                  created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(card_set_id) DO UPDATE SET
                 card_id          = excluded.card_id,
                 set_id           = excluded.set_id,
                 set_name         = excluded.set_name,
                 rarity           = excluded.rarity,
                 inventory_price  = excluded.inventory_price,
-                market_price     = excluded.market_price,
+                market_price     = COALESCE(excluded.market_price, market_price),
+                market_price_en  = COALESCE(excluded.market_price_en, market_price_en),
+                market_price_fr  = COALESCE(excluded.market_price_fr, market_price_fr),
+                market_price_ko  = COALESCE(excluded.market_price_ko, market_price_ko),
+                market_price_zh  = COALESCE(excluded.market_price_zh, market_price_zh),
                 artwork          = COALESCE(
                   CASE WHEN excluded.artwork LIKE '%firebasestorage%'
                        THEN excluded.artwork END,
@@ -3439,6 +3513,10 @@ class DatabaseHelper {
               print['rarity'],
               print['inventory_price'],
               print['market_price'],
+              print['market_price_en'],
+              print['market_price_fr'],
+              print['market_price_ko'],
+              print['market_price_zh'],
               artwork,
               now, now,
             ]);
@@ -3464,6 +3542,26 @@ class DatabaseHelper {
     final setNameCol = hasLang ? 'COALESCE(op.set_name$suffix, op.set_name)' : 'op.set_name';
     final rarityCol  = hasLang ? 'COALESCE(op.rarity$suffix, op.rarity)'     : 'op.rarity';
 
+    // Filtro lingua: deriva dalla struttura del card_set_id.
+    // JP (predefinito One Piece) → collector-number inizia con cifra (es. OP01-001)
+    // EN/FR/IT/… → collector-number inizia con il codice a 2 lettere (es. OP01-EN001)
+    final upperLang = language.toUpperCase();
+    final String langFilter;
+    if (upperLang == 'JP') {
+      langFilter = '''
+        AND (
+          op.card_set_id NOT LIKE '%-%'
+          OR (
+            INSTR(op.card_set_id, '-') > 0
+            AND SUBSTR(op.card_set_id, INSTR(op.card_set_id, '-') + 1, 1) BETWEEN '0' AND '9'
+          )
+        )''';
+    } else {
+      langFilter = '''
+        AND INSTR(op.card_set_id, '-') > 0
+        AND UPPER(SUBSTR(op.card_set_id, INSTR(op.card_set_id, '-') + 1, 2)) = '$upperLang' ''';
+    }
+
     final String searchPattern = '%${query ?? ''}%';
     String whereClause = '';
     if (query != null && query.isNotEmpty) {
@@ -3474,7 +3572,8 @@ class DatabaseHelper {
           OR op.set_name LIKE ?
           OR oc.color LIKE ?
           OR oc.card_type LIKE ?
-        )''';
+        )
+        $langFilter''';
     }
 
     final isLocalizedPrint = hasLang
@@ -3494,9 +3593,20 @@ class DatabaseHelper {
         op.rarity,
         $rarityCol AS localizedRarity,
         op.inventory_price AS inventoryPrice,
-        -- Prefer CT marketplace price (EUR) over OPTCG price (USD) when available
-        COALESCE(ctp.ct_price_cents / 100.0, op.market_price) AS marketPrice,
-        op.artwork,
+        -- Prezzo per la lingua selezionata: JP=market_price, EN=market_price_en, ecc.
+        -- Fallback a JP se la colonna lingua non è ancora popolata.
+        COALESCE(
+          ctp.ct_price_cents / 100.0,
+          CASE '$upperLang'
+            WHEN 'EN' THEN COALESCE(op.market_price_en, op.market_price)
+            WHEN 'FR' THEN COALESCE(op.market_price_fr, op.market_price)
+            WHEN 'KO' THEN COALESCE(op.market_price_ko, op.market_price)
+            WHEN 'ZH' THEN COALESCE(op.market_price_zh, op.market_price)
+            ELSE op.market_price
+          END
+        ) AS marketPrice,
+        -- Fallback a image_url della card se artwork (Firebase Storage) non è ancora migrato
+        COALESCE(op.artwork, oc.image_url) AS artwork,
         'onepiece' AS collection,
         $isLocalizedPrint AS isLocalizedPrint,
         EXISTS(SELECT 1 FROM cards WHERE catalogId = CAST(oc.id AS TEXT) AND collection = 'onepiece') AS isOwned
@@ -3514,8 +3624,8 @@ class DatabaseHelper {
         LOWER(SUBSTR(op.card_set_id, 1, INSTR(op.card_set_id, '-') - 1)) = ctp.expansion_code
         AND CAST(SUBSTR(op.card_set_id, INSTR(op.card_set_id, '-') + 1) AS INTEGER) = ctp.cn_int
       )
-      $whereClause
-      GROUP BY oc.id, op.card_set_id, op.rarity, COALESCE(op.artwork, 0)
+      ${query != null && query.isNotEmpty ? whereClause : 'WHERE 1=1 $langFilter'}
+      GROUP BY oc.id, op.card_set_id, op.rarity
       ORDER BY op.card_set_id
       LIMIT ? OFFSET ?
     ''';
@@ -3537,8 +3647,9 @@ class DatabaseHelper {
         op.set_name    AS setName,
         op.rarity      AS setRarity,
         op.market_price AS marketPrice,
-        op.artwork
+        COALESCE(op.artwork, oc.image_url) AS artwork
       FROM onepiece_prints op
+      LEFT JOIN onepiece_cards oc ON oc.id = op.card_id
       WHERE op.card_id = ?
       ORDER BY op.card_set_id
     ''', [cardId]);
@@ -3914,104 +4025,57 @@ class DatabaseHelper {
         }
 
       case 'onepiece':
-        // CN extraction: strip variant suffix ("001_p1" → "001", "en001_alt" → "en001").
-        // Language detection: "en001" → 'en', "001" → 'ja' (default).
-        // expansion_code: use set_id when populated, else derive from card_set_id prefix.
-        // Note: unqualified column names required for SQLite correlated-subquery compat.
-        total += await db.rawUpdate('''
-          UPDATE onepiece_prints
-          SET market_price = (
-            SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
-            FROM cardtrader_prices cp
-            JOIN onepiece_cards oc ON oc.id = card_id
-            WHERE cp.catalog = 'onepiece'
-              AND cp.expansion_code = LOWER(COALESCE(
-                NULLIF(set_id, ''),
-                CASE WHEN card_set_id LIKE '%-%'
-                     THEN SUBSTR(card_set_id, 1, INSTR(card_set_id, '-') - 1)
-                     ELSE card_set_id END
-              ))
-              AND (
-                LOWER(cp.card_name_en) = LOWER(oc.name)
-                OR (
-                  cp.collector_number != ''
-                  AND LOWER(cp.collector_number) = LOWER(
-                    CASE WHEN card_set_id LIKE '%-%'
-                         THEN (
-                           CASE WHEN INSTR(
-                                  SUBSTR(card_set_id,
-                                         INSTR(card_set_id, '-') + 1), '_') > 0
-                                THEN SUBSTR(
-                                  SUBSTR(card_set_id,
-                                         INSTR(card_set_id, '-') + 1),
-                                  1,
-                                  INSTR(SUBSTR(card_set_id,
-                                               INSTR(card_set_id, '-') + 1), '_') - 1)
-                                ELSE SUBSTR(card_set_id,
-                                            INSTR(card_set_id, '-') + 1)
-                           END
-                         )
-                         ELSE '' END
-                  )
-                )
-              )
-              AND cp.min_price_any_cents IS NOT NULL
-            ORDER BY
-              (LOWER(cp.card_name_en) != LOWER(oc.name)),
-              (cp.language != CASE
-                WHEN card_set_id LIKE '%-%'
-                     AND SUBSTR(SUBSTR(card_set_id,
-                                       INSTR(card_set_id, '-') + 1),
-                                1, 1) BETWEEN 'A' AND 'Z'
-                     AND SUBSTR(SUBSTR(card_set_id,
-                                       INSTR(card_set_id, '-') + 1),
-                                2, 1) BETWEEN 'A' AND 'Z'
-                THEN LOWER(SUBSTR(SUBSTR(card_set_id,
-                                         INSTR(card_set_id, '-') + 1), 1, 2))
-                ELSE 'ja'
-              END),
-              (cp.min_price_nm_cents IS NULL),
-              cp.min_price_any_cents ASC
-            LIMIT 1
-          )
-          WHERE card_set_id IS NOT NULL
-            AND EXISTS (
-              SELECT 1 FROM cardtrader_prices cp
-              JOIN onepiece_cards oc ON oc.id = card_id
+        // Una sola stampa per carta (JP base, card_set_id = 'OP01-001').
+        // Un UPDATE per lingua: market_price=JA, market_price_en=EN, ecc.
+        // Match su expansion_code + card_name_en + language — stesso pattern di YuGiOh/Pokémon.
+        const opLangCols = <String, String>{
+          'ja': 'market_price',
+          'en': 'market_price_en',
+          'fr': 'market_price_fr',
+          'ko': 'market_price_ko',
+          'zh': 'market_price_zh',
+        };
+        for (final entry in opLangCols.entries) {
+          final lang = entry.key;
+          final col  = entry.value;
+          total += await db.rawUpdate('''
+            UPDATE onepiece_prints
+            SET $col = (
+              SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+              FROM cardtrader_prices cp
+              JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
               WHERE cp.catalog = 'onepiece'
+                AND cp.language = ?
                 AND cp.expansion_code = LOWER(COALESCE(
-                  NULLIF(set_id, ''),
-                  CASE WHEN card_set_id LIKE '%-%'
-                       THEN SUBSTR(card_set_id, 1, INSTR(card_set_id, '-') - 1)
-                       ELSE card_set_id END
+                  NULLIF(onepiece_prints.set_id, ''),
+                  CASE WHEN onepiece_prints.card_set_id LIKE '%-%'
+                       THEN SUBSTR(onepiece_prints.card_set_id, 1,
+                                   INSTR(onepiece_prints.card_set_id, '-') - 1)
+                       ELSE onepiece_prints.card_set_id END
                 ))
-                AND (
-                  LOWER(cp.card_name_en) = LOWER(oc.name)
-                  OR (
-                    cp.collector_number != ''
-                    AND LOWER(cp.collector_number) = LOWER(
-                      CASE WHEN card_set_id LIKE '%-%'
-                           THEN (
-                             CASE WHEN INSTR(
-                                    SUBSTR(card_set_id,
-                                           INSTR(card_set_id, '-') + 1), '_') > 0
-                                  THEN SUBSTR(
-                                    SUBSTR(card_set_id,
-                                           INSTR(card_set_id, '-') + 1),
-                                    1,
-                                    INSTR(SUBSTR(card_set_id,
-                                                 INSTR(card_set_id, '-') + 1), '_') - 1)
-                                  ELSE SUBSTR(card_set_id,
-                                              INSTR(card_set_id, '-') + 1)
-                             END
-                           )
-                           ELSE '' END
-                    )
-                  )
-                )
+                AND LOWER(cp.card_name_en) = LOWER(oc.name)
                 AND cp.min_price_any_cents IS NOT NULL
+              ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+              LIMIT 1
             )
-        ''');
+            WHERE onepiece_prints.card_set_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM cardtrader_prices cp
+                JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
+                WHERE cp.catalog = 'onepiece'
+                  AND cp.language = ?
+                  AND cp.expansion_code = LOWER(COALESCE(
+                    NULLIF(onepiece_prints.set_id, ''),
+                    CASE WHEN onepiece_prints.card_set_id LIKE '%-%'
+                         THEN SUBSTR(onepiece_prints.card_set_id, 1,
+                                     INSTR(onepiece_prints.card_set_id, '-') - 1)
+                         ELSE onepiece_prints.card_set_id END
+                  ))
+                  AND LOWER(cp.card_name_en) = LOWER(oc.name)
+                  AND cp.min_price_any_cents IS NOT NULL
+              )
+          ''', [lang, lang]);
+        }
     }
 
     return total;

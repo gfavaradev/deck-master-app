@@ -49,7 +49,7 @@ class LanguageDetector {
   }
 
   /// Ottieni il suffisso del campo per la lingua
-  /// EN → '' (base), IT → '_it', FR → '_fr', ecc.
+  /// EN → '' (base), IT → '_it', FR → '_fr', SP/ES → '_sp', ecc.
   static String getFieldSuffix(String language) {
     final upper = language.toUpperCase();
     if (upper == 'EN') return '';
@@ -58,6 +58,8 @@ class LanguageDetector {
       case 'FR': return '_fr';
       case 'DE': return '_de';
       case 'PT': return '_pt';
+      case 'ES': return '_sp'; // YuGiOh usa il suffisso _sp per lo spagnolo
+      case 'SP': return '_sp';
       default: return '';
     }
   }

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -36,28 +37,37 @@ class AdminCatalogService {
     } catch (_) { // ignore: empty_catches
       // Not in storage yet — download from source and upload
       try {
-        // Try the primary URL; if 404 fall back to high.png variant
-        String fetchUrl = sourceUrl;
+        // User-Agent obbligatorio per molti CDN (OPTCG, CT) che bloccano
+        // richieste senza browser header (403/404 silente).
+        final headers = {
+          'User-Agent': 'Mozilla/5.0 (compatible; DeckMasterBot/1.0)',
+          'Accept': 'image/webp,image/png,image/*,*/*;q=0.8',
+        };
 
-        var response = await http.get(Uri.parse(fetchUrl));
+        String fetchUrl = sourceUrl;
+        var response = await http.get(Uri.parse(fetchUrl), headers: headers);
+
+        // Alcuni CDN OPTCG servono .webp → fallback .png
         if (response.statusCode == 404 && fetchUrl.endsWith('/high.webp')) {
           fetchUrl = fetchUrl.replaceFirst('/high.webp', '/high.png');
-
-          response = await http.get(Uri.parse(fetchUrl));
+          response = await http.get(Uri.parse(fetchUrl), headers: headers);
         }
 
-        if (response.statusCode != 200) return null;
+        if (response.statusCode != 200) {
+          debugPrint('[ImageUpload] HTTP ${response.statusCode} per $fetchUrl (id=$safeId)');
+          return null;
+        }
+        if (response.bodyBytes.isEmpty) {
+          debugPrint('[ImageUpload] Body vuoto per $fetchUrl (id=$safeId)');
+          return null;
+        }
+
         final compressed = await _compressCardImage(response.bodyBytes);
-
-        await ref.putData(
-          compressed,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
+        await ref.putData(compressed, SettableMetadata(contentType: 'image/jpeg'));
         final url = await ref.getDownloadURL();
-
         return url;
-      } catch (e) { // ignore: empty_catches
-
+      } catch (e) {
+        debugPrint('[ImageUpload] Errore per $sourceUrl (id=$safeId): $e');
         return null;
       }
     }
@@ -1534,6 +1544,8 @@ class AdminCatalogService {
         'rarity': m['rarity']?.toString(),
         'inventory_price': _parseDouble(m['inventory_price']),
         'market_price': _parseDouble(m['market_price']),
+        // URL provvisorio: verrà sostituito con la Firebase Storage URL nel passaggio successivo.
+        // Se esiste già un'URL Storage (catalogo precedente) la preserviamo subito.
         'artwork': existingArtwork ?? m['card_image']?.toString(),
       });
     }
@@ -1550,7 +1562,61 @@ class AdminCatalogService {
       );
     }
 
-    onProgress('${mergedCards.length} carte uniche. Caricando su Firestore...', null);
+    // ── Passaggio 2: carica immagini su Firebase Storage ─────────────────────
+    // Allineato al comportamento di downloadPokemonCatalogFromAPI e
+    // _buildOnepieceCatalogFromCT: tutte le immagini devono essere su Storage
+    // prima di finire su Firestore, così gli utenti non dipendono mai dall'API
+    // esterna e la migrazione separata (migrateOnepieceImagesToStorage) diventa
+    // superflua per i download freschi.
+    int imagesOk = 0, imagesFailed = 0;
+    onProgress('${mergedCards.length} carte. Caricando immagini su Firebase Storage (0/${mergedCards.length})...', 0);
+
+    for (int i = 0; i < mergedCards.length; i++) {
+      final card = mergedCards[i];
+      final prints = card['prints'] as List<Map<String, dynamic>>;
+      bool cardStorageUrlSet = false;
+
+      for (int j = 0; j < prints.length; j++) {
+        final print = prints[j];
+        final cardSetId = print['card_set_id'] as String? ?? '';
+        final rawArtwork = print['artwork'] as String?;
+
+        if (rawArtwork == null || rawArtwork.isEmpty) continue;
+
+        // Già su Firebase Storage: preserva e usa come imageUrl della card
+        if (rawArtwork.contains('firebasestorage')) {
+          if (!cardStorageUrlSet) {
+            card['imageUrl'] = rawArtwork;
+            card.remove('image_url');
+            cardStorageUrlSet = true;
+          }
+          continue;
+        }
+
+        // URL esterno: carica su Firebase Storage
+        final storageUrl = await _uploadCardImageIfNeeded('onepiece', cardSetId, rawArtwork);
+        if (storageUrl != null) {
+          prints[j] = {...print, 'artwork': storageUrl};
+          if (!cardStorageUrlSet) {
+            card['imageUrl'] = storageUrl;
+            card.remove('image_url');
+            cardStorageUrlSet = true;
+          }
+          imagesOk++;
+        } else {
+          imagesFailed++;
+        }
+      }
+
+      if (i % 50 == 0 || i == mergedCards.length - 1) {
+        onProgress(
+          'Immagini: ${i + 1}/${mergedCards.length} — ok: $imagesOk, fallite: $imagesFailed',
+          (i + 1) / mergedCards.length,
+        );
+      }
+    }
+
+    onProgress('Immagini completate. Caricando catalogo su Firestore...', null);
 
     await _uploadCatalogChunks(
       catalogCollection: 'onepiece_catalog',
@@ -1561,7 +1627,12 @@ class AdminCatalogService {
           onProgress('Caricando chunk $cur di $tot...', cur / tot),
     );
 
-    return {'totalCards': mergedCards.length, 'totalPrints': allRaw.length};
+    return {
+      'totalCards': mergedCards.length,
+      'totalPrints': allRaw.length,
+      'imagesOk': imagesOk,
+      'imagesFailed': imagesFailed,
+    };
   }
 
   /// Migra le immagini One Piece su Firebase Storage aggiornando il campo `artwork` nei prints.
@@ -2435,40 +2506,41 @@ class AdminCatalogService {
 
           // ── One Piece ────────────────────────────────────────────────────
           case 'onepiece':
-            final nameEn    = (card['name'] as String? ?? '').toLowerCase();
+            // Una sola stampa per carta (JP base). Embed prezzi per tutte le lingue
+            // nei rispettivi campi: market_price (JA), market_price_en, _fr, _ko, _zh.
+            final nameEn = (card['name'] as String? ?? '').toLowerCase();
             final rawPrintsField = card['prints'];
             if (rawPrintsField is! List) break;
             final rawPrints = rawPrintsField;
+
+            const opLangFields = <String, String>{
+              'ja': 'market_price',
+              'en': 'market_price_en',
+              'fr': 'market_price_fr',
+              'ko': 'market_price_ko',
+              'zh': 'market_price_zh',
+            };
 
             final updatedPrintsList = rawPrints.map((raw) {
               final p       = Map<String, dynamic>.from(raw as Map);
               final expCode = (p['set_id'] as String? ?? '').toLowerCase();
               if (expCode.isEmpty) return p;
 
-              // Ricava CN e lingua da card_set_id (es. 'OP01-001' → cn='001', lang='ja')
-              final cardSetId = p['card_set_id'] as String? ?? '';
-              final rawCN = cardSetId.contains('-')
-                  ? cardSetId.split('-').last.toLowerCase()
-                  : '';
-              final langMatch = RegExp(r'^([a-z]{2})\d').firstMatch(rawCN);
-              final ctLang    = langMatch != null ? langMatch.group(1)! : 'ja';
+              bool printModified = false;
+              final updated = Map<String, dynamic>.from(p);
 
-              // Ricerca per nome (primaria, lingua specifica poi fallback su 'en')
-              double? price = priceByNameLang['$expCode|$nameEn|$ctLang'];
-              price ??= priceByNameLang['$expCode|$nameEn|en'];
-
-              // Fallback: ricerca per CN
-              if (price == null && rawCN.isNotEmpty) {
-                price = priceByCNLang['$expCode|$rawCN|$ctLang'];
-                price ??= priceByCNLang['$expCode|$rawCN|en'];
-                price ??= priceByCNLang['$expCode|$rawCN|ja'];
+              for (final entry in opLangFields.entries) {
+                final lang  = entry.key;
+                final field = entry.value;
+                double? price = priceByNameLang['$expCode|$nameEn|$lang'];
+                if (price != null) {
+                  updated[field] = price;
+                  printModified = true;
+                  updatedPrices++;
+                }
               }
 
-              if (price != null) {
-                cardModified = true;
-                updatedPrices++;
-                return {...p, 'market_price': price};
-              }
+              if (printModified) { cardModified = true; return updated; }
               return p;
             }).toList();
 
@@ -2785,31 +2857,40 @@ class AdminCatalogService {
           final rarity = bpRarityFn(jaBp, '');
           final jaName = (jaBp['name'] as String?)?.trim() ?? nameEn;
 
-          final prints = <Map<String, dynamic>>[];
-          for (final bp in langBps) {
-            final collNum = bpCollNum(bp);
-            if (collNum.isEmpty) continue;
+          // Una sola stampa per carta usando il blueprint JA come base.
+          // I prezzi per lingua (EN/FR/KO/ZH) vengono popolati dal sync CT
+          // separato (syncCatalogPricesToFirestore) → market_price_en ecc.
+          // Questo evita la collisione di card_set_id quando CT assegna lo
+          // stesso collector_number per JP e EN della stessa carta.
+          final collNum = bpCollNum(jaBp);
+          if (collNum.isEmpty) continue;
 
-            // Build card_set_id: prepend expansion code if not already present
-            final collUpper = collNum.toUpperCase();
-            final cardSetId = collUpper.startsWith(expCode)
-                ? collUpper
-                : '$expCode-$collUpper';
+          final collUpper = collNum.toUpperCase();
+          final cardSetId = collUpper.startsWith(expCode)
+              ? collUpper
+              : '$expCode-$collUpper'; // e.g. "OP01-001"
 
-            final bpRarity = bpRarityFn(bp, rarity);
-            final ctImageUrl = CardtraderService.extractBlueprintImageUrl(bp);
-            final storageUrl = ctImageUrl != null
-                ? await _uploadCardImageIfNeeded(
-                    'onepiece', '${expCode}_$collNum', ctImageUrl)
-                : null;
-            prints.add({
+          // Immagine: prendi dal blueprint JA, con fallback agli altri blueprint
+          String? ctImageUrl = CardtraderService.extractBlueprintImageUrl(jaBp);
+          if (ctImageUrl == null) {
+            for (final bp in langBps) {
+              ctImageUrl = CardtraderService.extractBlueprintImageUrl(bp);
+              if (ctImageUrl != null) break;
+            }
+          }
+          final storageUrl = ctImageUrl != null
+              ? await _uploadCardImageIfNeeded('onepiece', '${expCode}_$collUpper', ctImageUrl)
+              : null;
+
+          final prints = <Map<String, dynamic>>[
+            {
               'card_set_id': cardSetId,
               'set_id': expCode,
               'set_name': expName,
-              'rarity': bpRarity,
+              'rarity': rarity,
               if (storageUrl != null) 'artwork': storageUrl,
-            });
-          }
+            }
+          ];
           if (prints.isEmpty) continue;
 
           allCards.add({

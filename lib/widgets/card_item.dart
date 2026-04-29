@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
 import '../theme/app_colors.dart';
+import 'op_lang_badge.dart';
 
 void _showFullScreenImage(BuildContext context, String imageUrl) {
   showDialog<void>(
@@ -98,22 +99,35 @@ class CardListItem extends StatelessWidget {
                     (card.imageUrl != null && card.imageUrl!.isNotEmpty
                         ? () => _showFullScreenImage(context, card.imageUrl!)
                         : null),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: SizedBox(
-                    width: 52,
-                    height: 73,
-                    child: card.imageUrl != null && card.imageUrl!.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: card.imageUrl!,
-                            fit: BoxFit.cover,
-                            memCacheWidth: 104,
-                            memCacheHeight: 146,
-                            placeholder: (c, u) => const Icon(Icons.style, size: 40),
-                            errorWidget: (c, u, e) => const Icon(Icons.style, size: 40),
-                          )
-                        : const Icon(Icons.style, size: 40),
-                  ),
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        width: 52,
+                        height: 73,
+                        child: card.imageUrl != null && card.imageUrl!.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: card.imageUrl!,
+                                fit: BoxFit.cover,
+                                memCacheWidth: 104,
+                                memCacheHeight: 146,
+                                placeholder: (c, u) => const Icon(Icons.style, size: 40),
+                                errorWidget: (c, u, e) => const Icon(Icons.style, size: 40),
+                              )
+                            : const Icon(Icons.style, size: 40),
+                      ),
+                    ),
+                    if (card.collection == 'onepiece')
+                      Positioned(
+                        top: 2,
+                        left: 2,
+                        child: OpLangBadge(
+                          serialNumber: card.serialNumber,
+                          compact: true,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(width: 12),

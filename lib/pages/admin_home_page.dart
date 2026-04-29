@@ -238,15 +238,17 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'onepiece',
         'Download Completo One Piece',
         'Download Completo One Piece TCG',
-        'Scarica l\'intero catalogo One Piece TCG da OPTCG API e '
-            'sostituisce tutti i chunk su Firestore.\n\n'
-            'Le URL immagini già su Firebase Storage vengono preservate.\n\n'
+        'Scarica l\'intero catalogo One Piece TCG da OPTCG API, '
+            'carica le immagini su Firebase Storage e salva tutto su Firestore.\n\n'
+            'Le immagini già su Firebase Storage vengono preservate.\n\n'
             'Può richiedere diversi minuti. Continuare?',
         (uid) => _service.downloadOnepieceCatalogFromAPI(
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => 'Completato! ${r['totalCards']} carte, ${r['totalPrints']} print caricate.',
+        (r) => 'Completato! ${r['totalCards']} carte, ${r['totalPrints']} print.'
+            ' Immagini: ${r['imagesOk']} ok'
+            '${(r['imagesFailed'] as int? ?? 0) > 0 ? ", ${r['imagesFailed']} fallite" : ""}.',
       );
 
   Future<void> _migrateOnePieceImages() => _confirmAndRun(

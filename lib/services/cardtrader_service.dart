@@ -49,8 +49,8 @@ class CardtraderService {
       'pt': 'Portoghese', 'ko': 'Coreano',
     },
     'onepiece': {
-      'ja': 'Giapponese', 'en': 'Inglese',
-      'zh': 'Cinese', 'ko': 'Coreano',
+      'ja': 'Giapponese', 'en': 'Inglese', 'fr': 'Francese',
+      'zh': 'Cinese',     'ko': 'Coreano',
     },
   };
 
