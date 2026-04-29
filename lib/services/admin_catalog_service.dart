@@ -2878,9 +2878,14 @@ class AdminCatalogService {
               if (ctImageUrl != null) break;
             }
           }
-          final storageUrl = ctImageUrl != null
-              ? await _uploadCardImageIfNeeded('onepiece', '${expCode}_$collUpper', ctImageUrl)
-              : null;
+          // Fallback immagine: CT → URL ufficiale One Piece TCG (pattern prevedibile).
+          // L'URL OPTCG viene usato se CT non fornisce immagine; viene caricato
+          // su Firebase Storage subito. Se fallisce (403/timeout), rimane come
+          // image_url esterna — la migrazione lo riproverà successivamente.
+          final optcgUrl = 'https://en.onepiece-cardgame.com/images/cardlist/card/$cardSetId.png';
+          final bestSourceUrl = ctImageUrl ?? optcgUrl;
+          final storageUrl = await _uploadCardImageIfNeeded(
+              'onepiece', '${expCode}_$collUpper', bestSourceUrl);
 
           final prints = <Map<String, dynamic>>[
             {
@@ -2888,7 +2893,7 @@ class AdminCatalogService {
               'set_id': expCode,
               'set_name': expName,
               'rarity': rarity,
-              if (storageUrl != null) 'artwork': storageUrl,
+              'artwork': storageUrl ?? bestSourceUrl, // URL esterno come fallback
             }
           ];
           if (prints.isEmpty) continue;
@@ -2899,6 +2904,9 @@ class AdminCatalogService {
             if (jaName != nameEn) 'name_ja': jaName,
             'catalog': 'onepiece',
             'rarity': rarity,
+            // image_url card-level: usato da migrateOnepieceImagesToStorage
+            // come sorgente se artwork nei prints è ancora un URL esterno.
+            'image_url': storageUrl ?? bestSourceUrl,
             'prints': prints,
           });
         }
