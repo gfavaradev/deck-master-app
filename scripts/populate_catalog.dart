@@ -26,12 +26,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:deck_master/firebase_options.dart';
+import 'package:deck_master/constants/app_constants.dart';
 
 const String ygoprodeckApiUrl = 'https://db.ygoprodeck.com/api/v7/cardinfo.php';
-const int chunkSize = 200;
-
-// Lingue supportate (spagnolo escluso)
-const List<String> _supportedLangs = ['en', 'it', 'fr', 'de', 'pt'];
+// Utilizziamo la costante centralizzata per coerenza con il resto dell'app
+const int chunkSize = FirestoreConstants.catalogChunkSize; 
+// Lingue supportate (incluso spagnolo)
+const List<String> _supportedLangs = ['en', 'it', 'fr', 'de', 'pt', 'sp'];
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -240,22 +241,29 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
     });
 
     try {
-      final allCards = await _downloadFromYGOPRODeck();
+      // Eseguiamo il download dalle API e il recupero dei dati esistenti in parallelo
+      // per minimizzare i tempi di attesa iniziali.
+      setState(() => _status = 'Inizializzazione: Download API e recupero cache Firestore...');
+      
+      final results = await Future.wait([
+        _downloadFromYGOPRODeck(),
+        _getExistingCardsMap(),
+      ]);
+
+      final allCards = results[0] as List<Map<String, dynamic>>;
+      final existingMap = results[1] as Map<int, Map<String, dynamic>>;
+
       if (allCards.isEmpty) {
         setState(() { _status = 'Nessuna carta scaricata!'; _running = false; });
         return;
       }
-
-      // Legge il catalogo esistente: preserva carte admin-modificate e imageUrl di Storage
-      setState(() => _status = 'Recuperando dati esistenti da Firestore...');
-      final existingMap = await _getExistingCardsMap();
 
       final adminModified = Map<int, Map<String, dynamic>>.fromEntries(
         existingMap.entries.where((e) => e.value['_adminModified'] == true),
       );
 
       // Raccoglie gli imageUrl di Firebase Storage per TUTTE le carte (non solo admin)
-      final imageUrlMap = <int, String>{};
+      final imageUrlMap = <dynamic, String>{};
       for (final entry in existingMap.entries) {
         final url = entry.value['imageUrl'] as String?;
         if (url != null && url.contains('firebasestorage')) {
@@ -294,7 +302,7 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
   }
 
   /// Returns a map of cardId → card for ALL cards currently in Firestore.
-  Future<Map<int, Map<String, dynamic>>> _getExistingCardsMap() async {
+  Future<Map<dynamic, Map<String, dynamic>>> _getExistingCardsMap() async {
     final firestore = FirebaseFirestore.instance;
     final chunksSnapshot = await firestore
         .collection('yugioh_catalog')
@@ -302,12 +310,11 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
         .collection('items')
         .get();
 
-    final map = <int, Map<String, dynamic>>{};
+    final map = <dynamic, Map<String, dynamic>>{};
     for (var doc in chunksSnapshot.docs) {
       for (final raw in (doc.data()['cards'] as List? ?? [])) {
         final card = Map<String, dynamic>.from(raw as Map);
-        final id = card['id'];
-        if (id is int) map[id] = card;
+        if (card['id'] != null) map[card['id']] = card;
       }
     }
     return map;
@@ -439,7 +446,7 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
 
             try {
               final response = await http.get(Uri.parse(sourceUrl))
-                  .timeout(const Duration(seconds: 30));
+                  .timeout(const Duration(seconds: 15));
               if (response.statusCode != 200) {
                 print('Errore HTTP ${response.statusCode} per carta $cardId');
                 failed++;
@@ -619,6 +626,7 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
       case 'FR': case 'F': return 'fr';
       case 'DE': case 'D': return 'de';
       case 'PT': case 'P': return 'pt';
+      case 'SP': case 'S': return 'sp'; // Aggiunto spagnolo
       default: return 'en'; // EN, E
     }
   }
@@ -638,6 +646,7 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
       'fr' => isShort ? 'F' : 'FR',
       'de' => isShort ? 'D' : 'DE',
       'pt' => isShort ? 'P' : 'PT',
+      'sp' => isShort ? 'S' : 'SP', // Aggiunto spagnolo
       _ => null,
     };
     if (targetCode == null) return null;
@@ -663,7 +672,7 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
 
     bool changed = false;
 
-    for (final lang in ['it', 'fr', 'de', 'pt']) {
+    for (final lang in ['it', 'fr', 'de', 'pt', 'sp']) { // Aggiunto 'sp'
       // Lookup esistente per codice (case-insensitive) → primo match vince
       final existingByCode = <String, Map<String, dynamic>>{};
       for (final s in List.from(setsByLang[lang]!)) {
@@ -704,7 +713,8 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
             'print_code': targetCode,
             'rarity': enSet['rarity'] ?? '',
             'rarity_code': enSet['rarity_code'] ?? '',
-            'set_price': null,
+            // Copiamo il prezzo dal set EN come base iniziale
+            'set_price': enSet['set_price'],
           });
           changed = true;
         }
@@ -783,11 +793,19 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
 
   /// Scarica le carte da YGOPRODeck per una specifica lingua.
   Future<List<dynamic>> _fetchApiForLang(String lang) async {
+    final apiLang = switch (lang) {
+      'sp' => 'es', // Mappa il codice interno 'sp' al codice API 'es'
+      _ => lang,
+    };
     final url = lang == 'en'
         ? ygoprodeckApiUrl
-        : '$ygoprodeckApiUrl?language=$lang';
+        : '$ygoprodeckApiUrl?language=$apiLang';
+    
     final response = await http
-        .get(Uri.parse(url))
+        .get(
+          Uri.parse(url),
+          headers: {'User-Agent': 'DeckMasterAdmin/1.0 (Flutter; Windows)'},
+        )
         .timeout(const Duration(minutes: 5));
     if (response.statusCode != 200) {
       throw Exception('Errore API ($lang): HTTP ${response.statusCode}');
@@ -808,25 +826,25 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _downloadFromYGOPRODeck() async {
-    // 1. Scarica EN (base)
-    setState(() => _status = 'Scaricando catalogo EN da YGOPRODeck...');
-    final enCards = await _fetchApiForLang('en');
-    setState(() => _status = 'Scaricato EN: ${enCards.length} carte. Scaricando traduzioni...');
-
-    // 2. Scarica le altre lingue in parallelo — errori per singola lingua
-    //    non bloccano il download (l'API potrebbe non supportare tutte le lingue).
+    setState(() => _status = 'Scaricando dati da YGOPRODeck (tutte le lingue in parallelo)...');
+    
+    // Avviamo tutte le richieste contemporaneamente.
+    // EN è obbligatorio, le altre sono 'safe' (possono fallire senza bloccare).
     final futures = await Future.wait([
+      _fetchApiForLang('en'),
       _fetchApiForLangSafe('it'),
       _fetchApiForLangSafe('fr'),
       _fetchApiForLangSafe('de'),
       _fetchApiForLangSafe('pt'),
+      _fetchApiForLangSafe('sp'),
     ]);
-    final itCards = futures[0];
-    final frCards = futures[1];
-    final deCards = futures[2];
-    final ptCards = futures[3];
 
-    setState(() => _status = 'Costruendo mappa traduzioni...');
+    final enCards = futures[0];
+    final itCards = futures[1];
+    final frCards = futures[2];
+    final deCards = futures[3];
+    final ptCards = futures[4];
+    final spCards = futures[5];
 
     // 3. Costruisce mappe id → {name, desc} per ogni lingua
     Map<int, Map<String, String>> buildTranslationMap(List<dynamic> cards) {
@@ -846,10 +864,11 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
     final itMap = buildTranslationMap(itCards);
     final frMap = buildTranslationMap(frCards);
     final deMap = buildTranslationMap(deCards);
-    final ptMap = buildTranslationMap(ptCards);
+    final ptMap = buildTranslationMap(ptCards);    
+    final spMap = buildTranslationMap(spCards); // Mappa spagnola
 
     setState(() => _status = 'Processando ${enCards.length} carte con traduzioni...');
-    return _transformYGOProDeckCards(enCards, itMap: itMap, frMap: frMap, deMap: deMap, ptMap: ptMap);
+    return _transformYGOProDeckCards(enCards, itMap: itMap, frMap: frMap, deMap: deMap, ptMap: ptMap, spMap: spMap);
   }
 
   /// Trasforma il formato YGOPRODeck nel formato interno.
@@ -862,6 +881,7 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
     Map<int, Map<String, String>> itMap = const {},
     Map<int, Map<String, String>> frMap = const {},
     Map<int, Map<String, String>> deMap = const {},
+    Map<int, Map<String, String>> spMap = const {}, // Aggiunto spagnolo
     Map<int, Map<String, String>> ptMap = const {},
   }) {
     return apiCards.map((card) {
@@ -902,6 +922,7 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
       final fr = cardId != null ? frMap[cardId] : null;
       final de = cardId != null ? deMap[cardId] : null;
       final pt = cardId != null ? ptMap[cardId] : null;
+      final sp = cardId != null ? spMap[cardId] : null; // Traduzione spagnola
 
       // YGOPRODeck provides card_images as an array; use the first (largest) image
       final cardImages = card['card_images'] as List<dynamic>?;
@@ -936,6 +957,8 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
         if (de?['desc'] != null && de!['desc']!.isNotEmpty) 'description_de': de['desc'],
         if (pt?['name'] != null && pt!['name']!.isNotEmpty) 'name_pt': pt['name'],
         if (pt?['desc'] != null && pt!['desc']!.isNotEmpty) 'description_pt': pt['desc'],
+        if (sp?['name'] != null && sp!['name']!.isNotEmpty) 'name_sp': sp['name'], // Traduzione spagnola
+        if (sp?['desc'] != null && sp!['desc']!.isNotEmpty) 'description_sp': sp['desc'], // Traduzione spagnola
         if (setsMap.isNotEmpty) 'sets': setsMap,
       };
     }).toList();
@@ -967,17 +990,11 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
   }) async {
     final firestore = FirebaseFirestore.instance;
 
-    if (!isIncremental) {
-      setState(() => _status = 'Cancellando chunks esistenti...');
-      final chunksSnapshot = await firestore
-          .collection('yugioh_catalog')
-          .doc('chunks')
-          .collection('items')
-          .get();
-      for (var doc in chunksSnapshot.docs) {
-        await doc.reference.delete();
-      }
-    }
+    // Rimosso il delete preventivo massivo per sicurezza.
+    // I chunk verranno sovrascritti o i vecchi cancellati solo a fine processo.
+    final oldChunks = !isIncremental 
+        ? await firestore.collection('yugioh_catalog').doc('chunks').collection('items').get()
+        : null;
 
     final chunks = <List<Map<String, dynamic>>>[];
     for (int i = 0; i < cards.length; i += chunkSize) {
@@ -1008,6 +1025,14 @@ class _PopulateCatalogScreenState extends State<PopulateCatalogScreen> {
       'lastUpdated': FieldValue.serverTimestamp(),
       'version': newVersion,
     });
+
+    // Cancella i vecchi chunk eccedenti solo se l'upload ha avuto successo
+    if (oldChunks != null && oldChunks.docs.length > chunks.length) {
+      setState(() => _status = 'Pulizia vecchi dati...');
+      for (int i = chunks.length; i < oldChunks.docs.length; i++) {
+        await firestore.collection('yugioh_catalog').doc('chunks').collection('items').doc(oldChunks.docs[i].id).delete();
+      }
+    }
   }
 
   double? _parseDouble(dynamic value) {

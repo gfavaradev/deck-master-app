@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_colors.dart';
@@ -19,6 +20,10 @@ class ReviewService {
 
   static const _storeUrl =
       'https://play.google.com/store/apps/details?id=com.giuseppe.deckmaster';
+      
+  // TODO: Aggiungere URL per App Store quando disponibile
+  static const _appleStoreUrl = 
+      'https://apps.apple.com/app/idXXXXXXXXX';
 
   /// Controlla le condizioni temporali e mostra il popup se è il momento.
   /// Chiamare dopo un breve ritardo dall'avvio (es. 5 secondi) così non
@@ -63,7 +68,8 @@ class ReviewService {
       builder: (_) => _ReviewDialog(
         onRate: () async {
           await prefs.setBool(_kCompletedKey, true);
-          final uri = Uri.parse(_storeUrl);
+          final url = Platform.isIOS ? _appleStoreUrl : _storeUrl;
+          final uri = Uri.parse(url);
           if (await canLaunchUrl(uri)) {
             await launchUrl(uri, mode: LaunchMode.externalApplication);
           }

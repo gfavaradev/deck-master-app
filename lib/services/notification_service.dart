@@ -28,11 +28,15 @@ class NotificationService {
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
+  SharedPreferences? _prefs;
 
   // ── Inizializzazione (chiamata una volta in main()) ──────────────────────────
 
   Future<void> initialize() async {
     if (kIsWeb) return;
+
+    // Pre-carica le SharedPreferences per evitare await ripetuti in seguito
+    _prefs = await SharedPreferences.getInstance();
 
     // Registra handler per messaggi in background
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -75,9 +79,8 @@ class NotificationService {
     });
 
     // Se le notifiche erano abilitate, rinnova il token FCM
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(_kEnabled) ?? false) {
-      await _refreshAndSaveToken();
+    if (_prefs?.getBool(_kEnabled) ?? false) {
+      _refreshAndSaveToken(); // Chiamata non bloccante
     }
 
     // Listener per aggiornamenti del token
@@ -109,45 +112,44 @@ class NotificationService {
     final granted = await requestPermission();
     if (!granted) return false;
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kEnabled, true);
+    await _getPrefs().then((p) => p.setBool(_kEnabled, true));
     await _refreshAndSaveToken();
     return true;
   }
 
   Future<void> disable() async {
     if (kIsWeb) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kEnabled, false);
+    await _getPrefs().then((p) => p.setBool(_kEnabled, false));
     await _deleteTokenFromFirestore();
   }
 
   // ── Sub-preferenze ───────────────────────────────────────────────────────────
 
+  /// Helper interno per ottenere le preferenze garantendo l'inizializzazione
+  Future<SharedPreferences> _getPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
+  }
+
   Future<bool> isEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_kEnabled) ?? false;
+    return (await _getPrefs()).getBool(_kEnabled) ?? false;
   }
 
   Future<bool> isAppUpdatesEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_kAppUpdates) ?? true;
+    return (await _getPrefs()).getBool(_kAppUpdates) ?? true;
   }
 
   Future<bool> isCatalogUpdatesEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_kCatalogUpdates) ?? true;
+    return (await _getPrefs()).getBool(_kCatalogUpdates) ?? true;
   }
 
   Future<void> setAppUpdates(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kAppUpdates, value);
+    await (await _getPrefs()).setBool(_kAppUpdates, value);
     await _updateFirestorePreferences();
   }
 
   Future<void> setCatalogUpdates(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kCatalogUpdates, value);
+    await (await _getPrefs()).setBool(_kCatalogUpdates, value);
     await _updateFirestorePreferences();
   }
 
@@ -219,13 +221,13 @@ class NotificationService {
   /// Returns the collection key saved when user tapped "Più tardi".
   /// Returns null if no navigation is pending.
   Future<String?> getPendingCatalogNavigation() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     return prefs.getString(_kPendingCatalogKey);
   }
 
   /// Clears the pending navigation intent.
   Future<void> clearPendingCatalogNavigation() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.remove(_kPendingCatalogKey);
   }
 
@@ -262,7 +264,7 @@ class NotificationService {
     String? collectionKey,
   }) async {
     if (kIsWeb) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setBool(_kPendingCatalogReminder, true);
     await prefs.setString(_kPendingCatalogCollection, collectionName);
     if (collectionKey != null) {
@@ -273,7 +275,7 @@ class NotificationService {
   /// Mostra il reminder se era in attesa (chiamare all'avvio dell'app).
   Future<void> checkAndShowPendingCatalogReminder() async {
     if (kIsWeb) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     final pending = prefs.getBool(_kPendingCatalogReminder) ?? false;
     if (!pending) return;
     final collection = prefs.getString(_kPendingCatalogCollection) ?? 'catalogo';
@@ -300,7 +302,7 @@ class NotificationService {
   /// Cancella il reminder per l'aggiornamento catalogo.
   Future<void> cancelCatalogReminder() async {
     if (kIsWeb) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.remove(_kPendingCatalogReminder);
     await prefs.remove(_kPendingCatalogCollection);
     await _local.cancel(id: _catalogReminderNotifId);

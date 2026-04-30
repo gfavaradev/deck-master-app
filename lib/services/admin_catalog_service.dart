@@ -1649,7 +1649,14 @@ class AdminCatalogService {
     final sortedChunkIds = chunkMap.keys.toList()..sort();
 
     // Raccoglie tutti i print che necessitano migrazione
-    final toMigrate = <({String chunkId, int cardIndex, int printIndex, String cardSetId, String sourceUrl})>[];
+    final toMigrate = <({
+      String chunkId,
+      int cardIndex,
+      int printIndex,
+      String cardSetId,
+      String sourceUrl,
+      String? fallbackUrl, // card-level image_url, tentato se sourceUrl non è raggiungibile
+    })>[];
     for (final chunkId in sortedChunkIds) {
       final cards = chunkMap[chunkId]!;
       for (int i = 0; i < cards.length; i++) {
@@ -1657,8 +1664,13 @@ class AdminCatalogService {
         final prints = card['prints'] as List<dynamic>? ?? [];
         for (int j = 0; j < prints.length; j++) {
           final p = Map<String, dynamic>.from(prints[j] as Map);
+          // Fix 4: salta print senza card_set_id — evita path Storage vuoti/errati
+          final cardSetId = (p['card_set_id'] as String?)?.trim() ?? '';
+          if (cardSetId.isEmpty) continue;
           final artwork = p['artwork'] as String?;
-          final sourceUrl = p['artwork'] as String? ?? card['image_url'] as String?;
+          final cardLevelUrl = card['image_url'] as String? ?? card['imageUrl'] as String?;
+          final printUrl = artwork;
+          final sourceUrl = printUrl ?? cardLevelUrl;
           final needsMigration = sourceUrl != null &&
               sourceUrl.isNotEmpty &&
               (force || artwork == null || !artwork.contains('firebasestorage'));
@@ -1667,15 +1679,29 @@ class AdminCatalogService {
               chunkId: chunkId,
               cardIndex: i,
               printIndex: j,
-              cardSetId: p['card_set_id'] as String? ?? '',
+              cardSetId: cardSetId,
               sourceUrl: sourceUrl,
+              // Fix 2: fallback solo quando diverso da sourceUrl
+              fallbackUrl: (printUrl != null && printUrl != cardLevelUrl) ? cardLevelUrl : null,
             ));
           }
         }
       }
     }
 
-    if (toMigrate.isEmpty) return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+    // Fix 1: bumpa sempre la versione anche se non c'è nulla da migrare, così
+    // i client con catalogo obsoleto ricevono la notifica di aggiornamento.
+    if (toMigrate.isEmpty) {
+      final metadataDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
+      final currentVersion = metadataDoc.exists ? (metadataDoc.data()?['version'] as int? ?? 0) : 0;
+      await _firestore.collection(catalogCollection).doc('metadata').set({
+        'lastUpdated': FieldValue.serverTimestamp(),
+        'version': currentVersion + 1,
+        'updatedBy': adminUid,
+        'modifiedChunks': [],
+      }, SetOptions(merge: true));
+      return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+    }
 
     int migrated = 0, failed = 0;
     final affectedChunkIds = <String>{};
@@ -1690,12 +1716,19 @@ class AdminCatalogService {
         try {
           storageUrl = await ref.getDownloadURL();
         } catch (_) { // ignore: empty_catches
-          final response = await http.get(Uri.parse(item.sourceUrl));
-          if (response.statusCode == 200) {
-            final compressed = await _compressCardImage(response.bodyBytes);
-            await ref.putData(compressed,
-                SettableMetadata(contentType: 'image/jpeg'));
-            storageUrl = await ref.getDownloadURL();
+          // Fix 2: prova prima sourceUrl (artwork del print), poi fallbackUrl (image_url della card)
+          final candidates = [item.sourceUrl, if (item.fallbackUrl != null) item.fallbackUrl!];
+          for (final url in candidates) {
+            try {
+              final response = await http.get(Uri.parse(url));
+              if (response.statusCode == 200) {
+                final compressed = await _compressCardImage(response.bodyBytes);
+                await ref.putData(compressed, SettableMetadata(contentType: 'image/jpeg'));
+                storageUrl = await ref.getDownloadURL();
+                break;
+              }
+            } catch (_) { // ignore: empty_catches
+            }
           }
         }
 
@@ -1706,8 +1739,13 @@ class AdminCatalogService {
           print['artwork'] = storageUrl;
           prints[item.printIndex] = print;
           card['prints'] = prints;
-          // Aggiorna image_url della card con la prima immagine migrata
-          if (!card.containsKey('imageUrl')) card['imageUrl'] = storageUrl;
+          // Fix 3: aggiorna sia imageUrl (camelCase per insertOnepieceCards)
+          // sia image_url (snake_case per onepiece_cards.image_url in SQLite)
+          card['imageUrl'] ??= storageUrl;
+          if (card['image_url'] == null ||
+              !(card['image_url'] as String).contains('firebasestorage')) {
+            card['image_url'] = storageUrl;
+          }
           chunkMap[item.chunkId]![item.cardIndex] = card;
           affectedChunkIds.add(item.chunkId);
           migrated++;
