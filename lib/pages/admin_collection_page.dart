@@ -222,7 +222,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
     final change = PendingCatalogChange(
       changeId: _generateChangeId(),
       type: ChangeType.delete,
-      cardData: {},
+      cardData: {'catalog': widget.collectionKey},
       originalCardId: card['id'] is num ? (card['id'] as num).toInt() : null,
       timestamp: DateTime.now(),
       adminUid: adminUid,
@@ -295,7 +295,12 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
   }
 
   bool _hasPendingChange(Map<String, dynamic> card) {
-    return _pendingChanges.any((c) => c.originalCardId == card['id']);
+    final cardIdStr = card['id']?.toString();
+    if (cardIdStr == null) return false;
+    return _pendingChanges.any((c) {
+      final targetId = c.originalCardId?.toString() ?? c.cardData['id']?.toString();
+      return targetId == cardIdStr;
+    });
   }
 
   @override

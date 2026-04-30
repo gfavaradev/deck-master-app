@@ -1371,6 +1371,8 @@ class AdminCatalogService {
           i, (i + _chunkSize < cards.length) ? i + _chunkSize : cards.length));
     }
 
+    // Build the new card index entries from the chunks being uploaded
+    final newIndexEntries = <String, String>{};
     for (int i = 0; i < chunks.length; i++) {
       final chunkId =
           'chunk_${(startChunkIndex + i + 1).toString().padLeft(3, '0')}';
@@ -1384,7 +1386,20 @@ class AdminCatalogService {
             .doc(chunkId),
         {'cards': chunks[i]},
       );
+      for (final card in chunks[i]) {
+        final cardId = card['id'];
+        if (cardId != null) newIndexEntries[cardId.toString()] = chunkId;
+      }
       onProgress(i + 1, chunks.length);
+    }
+
+    // Update card index: for incremental, merge with existing; for full replace, overwrite
+    if (isIncremental) {
+      final existingIndex = await _loadCardIndex(catalogCollection);
+      existingIndex.addAll(newIndexEntries);
+      await _saveCardIndex(catalogCollection, existingIndex);
+    } else {
+      await _saveCardIndex(catalogCollection, newIndexEntries);
     }
 
     // Update metadata — reuse the snapshot already fetched above (no extra read)

@@ -1328,7 +1328,15 @@ class DatabaseHelper {
                COALESCE(u.collection, a.collection, 'yugioh') as collection,
                COALESCE(
                  NULLIF(u.value, 0),
-                 (SELECT set_price FROM yugioh_prints
+                 (SELECT CASE
+                    WHEN set_code_it = u.serialNumber THEN COALESCE(set_price_it, set_price)
+                    WHEN set_code_fr = u.serialNumber THEN COALESCE(set_price_fr, set_price)
+                    WHEN set_code_de = u.serialNumber THEN COALESCE(set_price_de, set_price)
+                    WHEN set_code_pt = u.serialNumber THEN COALESCE(set_price_pt, set_price)
+                    WHEN set_code_sp = u.serialNumber THEN COALESCE(set_price_sp, set_price)
+                    ELSE set_price
+                  END
+                  FROM yugioh_prints
                   WHERE card_id = CAST(u.catalogId AS INTEGER)
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
                       OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
@@ -1465,7 +1473,15 @@ class DatabaseHelper {
                COALESCE(u.collection, a.collection, 'pokemon') as collection,
                COALESCE(
                  NULLIF(u.value, 0),
-                 (SELECT set_price FROM pokemon_prints
+                 (SELECT CASE '$language'
+                    WHEN 'it' THEN COALESCE(set_price_it, set_price)
+                    WHEN 'fr' THEN COALESCE(set_price_fr, set_price)
+                    WHEN 'de' THEN COALESCE(set_price_de, set_price)
+                    WHEN 'es' THEN COALESCE(set_price_es, set_price)
+                    WHEN 'pt' THEN COALESCE(set_price_pt, set_price)
+                    ELSE set_price
+                  END
+                  FROM pokemon_prints
                   WHERE card_id = pc.id
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
                       OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
