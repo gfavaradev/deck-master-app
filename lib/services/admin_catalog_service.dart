@@ -1286,6 +1286,29 @@ class AdminCatalogService {
 
   // ─── Firestore catalog upload helpers ───────────────────────────────────
 
+  /// Returns all cards with `_adminModified == true` from the given catalog's chunks.
+  /// On failure returns an empty list (best-effort; a failed load must not block the download).
+  Future<List<Map<String, dynamic>>> _loadAdminModifiedCards(
+      String catalogCollection) async {
+    try {
+      final snapshot = await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .get();
+      final result = <Map<String, dynamic>>[];
+      for (final doc in snapshot.docs) {
+        for (final raw in (doc.data()['cards'] as List? ?? [])) {
+          final card = Map<String, dynamic>.from(raw as Map);
+          if (card['_adminModified'] == true) result.add(card);
+        }
+      }
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<Map<int, Map<String, dynamic>>> _getExistingCardsMap(
       String catalogCollection) async {
     final snapshot = await _firestore
@@ -1507,6 +1530,19 @@ class AdminCatalogService {
       }
     }
 
+    // Build admin-modified map keyed by groupKey so they survive re-downloads.
+    final existingAdminModified = <String, Map<String, dynamic>>{};
+    for (final card in existingCards.values) {
+      if (card['_adminModified'] != true) continue;
+      final prints = card['prints'] as List?;
+      if (prints == null || prints.isEmpty) continue;
+      final firstCardSetId = (prints.first as Map)['card_set_id'] as String? ?? '';
+      final gk = firstCardSetId.contains('_')
+          ? firstCardSetId.split('_')[0]
+          : firstCardSetId;
+      if (gk.isNotEmpty) existingAdminModified[gk] = card;
+    }
+
     // Raggruppa stampe in card base
     final Map<String, Map<String, dynamic>> cardMap = {};
     final Map<String, int> cardIdMap = {};
@@ -1563,6 +1599,13 @@ class AdminCatalogService {
         // Se esiste già un'URL Storage (catalogo precedente) la preserviamo subito.
         'artwork': existingArtwork ?? m['card_image']?.toString(),
       });
+    }
+
+    // Restore admin-modified cards (preserves manual edits across re-downloads).
+    if (existingAdminModified.isNotEmpty) {
+      for (final gk in existingAdminModified.keys) {
+        if (cardMap.containsKey(gk)) cardMap[gk] = existingAdminModified[gk]!;
+      }
     }
 
     final mergedCards = cardMap.values.toList();
@@ -2225,6 +2268,23 @@ class AdminCatalogService {
 
     onProgress('Immagini completate. Salvataggio catalogo su Firestore...', null);
 
+    // Preserve admin-modified cards from the existing catalog.
+    if (!effectiveResuming) {
+      final adminModifiedList = await _loadAdminModifiedCards('pokemon_catalog');
+      if (adminModifiedList.isNotEmpty) {
+        final adminMap = <String, Map<String, dynamic>>{
+          for (final c in adminModifiedList)
+            if ((c['api_id'] as String?)?.isNotEmpty == true) c['api_id'] as String: c,
+        };
+        for (int i = 0; i < processedCards.length; i++) {
+          final apiId = processedCards[i]['api_id'] as String?;
+          if (apiId != null && adminMap.containsKey(apiId)) {
+            processedCards[i] = adminMap[apiId]!;
+          }
+        }
+      }
+    }
+
     // 3. Upload chunks to Firestore.
     // When resuming an interrupted run, append the new cards to the existing catalog
     // (the completed sets are already in Firestore from the previous run).
@@ -2682,6 +2742,39 @@ class AdminCatalogService {
     }
 
     if (allCards.isEmpty) throw Exception('Nessuna carta estratta da CT');
+
+    // Preserve admin-modified cards from the existing catalog.
+    final adminModifiedList = await _loadAdminModifiedCards('${catalog}_catalog');
+    if (adminModifiedList.isNotEmpty) {
+      final adminMap = <String, Map<String, dynamic>>{};
+      for (final card in adminModifiedList) {
+        if (catalog == 'pokemon') {
+          final apiId = card['api_id'] as String?;
+          if (apiId != null && apiId.isNotEmpty) adminMap[apiId] = card;
+        } else {
+          final prints = card['prints'] as List?;
+          if (prints == null || prints.isEmpty) continue;
+          final cardSetId = (prints.first as Map)['card_set_id'] as String? ?? '';
+          final gk = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
+          if (gk.isNotEmpty) adminMap[gk] = card;
+        }
+      }
+      for (int i = 0; i < allCards.length; i++) {
+        final String? key;
+        if (catalog == 'pokemon') {
+          key = allCards[i]['api_id'] as String?;
+        } else {
+          final prints = allCards[i]['prints'] as List?;
+          final cardSetId = prints != null && prints.isNotEmpty
+              ? (prints.first as Map)['card_set_id'] as String? ?? ''
+              : '';
+          key = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
+        }
+        if (key != null && key.isNotEmpty && adminMap.containsKey(key)) {
+          allCards[i] = adminMap[key]!;
+        }
+      }
+    }
 
     onProgress('Caricamento ${allCards.length} carte su Firestore…', null);
     await _uploadCatalogChunks(
