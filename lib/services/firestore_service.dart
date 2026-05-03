@@ -36,6 +36,65 @@ class FirestoreService {
     }
   }
 
+  /// Downloads catalog chunks one small batch at a time, calling [onBatch]
+  /// immediately after each batch so it can be processed and freed from RAM.
+  /// Use this instead of [fetchCatalog] for full-catalog downloads to avoid OOM.
+  Future<void> streamCatalog(
+    String catalogName, {
+    required Future<void> Function(
+      List<Map<String, dynamic>> cards,
+      int chunksDone,
+      int chunksTotal,
+    ) onBatch,
+    int batchSize = 2,
+  }) async {
+    final metadata = await getCatalogMetadata(catalogName);
+    if (metadata == null) throw Exception('Catalog metadata not found for $catalogName');
+    final int totalChunks = metadata['totalChunks'] ?? 0;
+    if (totalChunks == 0) throw Exception('No chunks available for $catalogName');
+
+    AppLogger.info('Streaming catalog: $catalogName ($totalChunks chunks)', tag: 'FirestoreService');
+
+    for (int start = 1; start <= totalChunks; start += batchSize) {
+      final end = (start + batchSize - 1).clamp(1, totalChunks);
+      // Fetch in a separate method so DocumentSnapshot objects go out of scope
+      // (and become GC-eligible) before onBatch runs the heavy SQLite insert.
+      final batchCards = await _fetchChunkCards(catalogName, start, end);
+      await onBatch(batchCards, end, totalChunks);
+    }
+  }
+
+  /// Fetches Firestore chunks [start..end] and returns only plain card maps.
+  /// Keeping this in a separate stack frame ensures DocumentSnapshot objects
+  /// are released before the caller's onBatch (SQLite insert) runs.
+  Future<List<Map<String, dynamic>>> _fetchChunkCards(
+    String catalogName,
+    int start,
+    int end,
+  ) async {
+    final futures = [
+      for (int i = start; i <= end; i++)
+        _firestore
+            .collection(FirestorePaths.catalog(catalogName))
+            .doc(FirestoreConstants.catalogChunks)
+            .collection(FirestoreConstants.catalogItems)
+            .doc(FirestoreConstants.getChunkId(i))
+            .get(),
+    ];
+    final docs = await Future.wait(futures);
+    final cards = <Map<String, dynamic>>[];
+    for (final doc in docs) {
+      if (doc.exists && doc.data() != null) {
+        final List<dynamic> rawCards = doc.data()!['cards'] ?? [];
+        for (var card in rawCards) {
+          cards.add(Map<String, dynamic>.from(card as Map));
+        }
+      }
+    }
+    return cards;
+    // docs goes out of scope here → DocumentSnapshot objects eligible for GC
+  }
+
   /// Fetch catalog from Firestore chunks
   /// Generic method that works for any catalog
   Future<List<Map<String, dynamic>>> fetchCatalog(

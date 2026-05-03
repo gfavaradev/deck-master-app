@@ -302,75 +302,73 @@ class SyncService {
   };
 
   Future<void> _syncCardtraderPrices() async {
-    try {
-      for (final catalog in ['yugioh', 'pokemon', 'onepiece']) {
-        final prefs = await SharedPreferences.getInstance();
-        int updated = 0;
+    final prefs = await SharedPreferences.getInstance();
 
-        // ── Part A: raw cardtrader_prices collection ──────────────────────────
-        // Indipendente da Part B: viene saltato se già aggiornato, ma Part B
-        // viene sempre eseguito (BUG #3 fix).
-        final remoteSyncedAt = await _firestoreService
-            .getCardtraderPricesSyncedAt(catalog)
-            .timeout(const Duration(seconds: 10), onTimeout: () => null);
+    Future<void> syncOne(String catalog) async {
+      int updated = 0;
 
-        if (remoteSyncedAt != null) {
-          final localKey = 'ct_prices_synced_at_$catalog';
-          final localStr = prefs.getString(localKey);
-          final localSyncedAt = localStr != null ? DateTime.tryParse(localStr) : null;
+      // ── Part A: raw cardtrader_prices collection ──────────────────────────
+      final remoteSyncedAt = await _firestoreService
+          .getCardtraderPricesSyncedAt(catalog)
+          .timeout(const Duration(seconds: 10), onTimeout: () => null);
 
-          if (localSyncedAt == null || remoteSyncedAt.isAfter(localSyncedAt)) {
-            final prices = await _firestoreService
-                .fetchCardtraderPrices(catalog)
-                .timeout(const Duration(seconds: 20), onTimeout: () => []);
-            if (prices.isNotEmpty) {
-              await _dbHelper.upsertCardtraderPrices(prices);
-              updated = await _dbHelper.syncCatalogPricesFromCardtrader(catalog);
-              await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
-            }
-          }
-        }
+      if (remoteSyncedAt != null) {
+        final localKey = 'ct_prices_synced_at_$catalog';
+        final localSyncedStr = prefs.getString(localKey);
+        final localSyncedAt = localSyncedStr != null ? DateTime.tryParse(localSyncedStr) : null;
 
-        // ── Part B: prezzi embedded nei chunk del catalogo (sempre controllato)
-        // Se l'admin ha eseguito syncCatalogPricesToFirestore, i chunk sono stati
-        // aggiornati con prezzi embedded. Questo blocco è indipendente da Part A
-        // e non viene saltato anche se i raw cardtrader_prices sono già in sync.
-        try {
-          final priceSyncInfo = await _firestoreService
-              .getCatalogPriceSyncInfo(catalog)
-              .timeout(const Duration(seconds: 10), onTimeout: () => null);
-          if (priceSyncInfo != null) {
-            final syncedAt = priceSyncInfo['syncedAt'] as DateTime;
-            final chunkIds = priceSyncInfo['modifiedChunks'] as List<String>;
-            final localCatalogKey = 'ct_catalog_prices_synced_at_$catalog';
-            final localCatalogStr = prefs.getString(localCatalogKey);
-            final localCatalogSyncedAt = localCatalogStr != null
-                ? DateTime.tryParse(localCatalogStr)
-                : null;
-            if ((localCatalogSyncedAt == null || syncedAt.isAfter(localCatalogSyncedAt)) &&
-                chunkIds.isNotEmpty) {
-              // BUG #1 fix: await il listener e salva il flag SOLO al completamento.
-              await _catalogPriceUpdateListener?.call(catalog, chunkIds);
-              await prefs.setString(localCatalogKey, syncedAt.toIso8601String());
-            }
-          }
-        } catch (_) {}
-
-        // ── Notifica utente ───────────────────────────────────────────────────
-        if (updated > 0) {
-          notifyLocalChange('cards');
-          final collections = await _dbHelper.getCollections();
-          final isUnlocked = collections.any((c) => c.key == catalog && c.isUnlocked);
-          if (isUnlocked) {
-            await NotificationService().showPricesSyncedNotification(
-              collectionName: _catalogNames[catalog] ?? catalog,
-              updatedCount: updated,
-            );
+        if (localSyncedAt == null || remoteSyncedAt.isAfter(localSyncedAt)) {
+          final prices = await _firestoreService
+              .fetchCardtraderPrices(catalog)
+              .timeout(const Duration(seconds: 20), onTimeout: () => []);
+          if (prices.isNotEmpty) {
+            await _dbHelper.upsertCardtraderPrices(prices);
+            updated = await _dbHelper.syncCatalogPricesFromCardtrader(catalog);
+            await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
           }
         }
       }
-    } catch (e) { // ignore: empty_catches
 
+      // ── Part B: prezzi embedded nei chunk del catalogo ────────────────────
+      try {
+        final priceSyncInfo = await _firestoreService
+            .getCatalogPriceSyncInfo(catalog)
+            .timeout(const Duration(seconds: 10), onTimeout: () => null);
+        if (priceSyncInfo != null) {
+          final syncedAt = priceSyncInfo['syncedAt'] as DateTime;
+          final chunkIds = priceSyncInfo['modifiedChunks'] as List<String>;
+          final localCatalogKey = 'ct_catalog_prices_synced_at_$catalog';
+          final localCatalogSyncedStr = prefs.getString(localCatalogKey);
+          final localCatalogSyncedAt = localCatalogSyncedStr != null ? DateTime.tryParse(localCatalogSyncedStr) : null;
+          if ((localCatalogSyncedAt == null || syncedAt.isAfter(localCatalogSyncedAt)) &&
+              chunkIds.isNotEmpty) {
+            await _catalogPriceUpdateListener?.call(catalog, chunkIds);
+            await prefs.setString(localCatalogKey, syncedAt.toIso8601String());
+          }
+        }
+      } catch (_) {}
+
+      // ── Notifica utente ───────────────────────────────────────────────────
+      if (updated > 0) {
+        notifyLocalChange('cards');
+        final collections = await _dbHelper.getCollections();
+        final isUnlocked = collections.any((c) => c.key == catalog && c.isUnlocked);
+        if (isUnlocked) {
+          await NotificationService().showPricesSyncedNotification(
+            collectionName: _catalogNames[catalog] ?? catalog,
+            updatedCount: updated,
+          );
+        }
+      }
+    }
+
+    try {
+      await Future.wait([
+        syncOne('yugioh'),
+        syncOne('pokemon'),
+        syncOne('onepiece'),
+      ]);
+    } catch (e) { // ignore: empty_catches
     }
   }
 

@@ -1711,6 +1711,21 @@ class DatabaseHelper {
     return result.first['total'] as int? ?? 0;
   }
 
+  /// Returns the total number of rows in the catalog table for [collectionKey].
+  /// Returns 0 if the collection is unsupported or the table is empty.
+  Future<int> getCatalogCardCount(String collectionKey) async {
+    final table = switch (collectionKey) {
+      'yugioh'   => 'yugioh_cards',
+      'pokemon'  => 'pokemon_cards',
+      'onepiece' => 'onepiece_cards',
+      _          => null,
+    };
+    if (table == null) return 0;
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM $table');
+    return result.first['cnt'] as int? ?? 0;
+  }
+
   /// Returns an existing card in [albumId] with the same [catalogId], [serialNumber] and [rarity], or null.
   Future<CardModel?> findCardInAlbum(int albumId, String? catalogId, String serialNumber, String rarity) async {
     Database db = await database;

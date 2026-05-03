@@ -48,6 +48,8 @@ class _CatalogPageState extends State<CatalogPage> {
   Set<String> _availableCatalogLanguages = {'EN'}; // lingue con dati reali nel DB
   bool _isDownloadingUpdate = false;
   bool _isCatalogMissing = false; // true = nessun catalogo locale, bisogna scaricarlo
+  double? _downloadProgress; // null = connecting, 0.0-1.0 = downloading/saving
+  String _downloadMessage = '';
   String? _loadError;
   int? _lastUsedAlbumId;
   // Multi-selection state
@@ -116,7 +118,23 @@ class _CatalogPageState extends State<CatalogPage> {
     if (mounted) {
       setState(() => _availableCatalogLanguages = results[3] as Set<String>);
     }
+
+    // Fallback: if the Firestore check didn't flag the catalog as missing but
+    // there are actually zero cards in the local DB, show the download button.
+    // We check the real DB count (not the filtered search result) so this
+    // doesn't trigger when the user searches for something with no matches.
+    if (mounted && _isSupportedCollection && !_isCatalogMissing) {
+      final totalInDb = await _dbHelper.getCatalogCardCount(widget.collectionKey);
+      if (mounted && totalInDb == 0) {
+        setState(() => _isCatalogMissing = true);
+      }
+    }
   }
+
+  bool get _isSupportedCollection =>
+      widget.collectionKey == 'yugioh' ||
+      widget.collectionKey == 'pokemon' ||
+      widget.collectionKey == 'onepiece';
 
   /// Controlla se il catalogo locale è assente (primo download).
   /// Gli aggiornamenti vengono segnalati nelle Notifiche, non qui.
@@ -140,17 +158,87 @@ class _CatalogPageState extends State<CatalogPage> {
     } catch (_) {}
   }
 
+  Color get _themeAccent => switch (widget.collectionKey) {
+    'yugioh'   => const Color(0xFF9B59B6),
+    'pokemon'  => const Color(0xFFFFCB05),
+    'onepiece' => const Color(0xFFE74C3C),
+    _          => AppColors.gold,
+  };
+
+  IconData get _themeIcon => switch (widget.collectionKey) {
+    'yugioh'   => Icons.auto_fix_high_rounded,
+    'pokemon'  => Icons.catching_pokemon_rounded,
+    'onepiece' => Icons.sailing_rounded,
+    _          => Icons.cloud_download_outlined,
+  };
+
+  String _phaseMessage(String phase) => switch (widget.collectionKey) {
+    'yugioh' => switch (phase) {
+      'connecting'  => 'Connessione al Mondo delle Ombre...',
+      'downloading' => 'Maximillion Pegasus sta creando le carte...',
+      _             => 'Il Faraone sigilla le carte nel Dueling Book...',
+    },
+    'pokemon' => switch (phase) {
+      'connecting'  => 'Connessione al Lab. del Prof. Oak...',
+      'downloading' => 'Il Prof. Oak sta catalogando i Pokémon...',
+      _             => 'Archiviazione nel Pokédex Nazionale...',
+    },
+    'onepiece' => switch (phase) {
+      'connecting'  => 'Navigazione verso il Grand Line...',
+      'downloading' => 'Shanks sta distribuendo le carte...',
+      _             => 'Il Mugiwara Crew carica le carte...',
+    },
+    _ => switch (phase) {
+      'connecting'  => 'Connessione in corso...',
+      'downloading' => 'Download in corso...',
+      _             => 'Salvataggio in corso...',
+    },
+  };
+
   /// Download del catalogo (solo per primo download da empty state).
   Future<void> _downloadUpdate() async {
-    setState(() => _isDownloadingUpdate = true);
+    setState(() {
+      _isDownloadingUpdate = true;
+      _downloadProgress = null;
+      _downloadMessage = _phaseMessage('connecting');
+    });
+    // Phase advances forward only: connecting → downloading → saving
+    String currentPhase = 'connecting';
     try {
       await _dbHelper.downloadCollectionCatalog(
         widget.collectionKey,
+        onProgress: (current, total) {
+          if (!mounted) return;
+          final progress = total > 0 ? current / total : null;
+          if (currentPhase == 'connecting') {
+            currentPhase = 'downloading';
+            setState(() {
+              _downloadProgress = progress;
+              _downloadMessage = _phaseMessage('downloading');
+            });
+          } else {
+            setState(() => _downloadProgress = progress);
+          }
+        },
+        onSaveProgress: (progress) {
+          if (!mounted) return;
+          // Switch to "saving" only near the end to avoid rapid cycling
+          if (currentPhase != 'saving' && progress >= 0.85) {
+            currentPhase = 'saving';
+            setState(() {
+              _downloadProgress = progress;
+              _downloadMessage = _phaseMessage('saving');
+            });
+          } else {
+            setState(() => _downloadProgress = progress);
+          }
+        },
       );
       if (mounted) {
         setState(() {
           _isDownloadingUpdate = false;
           _isCatalogMissing = false;
+          _downloadProgress = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Catalogo scaricato con successo!')),
@@ -159,7 +247,10 @@ class _CatalogPageState extends State<CatalogPage> {
       }
     } catch (e) { // ignore: empty_catches
       if (mounted) {
-        setState(() => _isDownloadingUpdate = false);
+        setState(() {
+          _isDownloadingUpdate = false;
+          _downloadProgress = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore download: $e')),
         );
@@ -1181,16 +1272,92 @@ class _CatalogPageState extends State<CatalogPage> {
 
   /// Empty state quando il catalogo non è ancora stato scaricato
   Widget _buildCatalogMissingState() {
+    final accent = _themeAccent;
+
+    if (_isDownloadingUpdate) {
+      final pct = _downloadProgress != null
+          ? '${(_downloadProgress! * 100).toInt()}%'
+          : '···';
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_themeIcon, size: 64, color: accent),
+              const SizedBox(height: 20),
+              Text(
+                widget.collectionName,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: 260,
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Download',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          pct,
+                          style: TextStyle(
+                            color: accent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: _downloadProgress,
+                        minHeight: 6,
+                        backgroundColor: AppColors.bgDark,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _downloadMessage,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_download_outlined, size: 64, color: AppColors.gold),
+            Icon(_themeIcon, size: 64, color: accent),
             const SizedBox(height: 16),
             Text(
-              'Catalogo ${widget.collectionName} non disponibile',
+              'Catalogo ${widget.collectionName} non è ancora stato scaricato',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 16,
@@ -1206,18 +1373,12 @@ class _CatalogPageState extends State<CatalogPage> {
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: _isDownloadingUpdate ? null : _downloadUpdate,
-              icon: _isDownloadingUpdate
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
-                    )
-                  : const Icon(Icons.download_rounded),
-              label: Text(_isDownloadingUpdate ? 'Download in corso...' : 'Scarica catalogo'),
+              onPressed: _downloadUpdate,
+              icon: const Icon(Icons.download_rounded),
+              label: const Text('Scarica catalogo'),
               style: FilledButton.styleFrom(
-                backgroundColor: AppColors.gold,
-                foregroundColor: Colors.black,
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
               ),
             ),
           ],

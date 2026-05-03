@@ -57,10 +57,8 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final result = await signInMethod();
       if (result != null || signInMethod.toString().contains('signInOffline')) {
-        try {
-          await _repo.syncOnLogin();
-        } catch (e) { // ignore: empty_catches
-        }
+        // Fire sync in background — don't block navigation
+        _repo.syncOnLogin().catchError((_) {});
         if (mounted) {
           Navigator.pushReplacement(
             context,

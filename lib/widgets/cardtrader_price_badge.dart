@@ -93,7 +93,7 @@ class _CardtraderAllPricesSectionState
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Text(
-              'Nessun prezzo disponibile — sincronizza i prezzi CardTrader.',
+              'Attualmente nessun prezzo disponibile.',
               style: TextStyle(
                 fontSize: 11,
                 color: AppColors.textHint.withValues(alpha: 0.7),

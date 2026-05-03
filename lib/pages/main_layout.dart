@@ -66,7 +66,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   double? _catalogDownloadProgress;
   List<Map<String, dynamic>> _pendingUpdates = [];
   String? _currentDownloadingName;
+  String? _currentDownloadingKey;
   int _currentDownloadingIndex = 0;
+  _DownloadPhase _downloadPhase = _DownloadPhase.connecting;
   OverlayEntry? _popoverEntry;
 
   @override
@@ -244,19 +246,17 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       }
     }
 
-    // 3. Verifica Firestore (fonte autorevole).
+    // 3. Verifica Firestore (fonte autorevole) + notifiche in parallelo.
     // null = Firestore non raggiungibile (offline/timeout) → mantieni cache.
-    // true/false = Firestore ha risposto → aggiorna cache.
-    bool? firestoreAdmin;
-    try {
-      firestoreAdmin = await _authService.isCurrentUserAdmin()
-          .timeout(const Duration(seconds: 12));
-    } catch (_) {
-      firestoreAdmin = null; // offline: non sovrascrivere la cache
-    }
-
-    final unread = await unreadNotificationCount();
+    final results = await Future.wait([
+      _authService.isCurrentUserAdmin()
+          .timeout(const Duration(seconds: 12))
+          .catchError((_) => null as bool?),
+      unreadNotificationCount().catchError((_) => 0),
+    ]);
     if (!mounted) return;
+    final bool? firestoreAdmin = results[0] as bool?;
+    final int unread = results[1] as int;
 
     final isAdmin = firestoreAdmin ?? cached; // offline → mantieni ultimo stato noto
 
@@ -345,7 +345,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             _currentDownloadingName = name;
+            _currentDownloadingKey = key;
             _currentDownloadingIndex = i + 1;
+            _downloadPhase = _DownloadPhase.connecting;
           });
           _popoverEntry?.markNeedsBuild();
         }
@@ -358,7 +360,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             updateInfo: info,
             onProgress: (current, colTotal) {
               if (mounted) {
-                setState(() => _catalogDownloadProgress = (i + current / colTotal) / total); _popoverEntry?.markNeedsBuild();
+                setState(() {
+                  _catalogDownloadProgress = (i + current / colTotal) / total;
+                  // Advance to downloading only once; never cycle back
+                  if (_downloadPhase == _DownloadPhase.connecting) {
+                    _downloadPhase = _DownloadPhase.downloading;
+                  }
+                });
+                _popoverEntry?.markNeedsBuild();
               }
               final pct = colTotal > 0 ? ((current / colTotal) * 100).toInt() : 0;
               BackgroundDownloadService.updateStatus(
@@ -367,7 +376,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             },
             onSaveProgress: (progress) {
               if (mounted) {
-                setState(() => _catalogDownloadProgress = (i + progress) / total); _popoverEntry?.markNeedsBuild();
+                setState(() {
+                  _catalogDownloadProgress = (i + progress) / total;
+                  // Switch to saving only near the end to avoid rapid cycling
+                  if (_downloadPhase != _DownloadPhase.saving && progress >= 0.85) {
+                    _downloadPhase = _DownloadPhase.saving;
+                  }
+                });
+                _popoverEntry?.markNeedsBuild();
               }
             },
           );
@@ -390,7 +406,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           _hasPendingCatalogUpdate = false;
           _catalogDownloadProgress = null;
           _currentDownloadingName = null;
+          _currentDownloadingKey = null;
           _currentDownloadingIndex = 0;
+          _downloadPhase = _DownloadPhase.connecting;
           _pendingUpdates = [];
         });
         if (successCount > 0) {
@@ -433,34 +451,44 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             'onepiece' => 'One Piece',
             _          => key,
           };
-          if (mounted) { setState(() { _currentDownloadingName = name; _currentDownloadingIndex = i + 1; }); _popoverEntry?.markNeedsBuild(); }
+          if (mounted) {
+            setState(() {
+              _currentDownloadingName = name;
+              _currentDownloadingKey = key;
+              _currentDownloadingIndex = i + 1;
+              _downloadPhase = _DownloadPhase.connecting;
+            });
+            _popoverEntry?.markNeedsBuild();
+          }
           BackgroundDownloadService.updateStatus(total > 1 ? 'Ripristino ${i + 1}/$total: $name' : name);
 
+          void onProg(int cur, int tot) {
+            if (mounted) {
+              setState(() {
+                _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total;
+                if (_downloadPhase == _DownloadPhase.connecting) {
+                  _downloadPhase = _DownloadPhase.downloading;
+                }
+              });
+              _popoverEntry?.markNeedsBuild();
+            }
+          }
+          void onSave(double p) {
+            if (mounted) {
+              setState(() {
+                _catalogDownloadProgress = (i + p) / total;
+                if (_downloadPhase != _DownloadPhase.saving && p >= 0.85) {
+                  _downloadPhase = _DownloadPhase.saving;
+                }
+              });
+              _popoverEntry?.markNeedsBuild();
+            }
+          }
+
           await switch (key) {
-            'yugioh'   => _repo.redownloadYugiohCatalog(
-                onProgress: (cur, tot) {
-                  if (mounted) setState(() => _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total); _popoverEntry?.markNeedsBuild();
-                },
-                onSaveProgress: (p) {
-                  if (mounted) setState(() => _catalogDownloadProgress = (i + p) / total); _popoverEntry?.markNeedsBuild();
-                },
-              ),
-            'pokemon'  => _repo.redownloadPokemonCatalog(
-                onProgress: (cur, tot) {
-                  if (mounted) setState(() => _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total); _popoverEntry?.markNeedsBuild();
-                },
-                onSaveProgress: (p) {
-                  if (mounted) setState(() => _catalogDownloadProgress = (i + p) / total); _popoverEntry?.markNeedsBuild();
-                },
-              ),
-            'onepiece' => _repo.redownloadOnepieceCatalog(
-                onProgress: (cur, tot) {
-                  if (mounted) setState(() => _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total); _popoverEntry?.markNeedsBuild();
-                },
-                onSaveProgress: (p) {
-                  if (mounted) setState(() => _catalogDownloadProgress = (i + p) / total); _popoverEntry?.markNeedsBuild();
-                },
-              ),
+            'yugioh'   => _repo.redownloadYugiohCatalog(onProgress: onProg, onSaveProgress: onSave),
+            'pokemon'  => _repo.redownloadPokemonCatalog(onProgress: onProg, onSaveProgress: onSave),
+            'onepiece' => _repo.redownloadOnepieceCatalog(onProgress: onProg, onSaveProgress: onSave),
             _ => Future.value(),
           };
           successCount++;
@@ -472,7 +500,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             _isCatalogDownloading = false;
             _catalogDownloadProgress = null;
             _currentDownloadingName = null;
+            _currentDownloadingKey = null;
             _currentDownloadingIndex = 0;
+            _downloadPhase = _DownloadPhase.connecting;
             _pendingUpdates = [];
           });
           if (successCount > 0) {
@@ -496,10 +526,12 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     final topPadding = MediaQuery.of(context).padding.top;
 
     _popoverEntry = OverlayEntry(builder: (_) {
-      final progress   = _catalogDownloadProgress;
-      final name       = _currentDownloadingName;
-      final idx        = _currentDownloadingIndex;
-      final total      = _pendingUpdates.isNotEmpty ? _pendingUpdates.length : idx;
+      final progress      = _catalogDownloadProgress;
+      final name          = _currentDownloadingName;
+      final idx           = _currentDownloadingIndex;
+      final total         = _pendingUpdates.isNotEmpty ? _pendingUpdates.length : idx;
+      final collectionKey = _currentDownloadingKey;
+      final phase         = _downloadPhase;
 
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -519,6 +551,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                   name: name,
                   index: idx,
                   total: total,
+                  collectionKey: collectionKey,
+                  phase: phase,
                 ),
               ),
             ),
@@ -1038,6 +1072,49 @@ class _WelcomeOverlayState extends State<_WelcomeOverlay> {
   }
 }
 
+// ─── Download theming ─────────────────────────────────────────────────────────
+
+enum _DownloadPhase { connecting, downloading, saving }
+
+class _CollectionTheme {
+  final Color accent;
+  final IconData icon;
+  final String connecting;
+  final String downloading;
+  final String saving;
+  const _CollectionTheme({
+    required this.accent,
+    required this.icon,
+    required this.connecting,
+    required this.downloading,
+    required this.saving,
+  });
+}
+
+const _kCollectionThemes = <String, _CollectionTheme>{
+  'yugioh': _CollectionTheme(
+    accent: Color(0xFF9B59B6),
+    icon: Icons.auto_fix_high_rounded,
+    connecting: 'Connessione al Mondo delle Ombre...',
+    downloading: 'Maximillion Pegasus sta creando le carte...',
+    saving: 'Il Faraone sigilla le carte nel Dueling Book...',
+  ),
+  'pokemon': _CollectionTheme(
+    accent: Color(0xFFFFCB05),
+    icon: Icons.catching_pokemon_rounded,
+    connecting: 'Connessione al Lab. del Prof. Oak...',
+    downloading: 'Il Prof. Oak sta catalogando i Pokémon...',
+    saving: 'Archiviazione nel Pokédex Nazionale...',
+  ),
+  'onepiece': _CollectionTheme(
+    accent: Color(0xFFE74C3C),
+    icon: Icons.sailing_rounded,
+    connecting: 'Navigazione verso il Grand Line...',
+    downloading: 'Shanks sta distribuendo le carte...',
+    saving: 'Il Mugiwara Crew carica le carte...',
+  ),
+};
+
 // ─── Download popover card ────────────────────────────────────────────────────
 
 class _DownloadPopoverCard extends StatelessWidget {
@@ -1045,29 +1122,45 @@ class _DownloadPopoverCard extends StatelessWidget {
   final String? name;
   final int index;
   final int total;
+  final String? collectionKey;
+  final _DownloadPhase phase;
 
   const _DownloadPopoverCard({
     required this.progress,
     required this.name,
     required this.index,
     required this.total,
+    required this.collectionKey,
+    required this.phase,
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = collectionKey != null ? _kCollectionThemes[collectionKey] : null;
+    final accent = theme?.accent ?? Colors.blue;
+    final icon   = theme?.icon   ?? Icons.download_rounded;
+
     final pct = progress != null ? '${(progress! * 100).toInt()}%' : '···';
-    final subtitle = name == null
-        ? null
-        : (index > 0 && total > 1)
-            ? 'Collezione $index di $total: $name'
-            : name;
+
+    final phaseMessage = theme == null
+        ? switch (phase) {
+            _DownloadPhase.connecting  => 'Connessione in corso...',
+            _DownloadPhase.downloading => 'Download in corso...',
+            _DownloadPhase.saving      => 'Salvataggio in corso...',
+          }
+        : switch (phase) {
+            _DownloadPhase.connecting  => theme.connecting,
+            _DownloadPhase.downloading => theme.downloading,
+            _DownloadPhase.saving      => theme.saving,
+          };
+
+    final multiCollection = index > 0 && total > 1;
 
     return Material(
       color: Colors.transparent,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Arrow pointing up toward the indicator
           Positioned(
             top: -7,
             right: 16,
@@ -1076,18 +1169,23 @@ class _DownloadPopoverCard extends StatelessWidget {
               painter: _ArrowPainter(AppColors.bgMedium),
             ),
           ),
-          // Card body
           Container(
-            width: 220,
+            width: 248,
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             decoration: BoxDecoration(
               color: AppColors.bgMedium,
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: accent.withValues(alpha: 0.25), width: 1),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.28),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
@@ -1097,38 +1195,39 @@ class _DownloadPopoverCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.download_rounded, color: Colors.blue, size: 16),
+                    Icon(icon, color: accent, size: 16),
                     const SizedBox(width: 6),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Download in corso',
+                        multiCollection ? '$index/$total · ${name ?? ''}' : (name ?? 'Catalogo'),
                         style: TextStyle(
-                          color: AppColors.textPrimary,
+                          color: accent,
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 6),
                     Text(
                       pct,
-                      style: const TextStyle(
-                        color: Colors.blue,
+                      style: TextStyle(
+                        color: accent,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
                     ),
                   ],
                 ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 11,
-                    ),
+                const SizedBox(height: 8),
+                Text(
+                  phaseMessage,
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic,
                   ),
-                ],
+                ),
                 const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
@@ -1136,7 +1235,7 @@ class _DownloadPopoverCard extends StatelessWidget {
                     value: progress,
                     minHeight: 5,
                     backgroundColor: AppColors.bgDark,
-                    color: Colors.blue,
+                    color: accent,
                   ),
                 ),
                 const SizedBox(height: 6),

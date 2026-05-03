@@ -908,7 +908,7 @@ class _PricesPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _Panel(
-      title: 'PREZZI CARDTRADER',
+      title: 'VALORE DI MERCATO',
       child: CardtraderAllPricesSection(
         collection: card.collection,
         serialNumber: card.serialNumber,

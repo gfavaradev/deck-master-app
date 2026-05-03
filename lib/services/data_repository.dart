@@ -327,38 +327,33 @@ class DataRepository {
       return;
     }
 
-    // Full download
+    // Full download — stream one batch at a time to avoid OOM
     final remoteMetadata = await _firestoreService.getCatalogMetadata('yugioh');
+    int totalDownloaded = 0;
 
-    final cards = await _firestoreService.fetchCatalog(
+    await _firestoreService.streamCatalog(
       CatalogConstants.yugioh,
-      onProgress: onProgress,
+      onBatch: (cards, chunksDone, chunksTotal) async {
+        onProgress?.call(chunksDone, chunksTotal);
+        final normalized = cards.map(_normalizeCardForSQLite).toList();
+        await _dbHelper.insertYugiohCards(normalized);
+        totalDownloaded += cards.length;
+        onSaveProgress?.call(chunksDone / chunksTotal);
+      },
     );
 
-    if (cards.isEmpty) return;
+    if (totalDownloaded == 0) return;
 
-    // Convert from new 'sets' format to flat 'prints' format expected by SQLite
-    final normalizedCards = cards.map(_normalizeCardForSQLite).toList();
-
-    await _dbHelper.insertYugiohCards(
-      normalizedCards,
-      onProgress: onSaveProgress,
-    );
-
-    // Save metadata after successful download.
-    // A failure here is non-fatal: catalog data is intact; only version tracking
-    // is lost, causing an unnecessary re-download on the next launch.
     if (remoteMetadata != null) {
       try {
         await _dbHelper.saveCatalogMetadata(
           catalogName: 'yugioh',
           version: remoteMetadata['version'] as int? ?? 1,
-          totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+          totalCards: remoteMetadata['totalCards'] as int? ?? totalDownloaded,
           totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
           lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
         );
       } catch (e) { // ignore: empty_catches
-
       }
     }
 
@@ -427,43 +422,40 @@ class DataRepository {
   }) async {
     if (kIsWeb) return; // Web has no local SQLite catalog
 
-    // Step 1: fetch all data from Firestore while SQLite is still intact.
     final remoteMetadata = await _firestoreService.getCatalogMetadata('yugioh');
-    final cards = await _firestoreService.fetchCatalog(
-      CatalogConstants.yugioh,
-      onProgress: onProgress,
-    );
-    if (cards.isEmpty) return;
 
-    final normalizedCards = cards.map(_normalizeCardForSQLite).toList();
-
-    // Step 2: clear old catalog and insert new data.
-    // Both operations are individually atomic (SQLite transactions); if insert
-    // fails it rolls back, leaving empty tables — but catalog_metadata was also
-    // deleted by clearYugiohCatalog so the app will detect isFirstDownload=true
-    // on the next launch and retry automatically.
+    // Clear first, then stream-download. INSERT OR REPLACE ensures a retry
+    // after an interrupted download completes safely without duplicates.
     await _dbHelper.clearYugiohCatalog();
-    await _dbHelper.insertYugiohCards(normalizedCards, onProgress: onSaveProgress);
+    int totalDownloaded = 0;
 
-    // Step 3: persist metadata (version number used for update detection).
+    await _firestoreService.streamCatalog(
+      CatalogConstants.yugioh,
+      onBatch: (cards, chunksDone, chunksTotal) async {
+        onProgress?.call(chunksDone, chunksTotal);
+        final normalized = cards.map(_normalizeCardForSQLite).toList();
+        await _dbHelper.insertYugiohCards(normalized);
+        totalDownloaded += cards.length;
+        onSaveProgress?.call(chunksDone / chunksTotal);
+      },
+    );
+
+    if (totalDownloaded == 0) return;
+
     if (remoteMetadata != null) {
       try {
         await _dbHelper.saveCatalogMetadata(
           catalogName: 'yugioh',
           version: remoteMetadata['version'] as int? ?? 1,
-          totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+          totalCards: remoteMetadata['totalCards'] as int? ?? totalDownloaded,
           totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
           lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ??
               DateTime.now().toIso8601String(),
         );
       } catch (e) { // ignore: empty_catches
-        // Catalog data is already saved; metadata failure only causes an
-        // unnecessary re-download on the next launch — not a data-loss risk.
-
       }
     }
 
-    // Step 4: rebuild espansioni/rarità dedicate.
     await _dbHelper.rebuildExpansionsAndRarities('yugioh');
   }
 
@@ -762,6 +754,13 @@ class DataRepository {
     return await _dbHelper.findCardInAlbum(albumId, catalogId, serialNumber, rarity);
   }
 
+  /// Returns the total number of cards in the local catalog DB for [collectionKey].
+  /// Used to detect if the catalog has never been downloaded (count == 0).
+  Future<int> getCatalogCardCount(String collectionKey) async {
+    if (kIsWeb) return 1; // on web there's no local DB — treat as "present"
+    return await _dbHelper.getCatalogCardCount(collectionKey);
+  }
+
   // ============================================================
   // Card Business Logic
   // ============================================================
@@ -1003,22 +1002,18 @@ class DataRepository {
     }
   }
 
-  /// Checks all unlocked supported collections for catalog updates.
+  /// Checks all unlocked supported collections for catalog updates (in parallel).
   /// Returns a list of update-info maps, each with 'collectionKey' and 'collectionName' added.
   Future<List<Map<String, dynamic>>> checkAllUnlockedCatalogUpdates() async {
     const supported = {'yugioh', 'pokemon', 'onepiece'};
     final collections = await getCollections();
     final unlocked = collections.where((c) => c.isUnlocked && supported.contains(c.key)).toList();
-    final List<Map<String, dynamic>> results = [];
-    for (final col in unlocked) {
-      try {
-        final info = await checkCollectionCatalogUpdates(col.key);
-        if (info['needsUpdate'] == true) {
-          results.add({...info, 'collectionKey': col.key, 'collectionName': col.name});
-        }
-      } catch (_) {}
-    }
-    return results;
+    final futures = unlocked.map((col) => checkCollectionCatalogUpdates(col.key)
+        .then<Map<String, dynamic>?>((info) => info['needsUpdate'] == true
+            ? {...info, 'collectionKey': col.key, 'collectionName': col.name}
+            : null)
+        .catchError((_) => null as Map<String, dynamic>?));
+    return (await Future.wait(futures)).whereType<Map<String, dynamic>>().toList();
   }
 
   /// Lock globale: impedisce download paralleli sullo stesso catalogo.
@@ -1566,19 +1561,25 @@ class DataRepository {
     }
 
     final remoteMetadata = await _firestoreService.getCatalogMetadata('onepiece');
-    final cards = await _firestoreService.fetchCatalog(
-      CatalogConstants.onepiece,
-      onProgress: onProgress,
-    );
-    if (cards.isEmpty) return;
+    int totalDownloaded = 0;
 
-    await _dbHelper.insertOnepieceCards(cards, onProgress: onSaveProgress);
+    await _firestoreService.streamCatalog(
+      CatalogConstants.onepiece,
+      onBatch: (cards, chunksDone, chunksTotal) async {
+        onProgress?.call(chunksDone, chunksTotal);
+        await _dbHelper.insertOnepieceCards(cards);
+        totalDownloaded += cards.length;
+        onSaveProgress?.call(chunksDone / chunksTotal);
+      },
+    );
+
+    if (totalDownloaded == 0) return;
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
         catalogName: 'onepiece',
         version: remoteMetadata['version'] as int? ?? 1,
-        totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+        totalCards: remoteMetadata['totalCards'] as int? ?? totalDownloaded,
         totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
@@ -1625,20 +1626,27 @@ class DataRepository {
   }) async {
     if (kIsWeb) return;
     final remoteMetadata = await _firestoreService.getCatalogMetadata('onepiece');
-    final cards = await _firestoreService.fetchCatalog(
-      CatalogConstants.onepiece,
-      onProgress: onProgress,
-    );
-    if (cards.isEmpty) return;
 
     await _dbHelper.clearOnepieceCatalog();
-    await _dbHelper.insertOnepieceCards(cards, onProgress: onSaveProgress);
+    int totalDownloaded = 0;
+
+    await _firestoreService.streamCatalog(
+      CatalogConstants.onepiece,
+      onBatch: (cards, chunksDone, chunksTotal) async {
+        onProgress?.call(chunksDone, chunksTotal);
+        await _dbHelper.insertOnepieceCards(cards);
+        totalDownloaded += cards.length;
+        onSaveProgress?.call(chunksDone / chunksTotal);
+      },
+    );
+
+    if (totalDownloaded == 0) return;
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
         catalogName: 'onepiece',
         version: remoteMetadata['version'] as int? ?? 1,
-        totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+        totalCards: remoteMetadata['totalCards'] as int? ?? totalDownloaded,
         totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
@@ -1832,20 +1840,26 @@ class DataRepository {
     }
 
     final remoteMetadata = await _firestoreService.getCatalogMetadata('pokemon');
-    final cards = await _firestoreService.fetchCatalog(
-      CatalogConstants.pokemon,
-      onProgress: onProgress,
-    );
-    if (cards.isEmpty) return;
+    int totalDownloaded = 0;
 
-    final normalizedCards = cards.map(_normalizePokemonCardForSQLite).toList();
-    await _dbHelper.insertPokemonCards(normalizedCards, onProgress: onSaveProgress);
+    await _firestoreService.streamCatalog(
+      CatalogConstants.pokemon,
+      onBatch: (cards, chunksDone, chunksTotal) async {
+        onProgress?.call(chunksDone, chunksTotal);
+        final normalized = cards.map(_normalizePokemonCardForSQLite).toList();
+        await _dbHelper.insertPokemonCards(normalized);
+        totalDownloaded += cards.length;
+        onSaveProgress?.call(chunksDone / chunksTotal);
+      },
+    );
+
+    if (totalDownloaded == 0) return;
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
         catalogName: 'pokemon',
         version: remoteMetadata['version'] as int? ?? 1,
-        totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+        totalCards: remoteMetadata['totalCards'] as int? ?? totalDownloaded,
         totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );
@@ -1860,21 +1874,28 @@ class DataRepository {
   }) async {
     if (kIsWeb) return;
     final remoteMetadata = await _firestoreService.getCatalogMetadata('pokemon');
-    final cards = await _firestoreService.fetchCatalog(
-      CatalogConstants.pokemon,
-      onProgress: onProgress,
-    );
-    if (cards.isEmpty) return;
 
     await _dbHelper.clearPokemonCatalog();
-    final normalizedCards = cards.map(_normalizePokemonCardForSQLite).toList();
-    await _dbHelper.insertPokemonCards(normalizedCards, onProgress: onSaveProgress);
+    int totalDownloaded = 0;
+
+    await _firestoreService.streamCatalog(
+      CatalogConstants.pokemon,
+      onBatch: (cards, chunksDone, chunksTotal) async {
+        onProgress?.call(chunksDone, chunksTotal);
+        final normalized = cards.map(_normalizePokemonCardForSQLite).toList();
+        await _dbHelper.insertPokemonCards(normalized);
+        totalDownloaded += cards.length;
+        onSaveProgress?.call(chunksDone / chunksTotal);
+      },
+    );
+
+    if (totalDownloaded == 0) return;
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
         catalogName: 'pokemon',
         version: remoteMetadata['version'] as int? ?? 1,
-        totalCards: remoteMetadata['totalCards'] as int? ?? cards.length,
+        totalCards: remoteMetadata['totalCards'] as int? ?? totalDownloaded,
         totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
         lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
       );

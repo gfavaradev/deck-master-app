@@ -497,8 +497,8 @@ class _CardListPageState extends State<CardListPage> {
             const SizedBox(height: 16),
             Text(
               widget.albumId != null
-                  ? 'Nessuna carta in questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
-                  : 'Nessuna carta trovata.\nUsa il Catalogo per aggiungere carte.',
+                  ? 'Non hai ancora aggiunto carte a questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
+                  : 'Non hai ancora aggiunto carte.\nUsa il Catalogo per aggiungere carte.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.textHint),
             ),
