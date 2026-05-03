@@ -107,13 +107,17 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
           tabs: _collections.map((c) => Tab(text: c['name'] as String)).toList(),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: _collections.map((c) => _CollectionSetsRarities(
-          collectionKey: c['key'] as String,
-          langs: List<String>.from(c['langs'] as List),
-          db: _db,
-        )).toList(),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: TabBarView(
+          controller: _tabController,
+          children: _collections.map((c) => _CollectionSetsRarities(
+            collectionKey: c['key'] as String,
+            langs: List<String>.from(c['langs'] as List),
+            db: _db,
+          )).toList(),
+        ),
       ),
     );
   }

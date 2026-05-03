@@ -106,21 +106,25 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 900),
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildList(_allCards),
-                    _buildList(_ownedCards),
-                    _buildList(_missingCards),
-                  ],
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildList(_allCards),
+                      _buildList(_ownedCards),
+                      _buildList(_missingCards),
+                    ],
                 ),
               ),
             ),
+      ),
     );
   }
 

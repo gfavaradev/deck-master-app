@@ -64,27 +64,31 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _buildFilterChips(),
-          const Divider(height: 1),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _users.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.people_outline, size: 64, color: Colors.grey),
-                            SizedBox(height: 16),
-                            Text('Nessun utente trovato', style: TextStyle(color: Colors.grey)),
-                          ],
-                        ),
-                      )
-                    : _buildUsersList(),
-          ),
-        ],
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Column(
+          children: [
+            _buildFilterChips(),
+            const Divider(height: 1),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _users.isEmpty
+                      ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.people_outline, size: 64, color: Colors.grey),
+                              SizedBox(height: 16),
+                              Text('Nessun utente trovato', style: TextStyle(color: Colors.grey)),
+                            ],
+                          ),
+                        )
+                      : _buildUsersList(),
+            ),
+          ],
+        ),
       ),
     );
   }

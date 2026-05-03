@@ -130,76 +130,80 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // Base gradient
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [AppColors.bgDark, Color(0xFF121526), AppColors.bgMedium],
-                stops: [0.0, 0.55, 1.0],
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Stack(
+          children: [
+            // Base gradient
+            Container(
+              width: double.infinity,
+              height: double.infinity,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [AppColors.bgDark, Color(0xFF121526), AppColors.bgMedium],
+                  stops: [0.0, 0.55, 1.0],
+                ),
               ),
             ),
-          ),
-          // Glow blu/viola in alto (dietro il logo)
-          Positioned(
-            top: -70,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                width: 340,
-                height: 340,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [AppColors.glowBlue, Color(0x224D7FFF), Colors.transparent],
-                    stops: [0.0, 0.5, 1.0],
+            // Glow blu/viola in alto (dietro il logo)
+            Positioned(
+              top: -70,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  width: 340,
+                  height: 340,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [AppColors.glowBlue, Color(0x224D7FFF), Colors.transparent],
+                      stops: [0.0, 0.5, 1.0],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          // Glow viola a sinistra (metà pagina)
-          Positioned(
-            top: 220,
-            left: -55,
-            child: Container(
-              width: 190,
-              height: 190,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [AppColors.glowPurple, Colors.transparent],
+            // Glow viola a sinistra (metà pagina)
+            Positioned(
+              top: 220,
+              left: -55,
+              child: Container(
+                width: 190,
+                height: 190,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [AppColors.glowPurple, Colors.transparent],
+                  ),
                 ),
               ),
             ),
-          ),
-          // Glow dorato in basso a destra
-          Positioned(
-            bottom: -60,
-            right: -60,
-            child: Container(
-              width: 230,
-              height: 230,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [AppColors.glowGold, Colors.transparent],
+            // Glow dorato in basso a destra
+            Positioned(
+              bottom: -60,
+              right: -60,
+              child: Container(
+                width: 230,
+                height: 230,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [AppColors.glowGold, Colors.transparent],
+                  ),
                 ),
               ),
             ),
-          ),
-          // Contenuto
-          SizedBox(
-            width: double.infinity,
-            child: _isSocialOnly ? _buildSocialOnlyLayout() : _buildFullLayout(),
-          ),
-        ],
+            // Contenuto
+            SizedBox(
+              width: double.infinity,
+              child: _isSocialOnly ? _buildSocialOnlyLayout() : _buildFullLayout(),
+            ),
+          ],
+        )
       ),
     );
   }
@@ -207,46 +211,45 @@ class _LoginPageState extends State<LoginPage> {
   // ─── Layout solo social (Android / iOS) ────────────────────────────────────
 
   Widget _buildSocialOnlyLayout() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 30),
-        child: Column(
-          children: [
-            const Spacer(flex: 2),
-            Image.asset('assets/icon/dm_logo_no_white.png', height: 160),
-            const SizedBox(height: 16),
-            ShaderMask(
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [AppColors.gold, AppColors.blue, AppColors.purple],
-                stops: [0.0, 0.55, 1.0],
-              ).createShader(bounds),
-              child: Text(
-                'Deck Master',
-                style: GoogleFonts.poppins(
-                  fontSize: 38,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-            Text(
-              'La tua collezione di carte',
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 30),
+      child: Column(
+        children: [
+          const Spacer(flex: 2),
+          Image.asset('assets/icon/dm_logo_no_white.png', height: 160),
+          const SizedBox(height: 16),
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [AppColors.gold, AppColors.blue, AppColors.purple],
+              stops: [0.0, 0.55, 1.0],
+            ).createShader(bounds),
+            child: Text(
+              'Deck Master',
               style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.white70,
+                fontSize: 38,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
-            const Spacer(flex: 2),
-            Text(
-              'Accedi per continuare',
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                color: Colors.white54,
-              ),
+          ),
+          Text(
+            'La tua collezione di carte',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: Colors.white70,
             ),
-            const SizedBox(height: 16),
-            if (_isLoading)
-              const CircularProgressIndicator(color: AppColors.gold)
+          ),
+          const Spacer(flex: 2),
+          Text(
+            'Accedi per continuare',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: Colors.white54,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_isLoading)
+            const CircularProgressIndicator(color: AppColors.gold)
             else
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -265,155 +268,157 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 24),
           ],
         ),
-      ),
     );
   }
 
   // ─── Layout completo con email/password (Web / Desktop) ────────────────────
 
   Widget _buildFullLayout() {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 30),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const SizedBox(height: 100),
-            Image.asset('assets/icon/dm_logo_no_white.png', height: 170),
-            const SizedBox(height: 20),
-            ShaderMask(
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [AppColors.gold, AppColors.blue, AppColors.purple],
-                stops: [0.0, 0.55, 1.0],
-              ).createShader(bounds),
-              child: Text(
-                'Deck Master',
-                style: GoogleFonts.poppins(
-                  fontSize: 40,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(height: 100),
+              Image.asset('assets/icon/dm_logo_no_white.png', height: 170),
+              const SizedBox(height: 20),
+              ShaderMask(
+                shaderCallback: (bounds) => const LinearGradient(
+                  colors: [AppColors.gold, AppColors.blue, AppColors.purple],
+                  stops: [0.0, 0.55, 1.0],
+                ).createShader(bounds),
+                child: Text(
+                  'Deck Master',
+                  style: GoogleFonts.poppins(
+                    fontSize: 40,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Accedi per continuare',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.white70,
+              const SizedBox(height: 8),
+              Text(
+                'Accedi per continuare',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
               ),
-            ),
-            const SizedBox(height: 42),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    _isLogin ? 'Accedi' : 'Registrati',
-                    style: GoogleFonts.poppins(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade900,
+              const SizedBox(height: 42),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
                     ),
-                  ),
-                  const SizedBox(height: 25),
-                  TextField(
-                    controller: _emailController,
-                    decoration: InputDecoration(
-                      hintText: 'Email',
-                      prefixIcon: const Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      _isLogin ? 'Accedi' : 'Registrati',
+                      style: GoogleFonts.poppins(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade900,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 15),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      hintText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                    const SizedBox(height: 25),
+                    TextField(
+                      controller: _emailController,
+                      decoration: InputDecoration(
+                        hintText: 'Email',
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 25),
-                  if (_isLoading)
-                    const CircularProgressIndicator()
-                  else
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _emailAuth,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade900,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        hintText: 'Password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 25),
+                    if (_isLoading)
+                      const CircularProgressIndicator()
+                    else
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: _emailAuth,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade900,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            _isLogin ? 'ACCEDI' : 'REGISTRATI',
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        child: Text(
-                          _isLogin ? 'ACCEDI' : 'REGISTRATI',
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                        ),
+                      ),
+                    TextButton(
+                      onPressed: () => setState(() => _isLogin = !_isLogin),
+                      child: Text(
+                        _isLogin
+                            ? 'Non hai un account? Registrati'
+                            : 'Hai già un account? Accedi',
+                        style: TextStyle(color: Colors.blue.shade900),
                       ),
                     ),
-                  TextButton(
-                    onPressed: () => setState(() => _isLogin = !_isLogin),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 30),
+              Row(
+                children: [
+                  const Expanded(child: Divider(color: Colors.white70)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
-                      _isLogin
-                          ? 'Non hai un account? Registrati'
-                          : 'Hai già un account? Accedi',
-                      style: TextStyle(color: Colors.blue.shade900),
+                      'Oppure continua con',
+                      style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
                     ),
                   ),
+                  const Expanded(child: Divider(color: Colors.white70)),
                 ],
               ),
-            ),
-            const SizedBox(height: 30),
-            Row(
-              children: [
-                const Expanded(child: Divider(color: Colors.white70)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Text(
-                    'Oppure continua con',
-                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+              const SizedBox(height: 25),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildSocialButton(
+                    svgAsset: 'assets/icon/google.svg',
+                    onPressed: () => _handleSignIn(_authService.signInWithGoogle),
                   ),
-                ),
-                const Expanded(child: Divider(color: Colors.white70)),
-              ],
-            ),
-            const SizedBox(height: 25),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildSocialButton(
-                  svgAsset: 'assets/icon/google.svg',
-                  onPressed: () => _handleSignIn(_authService.signInWithGoogle),
-                ),
-                if (_showOfflineButton) ...[
-                  const SizedBox(width: 24),
-                  _buildOfflineButton(),
+                  if (_showOfflineButton) ...[
+                    const SizedBox(width: 24),
+                    _buildOfflineButton(),
+                  ],
                 ],
-              ],
-            ),
-            const SizedBox(height: 50),
-          ],
+              ),
+              const SizedBox(height: 50),
+            ],
+          ),
         ),
       ),
     );

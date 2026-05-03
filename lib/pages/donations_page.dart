@@ -81,13 +81,16 @@ class _DonationsPageState extends State<DonationsPage> {
           child: Container(height: 1, color: AppColors.gold.withValues(alpha: 0.2)),
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
-          : RefreshIndicator(
-              onRefresh: _load,
-              color: AppColors.gold,
-              child: ListView(
-                padding: const EdgeInsets.all(20),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+            : RefreshIndicator(
+                onRefresh: _load,
+                color: AppColors.gold,
+                child: ListView(
+                  padding: const EdgeInsets.all(20),
                 children: [
                   _buildCurrentTier(),
                   const SizedBox(height: 24),
@@ -105,6 +108,7 @@ class _DonationsPageState extends State<DonationsPage> {
                 ],
               ),
             ),
+      ),
     );
   }
 

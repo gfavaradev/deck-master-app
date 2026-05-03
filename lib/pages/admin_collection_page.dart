@@ -339,65 +339,68 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
           ),
         ],
       ),
-      body: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (_loadProgress != null)
-                    SizedBox(
-                      width: 240,
-                      child: LinearProgressIndicator(value: _loadProgress),
-                    )
-                  else
-                    const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(_loadStatus, style: const TextStyle(color: AppColors.textSecondary)),
-                ],
-              ),
-            )
-          : Column(
-              children: [
-                // Search bar
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Cerca per nome, ID o archetipo...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                _filterCards('');
-                              },
-                            )
-                          : null,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onChanged: _filterCards,
-                  ),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: _isLoading
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (_loadProgress != null)
+                      SizedBox(
+                        width: 240,
+                        child: LinearProgressIndicator(value: _loadProgress),
+                      )
+                    else
+                      const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(_loadStatus, style: const TextStyle(color: AppColors.textSecondary)),
+                  ],
                 ),
-                // Count
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Row(
-                    children: [
-                      Text(
-                        '${_filteredCards.length} / ${_allCards.length} carte',
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              )
+            : Column(
+                children: [
+                  // Search bar
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Cerca per nome, ID o archetipo...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _filterCards('');
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      if (_pendingChanges.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.deepPurple.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
+                      onChanged: _filterCards,
+                    ),
+                  ),
+                  // Count
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Row(
+                      children: [
+                        Text(
+                          '${_filteredCards.length} / ${_allCards.length} carte',
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                        ),
+                        if (_pendingChanges.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
                             '${_pendingChanges.length} modifiche in attesa',
                             style: const TextStyle(color: Colors.deepPurple, fontSize: 12),
                           ),
@@ -458,6 +461,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                 ),
               ],
             ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addCard,
         icon: const Icon(Icons.add),

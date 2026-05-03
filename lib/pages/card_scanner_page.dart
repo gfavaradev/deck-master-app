@@ -132,14 +132,18 @@ class _CardScannerPageState extends State<CardScannerPage> {
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: switch (_state) {
-          _ScanState.idle => _buildIdle(),
-          _ScanState.scanning => _buildScanning(),
-          _ScanState.found => _buildFound(),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: switch (_state) {
+            _ScanState.idle => _buildIdle(),
+            _ScanState.scanning => _buildScanning(),
+            _ScanState.found => _buildFound(),
           _ScanState.notFound => _buildNotFound(),
         },
+      ),
       ),
     );
   }

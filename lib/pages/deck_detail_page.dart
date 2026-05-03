@@ -159,15 +159,19 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
           child: Container(height: 1, color: AppColors.divider),
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Expanded(child: _buildDeckSection()),
-                Container(height: 0.5, color: AppColors.divider),
-                Expanded(child: _buildOwnedSection()),
-              ],
-            ),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  Expanded(child: _buildDeckSection()),
+                  Container(height: 0.5, color: AppColors.divider),
+                  Expanded(child: _buildOwnedSection()),
+                ],
+              ),
+      ),
     );
   }
 

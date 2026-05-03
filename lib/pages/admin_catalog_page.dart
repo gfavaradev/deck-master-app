@@ -99,18 +99,22 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _buildSearchBar(),
-          if (_pendingChanges.isNotEmpty) _buildPendingChangesBanner(),
-          Expanded(
-            child: _isSearching
-                ? const Center(child: CircularProgressIndicator())
-                : _searchResults.isEmpty
-                    ? _buildEmptyState()
-                    : _buildSearchResults(),
-          ),
-        ],
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Column(
+          children: [
+            _buildSearchBar(),
+            if (_pendingChanges.isNotEmpty) _buildPendingChangesBanner(),
+            Expanded(
+              child: _isSearching
+                  ? const Center(child: CircularProgressIndicator())
+                  : _searchResults.isEmpty
+                      ? _buildEmptyState()
+                      : _buildSearchResults(),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddCardDialog,

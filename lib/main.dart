@@ -29,12 +29,14 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // AppCheck non blocca l'avvio — si attiva in background (solo su mobile)
-  if (!kIsWeb) {
+  // AppCheck: in debug non lo attiviamo per evitare che blocchi Firestore su
+  // dispositivi nuovi il cui debug token non è ancora registrato in Firebase Console.
+  // In release usa Play Integrity per verificare l'autenticità dell'app.
+  if (!kIsWeb && !kDebugMode) {
     FirebaseAppCheck.instance.activate(
-      providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+      providerAndroid: const AndroidPlayIntegrityProvider(),
       providerApple: const AppleDebugProvider(),
-    );
+    ).catchError((_) {});
   }
 
   // Disabilita la persistence nativa di Firestore (usiamo SQLite come cache locale)

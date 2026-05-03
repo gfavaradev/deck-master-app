@@ -275,51 +275,55 @@ class _SetCompletionPageState extends State<SetCompletionPage>
                 ],
               ),
       ),
-      body: Column(
-        children: [
-          if (!_isLoading && _allSets.isNotEmpty) _buildSummaryCard(),
-          if (!_isLoading && _allSets.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Cerca espansione...',
-                  prefixIcon: const Icon(Icons.search),
-                  isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Column(
+          children: [
+            if (!_isLoading && _allSets.isNotEmpty) _buildSummaryCard(),
+            if (!_isLoading && _allSets.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Cerca espansione...',
+                    prefixIcon: const Icon(Icons.search),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onChanged: (v) => setState(() => _query = v.toLowerCase()),
                 ),
-                onChanged: (v) => setState(() => _query = v.toLowerCase()),
               ),
-            ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _allSets.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _allSets.isEmpty
+                      ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.inventory_2_outlined, size: 64, color: AppColors.textHint),
+                              SizedBox(height: 16),
+                              Text(
+                                'Catalogo non ancora scaricato.\nScarica il catalogo dalle Impostazioni.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: AppColors.textHint),
+                              ),
+                            ],
+                          ),
+                        )
+                      : TabBarView(
+                          controller: _tabController,
                           children: [
-                            Icon(Icons.inventory_2_outlined, size: 64, color: AppColors.textHint),
-                            SizedBox(height: 16),
-                            Text(
-                              'Catalogo non ancora scaricato.\nScarica il catalogo dalle Impostazioni.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: AppColors.textHint),
-                            ),
+                            _buildList(_inProgress, 'Nessuna espansione in corso.'),
+                            _buildList(_completed, 'Nessuna espansione completata.'),
+                            _buildList(_available, 'Nessuna espansione disponibile.'),
                           ],
                         ),
-                      )
-                    : TabBarView(
-                        controller: _tabController,
-                        children: [
-                          _buildList(_inProgress, 'Nessuna espansione in corso.'),
-                          _buildList(_completed, 'Nessuna espansione completata.'),
-                          _buildList(_available, 'Nessuna espansione disponibile.'),
-                        ],
-                      ),
           ),
         ],
+      ),
       ),
     );
   }

@@ -114,10 +114,13 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
-        child: Column(
-          children: [
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
+          child: Column(
+            children: [
             _buildHeader(),
             const SizedBox(height: 32),
             _buildFeatures(),
@@ -131,6 +134,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
             _buildFooter(),
           ],
         ),
+      ),
       ),
     );
   }

@@ -376,7 +376,9 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Container(height: 1, color: AppColors.divider),
         ),
       ),
-      body: ListView(
+      body: SafeArea(
+        top: false,
+        child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 20),
         children: [
           _buildUserSection(),
@@ -399,7 +401,8 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildDangerSection(),
           const SizedBox(height: 32),
         ],
-      ),
+        ), // ListView
+      ), // SafeArea
     );
   }
 

@@ -22,6 +22,8 @@ class SyncService {
   bool _isSyncing = false;
   DateTime? _lastSyncTime;
   static const _syncCooldown = Duration(hours: 6);
+  static const _priceSyncCooldown = Duration(hours: 1);
+  static const _lastPriceSyncKey = 'sync_last_price_sync_at';
   static const _hasRemoteDataPrefix = 'sync_has_remote_';
 
   // Cache locale: una volta che sappiamo che il remoto ha dati, rimane vero per sempre
@@ -318,11 +320,12 @@ class SyncService {
         final localSyncedAt = localSyncedStr != null ? DateTime.tryParse(localSyncedStr) : null;
 
         if (localSyncedAt == null || remoteSyncedAt.isAfter(localSyncedAt)) {
-          final prices = await _firestoreService
-              .fetchCardtraderPrices(catalog)
-              .timeout(const Duration(seconds: 20), onTimeout: () => []);
-          if (prices.isNotEmpty) {
-            await _dbHelper.upsertCardtraderPrices(prices);
+          // Process one chunk at a time to avoid loading all prices into memory
+          final ok = await _firestoreService.streamCardtraderPrices(
+            catalog,
+            (rows) => _dbHelper.upsertCardtraderPrices(rows),
+          );
+          if (ok) {
             updated = await _dbHelper.syncCatalogPricesFromCardtrader(catalog);
             await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
           }
@@ -363,13 +366,25 @@ class SyncService {
     }
 
     try {
-      await Future.wait([
-        syncOne('yugioh'),
-        syncOne('pokemon'),
-        syncOne('onepiece'),
-      ]);
+      for (final catalog in ['yugioh', 'pokemon', 'onepiece']) {
+        await syncOne(catalog);
+      }
     } catch (e) { // ignore: empty_catches
     }
+  }
+
+  // Price-only sync: called when within the 6h main cooldown but 1h price
+  // cooldown has expired. Cheap (3 Firestore timestamp reads, data only if newer).
+  Future<void> _maybeSyncPrices() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastStr = prefs.getString(_lastPriceSyncKey);
+    final lastPriceSync = lastStr != null ? DateTime.tryParse(lastStr) : null;
+    if (lastPriceSync != null &&
+        DateTime.now().difference(lastPriceSync) < _priceSyncCooldown) { return; }
+    try {
+      await _syncCardtraderPrices();
+      await prefs.setString(_lastPriceSyncKey, DateTime.now().toIso8601String());
+    } catch (_) {}
   }
 
   // ============================================================
@@ -402,7 +417,10 @@ class SyncService {
     final withinCooldown = _lastSyncTime != null &&
         DateTime.now().difference(_lastSyncTime!) < _syncCooldown;
 
-    if (!hasPending && withinCooldown) return;
+    if (!hasPending && withinCooldown) {
+      await _maybeSyncPrices();
+      return;
+    }
 
     _isSyncing = true;
     try {
@@ -451,6 +469,8 @@ class SyncService {
       final now = DateTime.now();
       _lastSyncTime = now;
       await _saveLocalLastSyncAt(now);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastPriceSyncKey, now.toIso8601String());
     } catch (e) { // ignore: empty_catches
 
     } finally {

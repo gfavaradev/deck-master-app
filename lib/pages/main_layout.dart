@@ -251,6 +251,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     final results = await Future.wait([
       _authService.isCurrentUserAdmin()
           .timeout(const Duration(seconds: 12))
+          .then<bool?>((v) => v)
           .catchError((_) => null as bool?),
       unreadNotificationCount().catchError((_) => 0),
     ]);
@@ -888,7 +889,13 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       ),
       body: Column(
         children: [
-          Expanded(child: pageBody),
+          Expanded(
+            child: SafeArea(
+              top: false,
+              bottom: true,
+              child: pageBody,
+            ),
+          ),
           if (!kIsWeb) const BannerAdWidget(),
         ],
       ),

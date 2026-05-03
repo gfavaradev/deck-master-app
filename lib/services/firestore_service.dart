@@ -46,7 +46,7 @@ class FirestoreService {
       int chunksDone,
       int chunksTotal,
     ) onBatch,
-    int batchSize = 2,
+    int batchSize = 1,
   }) async {
     final metadata = await getCatalogMetadata(catalogName);
     if (metadata == null) throw Exception('Catalog metadata not found for $catalogName');
@@ -609,6 +609,33 @@ class FirestoreService {
       return result;
     } catch (_) { // ignore: empty_catches
       return [];
+    }
+  }
+
+  // Processes price chunks one at a time via callback to avoid accumulating all
+  // data in memory simultaneously. Returns false on error.
+  Future<bool> streamCardtraderPrices(
+    String catalog,
+    Future<void> Function(List<Map<String, dynamic>> rows) onChunk,
+  ) async {
+    try {
+      final chunkDocs = await _firestore
+          .collection('cardtrader_prices')
+          .doc(catalog)
+          .collection('chunks')
+          .get()
+          .timeout(const Duration(seconds: 30));
+
+      for (final doc in chunkDocs.docs) {
+        final rows = (doc.data()['rows'] as List<dynamic>? ?? [])
+            .cast<Map<String, dynamic>>();
+        if (rows.isNotEmpty) {
+          await onChunk(rows);
+        }
+      }
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

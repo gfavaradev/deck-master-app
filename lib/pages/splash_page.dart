@@ -162,12 +162,15 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
-      body: GestureDetector(
-        onTap: _phase == _Phase.greeting ? _navigateToMain : null,
-        behavior: HitTestBehavior.opaque,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: GestureDetector(
+          onTap: _phase == _Phase.greeting ? _navigateToMain : null,
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -178,15 +181,14 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                 ),
               ),
             ),
-            SafeArea(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 500),
-                transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
-                child: _phase == _Phase.loading ? _buildLoading() : _buildGreeting(),
-              ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+              child: _phase == _Phase.loading ? _buildLoading() : _buildGreeting(),
             ),
           ],
         ),
+      ),
       ),
     );
   }

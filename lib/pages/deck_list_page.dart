@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
@@ -46,9 +47,13 @@ class _AddDeckDialogState extends State<_AddDeckDialog> {
           TextField(
             controller: _nameController,
             autofocus: true,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+              LengthLimitingTextInputFormatter(19),
+            ],
             style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
             decoration: InputDecoration(
-              hintText: 'Es. Mazzo Attacco',
+              hintText: 'Es. MazzoAttacco',
               hintStyle: const TextStyle(color: AppColors.textHint),
               errorText: _nameError,
               prefixIcon: const Icon(Icons.style_outlined, color: AppColors.blue, size: 20),
@@ -155,19 +160,22 @@ class _DeckListPageState extends State<DeckListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _decks.isEmpty
-          ? const Center(child: Text('Nessun deck creato.'))
-          : ListView.builder(
-              itemCount: _decks.length,
-              itemBuilder: (context, index) {
-                final deck = _decks[index];
-                return ListTile(
-                  leading: const Icon(Icons.deck),
-                  title: Text(deck['name']),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _deleteDeck(deck),
-                  ),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: _decks.isEmpty
+            ? const Center(child: Text('Nessun deck creato.'))
+            : ListView.builder(
+                itemCount: _decks.length,
+                itemBuilder: (context, index) {
+                  final deck = _decks[index];
+                  return ListTile(
+                    leading: const Icon(Icons.deck),
+                    title: Text(deck['name']),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _deleteDeck(deck),
+                    ),
                   onTap: () {
                     Navigator.push(
                       context,
@@ -183,6 +191,7 @@ class _DeckListPageState extends State<DeckListPage> {
                 );
               },
             ),
+      ),
       floatingActionButton: FloatingActionButton(
         heroTag: null,
         onPressed: _showAddDeckDialog,

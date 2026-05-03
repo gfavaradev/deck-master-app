@@ -36,6 +36,26 @@ class AuthService {
     }
   }
 
+  /// Tries Google Sign-In via Credential Manager (google_sign_in v7.x).
+  /// If that fails (device incompatibility, missing Play Services update, etc.)
+  /// falls back to the browser-based OAuth flow via Firebase signInWithProvider,
+  /// which works on any Android version and any signing certificate.
+  Future<UserCredential> _signInWithGoogleMobile() async {
+    try {
+      await _ensureGoogleInitialized();
+      final googleUser = await _googleSignIn.authenticate();
+      final googleAuth = googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
+      return await _auth.signInWithCredential(credential);
+    } catch (e) {
+      // Credential Manager failed — fall back to browser OAuth.
+      // This covers older Android, missing SHA-1 in device keychain, and
+      // Play Services versions that don't support the new Credential Manager API.
+      final googleProvider = GoogleAuthProvider();
+      return await _auth.signInWithProvider(googleProvider);
+    }
+  }
+
   Future<bool> isOfflineMode() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_offlineKey) ?? false;
@@ -59,12 +79,8 @@ class AuthService {
         final googleProvider = GoogleAuthProvider();
         userCredential = await _auth.signInWithProvider(googleProvider);
       } else {
-        // Mobile (Android / iOS): use GoogleSignIn package
-        await _ensureGoogleInitialized();
-        final googleUser = await _googleSignIn.authenticate();
-        final googleAuth = googleUser.authentication;
-        final credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
-        userCredential = await _auth.signInWithCredential(credential);
+        // Mobile (Android / iOS): try Credential Manager first, fall back to browser OAuth
+        userCredential = await _signInWithGoogleMobile();
       }
 
       await setOfflineMode(false);

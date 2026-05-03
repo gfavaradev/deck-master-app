@@ -73,22 +73,26 @@ class _StatsPageState extends State<StatsPage> {
       appBar: AppBar(
         title: const Text('Statistiche'),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadStats,
-              child: ListView(
-                padding: const EdgeInsets.all(16.0),
-                children: [
-                  _buildStatCard('Carte Totali', _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
-                  _buildStatCard('Carte Uniche', _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
-                  _buildStatCard('Valore Stimato', '€${(_stats?['totalValue'] as double? ?? 0.0).toStringAsFixed(2)}', Icons.euro, Colors.green),
-                  if (_collectionStats.isNotEmpty) _buildCollectionBreakdown(),
-                  if (_rarityStats.isNotEmpty) _buildRarityBreakdown(),
-                  if (widget.collectionKey != null) _buildExpansioniCard(),
-                ],
-              ),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadStats,
+                child: ListView(
+                  padding: const EdgeInsets.all(16.0),
+                  children: [
+                    _buildStatCard('Carte Totali', _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
+                    _buildStatCard('Carte Uniche', _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
+                    _buildStatCard('Valore Stimato', '€${(_stats?['totalValue'] as double? ?? 0.0).toStringAsFixed(2)}', Icons.euro, Colors.green),
+                    if (_collectionStats.isNotEmpty) _buildCollectionBreakdown(),
+                    if (_rarityStats.isNotEmpty) _buildRarityBreakdown(),
+                    if (widget.collectionKey != null) _buildExpansioniCard(),
+                  ],
+                ),
             ),
+      ),
     );
   }
 

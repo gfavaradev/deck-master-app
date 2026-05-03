@@ -152,12 +152,15 @@ class _ProfilePageState extends State<ProfilePage> {
           child: Container(height: 1, color: AppColors.gold.withValues(alpha: 0.2)),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        children: [
-          // ── Avatar con bordo tier e badge livello ──────────────────────────
-          Center(
-            child: Stack(
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          children: [
+            // ── Avatar con bordo tier e badge livello ──────────────────────────
+            Center(
+              child: Stack(
               clipBehavior: Clip.none,
               children: [
                 DonationAvatarBorder(
@@ -283,6 +286,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

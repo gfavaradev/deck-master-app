@@ -382,16 +382,25 @@ class _AddCardDialogState extends State<_AddCardDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Album ─────────────────────────────────────────────────────
-            DropdownButtonFormField<int>(
-              initialValue: selectedAlbumId,
-              decoration: const InputDecoration(labelText: 'Seleziona Album'),
-              items: widget.availableAlbums.map((album) {
-                return DropdownMenuItem<int>(
-                  value: album.id,
-                  child: Text('${album.name} (${album.currentCount}/${album.maxCapacity})'),
-                );
-              }).toList(),
-              onChanged: (val) => setState(() => selectedAlbumId = val),
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Seleziona Album',
+                isDense: true,
+                border: UnderlineInputBorder(),
+              ),
+              child: DropdownButton<int>(
+                value: selectedAlbumId,
+                isExpanded: true,
+                underline: const SizedBox.shrink(),
+                isDense: true,
+                items: widget.availableAlbums.map((album) {
+                  return DropdownMenuItem<int>(
+                    value: album.id,
+                    child: Text('${album.name} (${album.currentCount}/${album.maxCapacity})'),
+                  );
+                }).toList(),
+                onChanged: (val) => setState(() => selectedAlbumId = val),
+              ),
             ),
             const SizedBox(height: 20),
 

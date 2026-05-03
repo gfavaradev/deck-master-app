@@ -1163,41 +1163,44 @@ class _AdminProPageState extends State<AdminProPage> {
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _emailController,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Cerca per email o nickname...',
-                hintStyle: const TextStyle(color: AppColors.textHint),
-                prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
-                filled: true,
-                fillColor: AppColors.bgMedium,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                controller: _emailController,
+                style: const TextStyle(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Cerca per email o nickname...',
+                  hintStyle: const TextStyle(color: AppColors.textHint),
+                  prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+                  filled: true,
+                  fillColor: AppColors.bgMedium,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
+                onChanged: _filter,
               ),
-              onChanged: _filter,
             ),
-          ),
-          if (_loading)
-            const Expanded(child: Center(child: CircularProgressIndicator(color: AppColors.gold)))
-          else
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _load,
-                color: AppColors.gold,
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: _filtered.length > _displayLimit
-                      ? _displayLimit + 1
-                      : _filtered.length,
-                  itemBuilder: (_, i) {
-                    if (i >= _displayLimit) {
+            if (_loading)
+              const Expanded(child: Center(child: CircularProgressIndicator(color: AppColors.gold)))
+            else
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _load,
+                  color: AppColors.gold,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _filtered.length > _displayLimit
+                        ? _displayLimit + 1
+                        : _filtered.length,
+                    itemBuilder: (_, i) {
+                      if (i >= _displayLimit) {
                       // "Load more" row
                       final remaining = _filtered.length - _displayLimit;
                       return Padding(
@@ -1222,6 +1225,7 @@ class _AdminProPageState extends State<AdminProPage> {
               ),
             ),
         ],
+      ),
       ),
     );
   }

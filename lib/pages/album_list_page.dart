@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
 import '../services/sync_service.dart';
@@ -167,9 +168,13 @@ class _AlbumListPageState extends State<AlbumListPage> {
 
     final isWide = MediaQuery.of(context).size.width > 600;
     return Scaffold(
-      body: isWide
-          ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 720), child: body))
-          : body,
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: isWide
+            ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 720), child: body))
+            : body,
+      ),
       floatingActionButton: FloatingActionButton(
         heroTag: null,
         onPressed: () => _showAddAlbumDialog(),
@@ -317,9 +322,13 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
                     TextField(
                       controller: _nameController,
                       autofocus: true,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                        LengthLimitingTextInputFormatter(19),
+                      ],
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                       decoration: InputDecoration(
-                        hintText: 'Es. Collezione Base',
+                        hintText: 'Es. CollezioneBase',
                         hintStyle: const TextStyle(color: AppColors.textHint),
                         errorText: _nameError,
                         prefixIcon: const Icon(Icons.book_outlined, color: AppColors.blue, size: 20),
@@ -362,6 +371,9 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
                       controller: _capacityController,
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                       keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
                       decoration: InputDecoration(
                         hintText: '100',
                         hintStyle: const TextStyle(color: AppColors.textHint),

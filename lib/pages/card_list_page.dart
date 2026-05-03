@@ -122,9 +122,7 @@ class _CardListPageState extends State<CardListPage> {
   void _applyFilter(String query) {
     final q = query.toLowerCase();
     bool matches(CardModel card) =>
-        card.name.toLowerCase().contains(q) ||
-        card.serialNumber.toLowerCase().contains(q) ||
-        card.rarity.toLowerCase().contains(q);
+        card.serialNumber.toLowerCase().contains(q);
 
     _filteredCards = _allCards.where(matches).toList();
     _filteredDoppioniCards = _doppioniCards.where(matches).toList();

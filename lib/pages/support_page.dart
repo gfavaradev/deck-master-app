@@ -34,20 +34,23 @@ class SupportPage extends StatelessWidget {
         title: const Text('Supporto'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppColors.bgLight,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                Icon(Icons.support_agent, size: 48, color: AppColors.gold),
-                const SizedBox(height: 12),
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.bgLight,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.support_agent, size: 48, color: AppColors.gold),
+                  const SizedBox(height: 12),
                 const Text(
                   'Come possiamo aiutarti?',
                   style: TextStyle(
@@ -144,6 +147,7 @@ class SupportPage extends StatelessWidget {
           _DonateCard(),
 
         ],
+      ),
       ),
     );
   }
