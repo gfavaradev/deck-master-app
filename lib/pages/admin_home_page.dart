@@ -220,14 +220,17 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         catalog,
         'Download Catalogo da CardTrader',
         'Scarica Catalogo da CardTrader',
-        'Scarica il catalogo $catalog completo da CardTrader (blueprint + immagini) '
+        'Scarica il catalogo $catalog da CardTrader (blueprint + metadati) '
             'e sostituisce il catalogo su Firestore.\n\n'
-            'Carte aggiunte manualmente vengono preservate al prossimo publish.\n\n'
+            'Le immagini NON vengono caricate su Firebase Storage — '
+            'esegui "Migra Immagini" subito dopo.\n\n'
+            'Carte aggiunte manualmente vengono preservate.\n\n'
             'Può richiedere diversi minuti. Continuare?',
         (uid) => _service.downloadCatalogFromCardtrader(
           catalog: catalog,
           adminUid: uid,
           onProgress: _onProgress,
+          uploadImages: false,
         ),
         (r) => 'Completato! ${r['totalCards']} carte da ${r['totalExpansions']} espansioni CT.',
       );
@@ -624,16 +627,16 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         ];
       case 'onepiece':
         return [
-          _StepDef(Icons.cloud_download, 'Scarica da CardTrader', 'Catalogo + immagini da CT (raccomandato)', () => _downloadFromCardtrader('onepiece')),
+          _StepDef(Icons.cloud_download, 'Scarica Catalogo (CT)', 'Blueprint e metadati da CardTrader (senza immagini)', () => _downloadFromCardtrader('onepiece')),
           _StepDef(Icons.download_for_offline, 'Scarica da OPTCG API', 'Fonte alternativa (solo se CT non funziona)', _downloadFullOnePiece),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Ri-carica immagini su Firebase Storage', _migrateOnePieceImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini CT su Firebase Storage', _migrateOnePieceImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsOnePiece),
         ];
       case 'pokemon':
         return [
-          _StepDef(Icons.cloud_download, 'Scarica da CardTrader', 'Catalogo + immagini da CT (raccomandato)', () => _downloadFromCardtrader('pokemon')),
+          _StepDef(Icons.cloud_download, 'Scarica Catalogo (CT)', 'Blueprint e metadati da CardTrader (senza immagini)', () => _downloadFromCardtrader('pokemon')),
           _StepDef(Icons.download_for_offline, 'Scarica da pokemontcg.io', 'Fonte alternativa (solo se CT non funziona)', _downloadFullPokemon),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Ri-carica immagini su Firebase Storage', _migratePokemonImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini CT su Firebase Storage', _migratePokemonImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsPokemon),
         ];
       default:

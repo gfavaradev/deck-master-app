@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
@@ -59,8 +60,18 @@ class FirestoreService {
       final end = (start + batchSize - 1).clamp(1, totalChunks);
       // Fetch in a separate method so DocumentSnapshot objects go out of scope
       // (and become GC-eligible) before onBatch runs the heavy SQLite insert.
-      final batchCards = await _fetchChunkCards(catalogName, start, end);
+      // Retry once on timeout/network hiccup before propagating the error.
+      List<Map<String, dynamic>> batchCards;
+      try {
+        batchCards = await _fetchChunkCards(catalogName, start, end);
+      } on TimeoutException {
+        await Future.delayed(const Duration(seconds: 2));
+        batchCards = await _fetchChunkCards(catalogName, start, end);
+      }
       await onBatch(batchCards, end, totalChunks);
+      // Yield to the event loop so the GC can collect between chunks and the
+      // UI thread stays responsive during the full catalog download.
+      await Future.delayed(Duration.zero);
     }
   }
 
@@ -81,7 +92,8 @@ class FirestoreService {
             .doc(FirestoreConstants.getChunkId(i))
             .get(),
     ];
-    final docs = await Future.wait(futures);
+    final docs = await Future.wait(futures)
+        .timeout(const Duration(seconds: 30));
     final cards = <Map<String, dynamic>>[];
     for (final doc in docs) {
       if (doc.exists && doc.data() != null) {
@@ -590,66 +602,6 @@ class FirestoreService {
       'count': prices.length,
       'syncedAt': FieldValue.serverTimestamp(),
     });
-  }
-
-  Future<List<Map<String, dynamic>>> fetchCardtraderPrices(String catalog) async {
-    try {
-      final chunks = await _firestore
-          .collection('cardtrader_prices')
-          .doc(catalog)
-          .collection('chunks')
-          .get()
-          .timeout(const Duration(seconds: 30));
-
-      final result = <Map<String, dynamic>>[];
-      for (final doc in chunks.docs) {
-        final rows = doc.data()['rows'] as List<dynamic>? ?? [];
-        result.addAll(rows.cast<Map<String, dynamic>>());
-      }
-      return result;
-    } catch (_) { // ignore: empty_catches
-      return [];
-    }
-  }
-
-  // Processes price chunks one at a time via callback to avoid accumulating all
-  // data in memory simultaneously. Returns false on error.
-  Future<bool> streamCardtraderPrices(
-    String catalog,
-    Future<void> Function(List<Map<String, dynamic>> rows) onChunk,
-  ) async {
-    try {
-      final chunkDocs = await _firestore
-          .collection('cardtrader_prices')
-          .doc(catalog)
-          .collection('chunks')
-          .get()
-          .timeout(const Duration(seconds: 30));
-
-      for (final doc in chunkDocs.docs) {
-        final rows = (doc.data()['rows'] as List<dynamic>? ?? [])
-            .cast<Map<String, dynamic>>();
-        if (rows.isNotEmpty) {
-          await onChunk(rows);
-        }
-      }
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<DateTime?> getCardtraderPricesSyncedAt(String catalog) async {
-    try {
-      final doc = await _firestore
-          .collection('cardtrader_prices')
-          .doc(catalog)
-          .get()
-          .timeout(const Duration(seconds: 8));
-      final ts = doc.data()?['syncedAt'];
-      if (ts is Timestamp) return ts.toDate();
-    } catch (_) {}
-    return null;
   }
 
   /// Returns syncedAt + modifiedChunks from the catalog metadata,

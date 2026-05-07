@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'auth_service.dart';
-import 'notification_service.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
@@ -22,7 +21,7 @@ class SyncService {
   bool _isSyncing = false;
   DateTime? _lastSyncTime;
   static const _syncCooldown = Duration(hours: 6);
-  static const _priceSyncCooldown = Duration(hours: 1);
+  static const _priceSyncCooldown = Duration(hours: 24);
   static const _lastPriceSyncKey = 'sync_last_price_sync_at';
   static const _hasRemoteDataPrefix = 'sync_has_remote_';
 
@@ -297,42 +296,18 @@ class SyncService {
     }
   }
 
-  static const _catalogNames = {
-    'yugioh': 'Yu-Gi-Oh!',
-    'pokemon': 'Pokémon',
-    'onepiece': 'One Piece',
-  };
-
   Future<void> _syncCardtraderPrices() async {
     final prefs = await SharedPreferences.getInstance();
 
+    // Rispetta cooldown 24h — anche quando chiamato da pullFromCloud()
+    final lastStr = prefs.getString(_lastPriceSyncKey);
+    final lastPriceSync = lastStr != null ? DateTime.tryParse(lastStr) : null;
+    if (lastPriceSync != null &&
+        DateTime.now().difference(lastPriceSync) < _priceSyncCooldown) {
+      return;
+    }
+
     Future<void> syncOne(String catalog) async {
-      int updated = 0;
-
-      // ── Part A: raw cardtrader_prices collection ──────────────────────────
-      final remoteSyncedAt = await _firestoreService
-          .getCardtraderPricesSyncedAt(catalog)
-          .timeout(const Duration(seconds: 10), onTimeout: () => null);
-
-      if (remoteSyncedAt != null) {
-        final localKey = 'ct_prices_synced_at_$catalog';
-        final localSyncedStr = prefs.getString(localKey);
-        final localSyncedAt = localSyncedStr != null ? DateTime.tryParse(localSyncedStr) : null;
-
-        if (localSyncedAt == null || remoteSyncedAt.isAfter(localSyncedAt)) {
-          // Process one chunk at a time to avoid loading all prices into memory
-          final ok = await _firestoreService.streamCardtraderPrices(
-            catalog,
-            (rows) => _dbHelper.upsertCardtraderPrices(rows),
-          );
-          if (ok) {
-            updated = await _dbHelper.syncCatalogPricesFromCardtrader(catalog);
-            await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
-          }
-        }
-      }
-
-      // ── Part B: prezzi embedded nei chunk del catalogo ────────────────────
       try {
         final priceSyncInfo = await _firestoreService
             .getCatalogPriceSyncInfo(catalog)
@@ -342,7 +317,9 @@ class SyncService {
           final chunkIds = priceSyncInfo['modifiedChunks'] as List<String>;
           final localCatalogKey = 'ct_catalog_prices_synced_at_$catalog';
           final localCatalogSyncedStr = prefs.getString(localCatalogKey);
-          final localCatalogSyncedAt = localCatalogSyncedStr != null ? DateTime.tryParse(localCatalogSyncedStr) : null;
+          final localCatalogSyncedAt = localCatalogSyncedStr != null
+              ? DateTime.tryParse(localCatalogSyncedStr)
+              : null;
           if ((localCatalogSyncedAt == null || syncedAt.isAfter(localCatalogSyncedAt)) &&
               chunkIds.isNotEmpty) {
             await _catalogPriceUpdateListener?.call(catalog, chunkIds);
@@ -350,40 +327,22 @@ class SyncService {
           }
         }
       } catch (_) {}
-
-      // ── Notifica utente ───────────────────────────────────────────────────
-      if (updated > 0) {
-        notifyLocalChange('cards');
-        final collections = await _dbHelper.getCollections();
-        final isUnlocked = collections.any((c) => c.key == catalog && c.isUnlocked);
-        if (isUnlocked) {
-          await NotificationService().showPricesSyncedNotification(
-            collectionName: _catalogNames[catalog] ?? catalog,
-            updatedCount: updated,
-          );
-        }
-      }
     }
 
     try {
       for (final catalog in ['yugioh', 'pokemon', 'onepiece']) {
         await syncOne(catalog);
       }
+      await prefs.setString(_lastPriceSyncKey, DateTime.now().toIso8601String());
     } catch (e) { // ignore: empty_catches
     }
   }
 
-  // Price-only sync: called when within the 6h main cooldown but 1h price
-  // cooldown has expired. Cheap (3 Firestore timestamp reads, data only if newer).
+  // Price-only sync: called when within the 6h main cooldown. The 24h cooldown
+  // is handled internally by _syncCardtraderPrices().
   Future<void> _maybeSyncPrices() async {
-    final prefs = await SharedPreferences.getInstance();
-    final lastStr = prefs.getString(_lastPriceSyncKey);
-    final lastPriceSync = lastStr != null ? DateTime.tryParse(lastStr) : null;
-    if (lastPriceSync != null &&
-        DateTime.now().difference(lastPriceSync) < _priceSyncCooldown) { return; }
     try {
       await _syncCardtraderPrices();
-      await prefs.setString(_lastPriceSyncKey, DateTime.now().toIso8601String());
     } catch (_) {}
   }
 
@@ -469,8 +428,6 @@ class SyncService {
       final now = DateTime.now();
       _lastSyncTime = now;
       await _saveLocalLastSyncAt(now);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_lastPriceSyncKey, now.toIso8601String());
     } catch (e) { // ignore: empty_catches
 
     } finally {

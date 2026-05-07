@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/card_model.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
@@ -502,6 +503,8 @@ class _CardHeader extends StatelessWidget {
                               collection: card.collection,
                               info: extraInfo!),
                         ],
+                        const SizedBox(height: 10),
+                        _CardtraderLinkButton(card: card),
                       ],
                     ),
                   ),
@@ -986,6 +989,73 @@ class _DescriptionPanel extends StatelessWidget {
           color: AppColors.textSecondary,
           fontSize: 12,
           height: 1.6,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── CardTrader link button ───────────────────────────────────────────────────
+
+class _CardtraderLinkButton extends StatefulWidget {
+  final CardModel card;
+  const _CardtraderLinkButton({required this.card});
+
+  @override
+  State<_CardtraderLinkButton> createState() => _CardtraderLinkButtonState();
+}
+
+class _CardtraderLinkButtonState extends State<_CardtraderLinkButton> {
+  Uri? _url;
+
+  @override
+  void initState() {
+    super.initState();
+    final slug = _ctSlug(widget.card.collection);
+    if (slug != null) {
+      _url = Uri.parse(
+        'https://www.cardtrader.com/en/$slug/singles'
+        '?q=${Uri.encodeQueryComponent(widget.card.name)}',
+      );
+    }
+    _loadBlueprintUrl();
+  }
+
+  Future<void> _loadBlueprintUrl() async {
+    final sn = widget.card.serialNumber;
+    final exp = sn.isEmpty ? '' : sn.split('-').first.toLowerCase();
+    final prices = await CardtraderService().getAllPricesForCard(
+      catalog: widget.card.collection,
+      expansionCode: exp,
+      cardName: widget.card.name,
+      catalogId: widget.card.catalogId,
+    );
+    if (!mounted || prices.isEmpty) return;
+    final best = prices.firstWhere((p) => p.blueprintId > 0, orElse: () => prices.first);
+    if (best.blueprintId > 0) setState(() => _url = Uri.parse(best.cardtraderUrl));
+  }
+
+  static String? _ctSlug(String c) => switch (c) {
+    'yugioh'   => 'yu-gi-oh',
+    'pokemon'  => 'pokemon',
+    'onepiece' => 'one-piece',
+    _          => null,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (_url == null) return const SizedBox.shrink();
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () => launchUrl(_url!, mode: LaunchMode.externalApplication),
+        icon: const Icon(Icons.open_in_new, size: 13),
+        label: const Text('Vedi su CardTrader'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.teal,
+          side: const BorderSide(color: Colors.teal),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
     );

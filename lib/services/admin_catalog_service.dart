@@ -806,7 +806,7 @@ class AdminCatalogService {
 
   static const String _ygoprodeckApiUrl =
       'https://db.ygoprodeck.com/api/v7/cardinfo.php';
-  static const List<String> _apiLangs = ['en', 'it', 'fr', 'de', 'pt'];
+  static const List<String> _apiLangs = ['en', 'it', 'fr', 'de', 'pt', 'sp'];
 
   /// Downloads the **full** catalog from YGOPRODeck API and replaces all
   /// Firestore chunks. Admin-modified cards and existing Firebase Storage
@@ -1195,7 +1195,7 @@ class AdminCatalogService {
     final enSets = List<Map<String, dynamic>>.from(setsByLang['en'] ?? []);
     if (enSets.isEmpty) return false;
     bool changed = false;
-    for (final lang in ['it', 'fr', 'de', 'pt']) {
+    for (final lang in ['it', 'fr', 'de', 'pt', 'sp']) {
       final existingByCode = <String, Map<String, dynamic>>{};
       for (final s in List.from(setsByLang[lang] ?? [])) {
         final code = (s['set_code']?.toString() ?? '').toUpperCase();
@@ -1205,7 +1205,10 @@ class AdminCatalogService {
       for (final enSet in enSets) {
         final enCode = enSet['set_code']?.toString() ?? '';
         final localCode = _generateLocalizedSetCode(enCode, lang);
-        final targetCode = localCode ?? enCode;
+        // Skip EN codes that don't follow the YGO set-code pattern (e.g. Pokemon api_ids,
+        // One Piece serials) — generating a localised copy would be wrong/useless.
+        if (localCode == null) continue;
+        final targetCode = localCode;
         final targetUpper = targetCode.toUpperCase();
         final enUpper = enCode.toUpperCase();
         final existing =
@@ -1243,6 +1246,14 @@ class AdminCatalogService {
   Map<String, dynamic> _fillMissingSets(Map<String, dynamic> card) {
     final rawSets = card['sets'];
     final rawPrints = card['prints'];
+
+    // One Piece cards use 'prints' list with 'card_set_id' entries (not 'set_code').
+    // Converting them to a 'sets' map would destroy the print data used by insertOnepieceCards.
+    if (rawPrints is List && rawPrints.isNotEmpty) {
+      final first = rawPrints.first;
+      if (first is Map && first.containsKey('card_set_id')) return card;
+    }
+
     final setsByLang = <String, List<Map<String, dynamic>>>{
       for (final l in _apiLangs) l: [],
     };
@@ -2712,6 +2723,7 @@ class AdminCatalogService {
     required String catalog,
     required String adminUid,
     required void Function(String status, double? progress) onProgress,
+    bool uploadImages = true,
   }) async {
     if (catalog != 'pokemon' && catalog != 'onepiece') {
       throw Exception('downloadCatalogFromCardtrader: solo pokemon e onepiece');
@@ -2732,12 +2744,14 @@ class AdminCatalogService {
         expansions: expansions,
         ctService: ctService,
         onProgress: onProgress,
+        uploadImages: uploadImages,
       );
     } else {
       allCards = await _buildOnepieceCatalogFromCT(
         expansions: expansions,
         ctService: ctService,
         onProgress: onProgress,
+        uploadImages: uploadImages,
       );
     }
 
@@ -2798,6 +2812,7 @@ class AdminCatalogService {
     required List<Map<String, dynamic>> expansions,
     required CardtraderService ctService,
     required void Function(String, double?) onProgress,
+    bool uploadImages = true,
   }) async {
     final allCards = <Map<String, dynamic>>[];
     final errors = <String>[];
@@ -2871,10 +2886,9 @@ class AdminCatalogService {
           if (nameEn.isEmpty) continue;
           final rarity = bpRarityFn(enBp, '');
 
-          // Upload EN image to Firebase Storage once per card
           final ctImageUrl = CardtraderService.extractBlueprintImageUrl(enBp);
           final apiId = '$expCode-$collectorNumber';
-          final storageUrl = ctImageUrl != null
+          final storageUrl = (uploadImages && ctImageUrl != null)
               ? await _uploadCardImageIfNeeded('pokemon', apiId, ctImageUrl)
               : null;
 
@@ -2906,6 +2920,7 @@ class AdminCatalogService {
             'name': nameEn,
             'catalog': 'pokemon',
             'rarity': rarity,
+            if (!uploadImages && ctImageUrl != null) 'image_url': ctImageUrl,
             'sets': setsMap,
           });
         }
@@ -2932,6 +2947,7 @@ class AdminCatalogService {
     required List<Map<String, dynamic>> expansions,
     required CardtraderService ctService,
     required void Function(String, double?) onProgress,
+    bool uploadImages = true,
   }) async {
     final allCards = <Map<String, dynamic>>[];
     final errors = <String>[];
@@ -3024,14 +3040,12 @@ class AdminCatalogService {
               if (ctImageUrl != null) break;
             }
           }
-          // Fallback immagine: CT → URL ufficiale One Piece TCG (pattern prevedibile).
-          // L'URL OPTCG viene usato se CT non fornisce immagine; viene caricato
-          // su Firebase Storage subito. Se fallisce (403/timeout), rimane come
-          // image_url esterna — la migrazione lo riproverà successivamente.
           final optcgUrl = 'https://en.onepiece-cardgame.com/images/cardlist/card/$cardSetId.png';
           final bestSourceUrl = ctImageUrl ?? optcgUrl;
-          final storageUrl = await _uploadCardImageIfNeeded(
-              'onepiece', '${expCode}_$collUpper', bestSourceUrl);
+          final storageUrl = uploadImages
+              ? await _uploadCardImageIfNeeded('onepiece', '${expCode}_$collUpper', bestSourceUrl)
+              : null;
+          final artworkUrl = storageUrl ?? bestSourceUrl;
 
           final prints = <Map<String, dynamic>>[
             {
@@ -3039,7 +3053,7 @@ class AdminCatalogService {
               'set_id': expCode,
               'set_name': expName,
               'rarity': rarity,
-              'artwork': storageUrl ?? bestSourceUrl, // URL esterno come fallback
+              'artwork': artworkUrl,
             }
           ];
           if (prints.isEmpty) continue;
@@ -3050,9 +3064,7 @@ class AdminCatalogService {
             if (jaName != nameEn) 'name_ja': jaName,
             'catalog': 'onepiece',
             'rarity': rarity,
-            // image_url card-level: usato da migrateOnepieceImagesToStorage
-            // come sorgente se artwork nei prints è ancora un URL esterno.
-            'image_url': storageUrl ?? bestSourceUrl,
+            'image_url': artworkUrl,
             'prints': prints,
           });
         }

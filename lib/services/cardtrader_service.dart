@@ -244,9 +244,6 @@ class CardtraderService {
       }
     }
 
-    // Always push prices to Firestore so other users can download them.
-    await _pushCardValuesToFirestore(catalog);
-
     onProgress('Aggiornamento prezzi catalogo locale…', null);
     final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
 
@@ -334,7 +331,16 @@ class CardtraderService {
       collectorNumber: collectorNumber,
       catalogId: catalogId,
     );
-    return rows.map(CardtraderPrice.fromMap).toList();
+    if (rows.isNotEmpty) return rows.map(CardtraderPrice.fromMap).toList();
+
+    // Fallback: read prices embedded in catalog prints tables (no CT sync needed)
+    final fallback = await _db.getCatalogPricesForCard(
+      catalog: catalog,
+      cardName: cardName,
+      catalogId: catalogId,
+      serialNumber: collectorNumber,
+    );
+    return fallback.map(CardtraderPrice.fromMap).toList();
   }
 
   /// Aggiorna i prezzi del catalogo dai prezzi CT in cache locale.
@@ -552,17 +558,6 @@ class CardtraderService {
       }
     }
     return prices;
-  }
-
-  Future<void> _pushCardValuesToFirestore(String catalog) async {
-    try {
-      final prices = await _db.getAllCardtraderPrices(catalog);
-      if (prices.isEmpty) return;
-      await FirestoreService().saveCardtraderPrices(catalog, prices);
-
-    } catch (e) { // ignore: empty_catches
-
-    }
   }
 
   // ─── Public catalog-fetch API (used by AdminCatalogService) ───────────────
