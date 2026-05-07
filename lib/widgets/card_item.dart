@@ -4,6 +4,49 @@ import '../models/card_model.dart';
 import '../theme/app_colors.dart';
 import 'op_lang_badge.dart';
 
+String? _formatSyncDate(String? isoDate) {
+  if (isoDate == null) return null;
+  final dt = DateTime.tryParse(isoDate);
+  if (dt == null) return null;
+  return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
+}
+
+Widget _buildPriceText(CardModel card, {required double fontSize}) {
+  final price = card.cardtraderValue;
+  final isStale = (card.cardtraderListingCount ?? 1) == 0;
+  final dateLabel = isStale ? _formatSyncDate(card.cardtraderSyncedAt) : null;
+
+  if (price != null && price > 0) {
+    if (isStale && dateLabel != null) {
+      return Text.rich(
+        TextSpan(children: [
+          TextSpan(
+            text: '€${price.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: fontSize,
+              color: Colors.orange.shade700,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          TextSpan(
+            text: ' ($dateLabel)',
+            style: TextStyle(fontSize: fontSize - 1, color: Colors.orange.shade700),
+          ),
+        ]),
+      );
+    }
+    return Text(
+      '€${price.toStringAsFixed(2)}',
+      style: TextStyle(
+        fontSize: fontSize,
+        color: const Color(0xFF2E7D32),
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+  return Text('N/D', style: TextStyle(fontSize: fontSize, color: AppColors.textHint));
+}
+
 void _showFullScreenImage(BuildContext context, String imageUrl) {
   showDialog<void>(
     context: context,
@@ -155,16 +198,7 @@ class CardListItem extends StatelessWidget {
                           ),
                         ),
                         const Text(' • ', style: TextStyle(fontSize: 12)),
-                        card.cardtraderValue != null && card.cardtraderValue! > 0
-                            ? Text(
-                                '€${card.cardtraderValue!.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF2E7D32),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              )
-                            : const Text('N/D', style: TextStyle(fontSize: 12)),
+                        _buildPriceText(card, fontSize: 12),
                       ],
                     ),
                   ],
@@ -326,20 +360,10 @@ class CardGridItem extends StatelessWidget {
                           text: ' • ',
                           style: TextStyle(fontSize: 8, color: AppColors.textHint),
                         ),
-                        if (card.cardtraderValue != null && card.cardtraderValue! > 0)
-                          TextSpan(
-                            text: '€${card.cardtraderValue!.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 8,
-                              color: Color(0xFF2E7D32),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          )
-                        else
-                          const TextSpan(
-                            text: 'N/D',
-                            style: TextStyle(fontSize: 8, color: AppColors.textHint),
-                          ),
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: _buildPriceText(card, fontSize: 8),
+                        ),
                       ],
                     ),
                     maxLines: 1,

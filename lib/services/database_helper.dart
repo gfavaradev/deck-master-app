@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 29,
+      version: 30,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -368,6 +368,14 @@ class DatabaseHelper {
       // market_price (colonna esistente) = prezzo JP.
       for (final col in ['market_price_en', 'market_price_fr', 'market_price_ko', 'market_price_zh']) {
         await _addColumnIfMissing(db, 'onepiece_prints', col, 'REAL');
+      }
+    }
+    if (oldVersion < 30) {
+      // Metadati sync CT per stampa: data ultimo aggiornamento e contatore annunci attivi.
+      // Usati per mostrare "prezzo storico + data" nella lista collezione.
+      for (final table in ['yugioh_prints', 'onepiece_prints', 'pokemon_prints']) {
+        await _addColumnIfMissing(db, table, 'ct_synced_at', 'TEXT');
+        await _addColumnIfMissing(db, table, 'ct_listing_count', 'INTEGER');
       }
     }
   }
@@ -1352,11 +1360,11 @@ class DatabaseHelper {
                  u.imageUrl
                ) as imageUrl,
                (SELECT CASE
-                    WHEN set_code_it = u.serialNumber THEN set_price_it
-                    WHEN set_code_fr = u.serialNumber THEN set_price_fr
-                    WHEN set_code_de = u.serialNumber THEN set_price_de
-                    WHEN set_code_pt = u.serialNumber THEN set_price_pt
-                    WHEN set_code_sp = u.serialNumber THEN set_price_sp
+                    WHEN set_code_it = u.serialNumber THEN COALESCE(set_price_it, set_price)
+                    WHEN set_code_fr = u.serialNumber THEN COALESCE(set_price_fr, set_price)
+                    WHEN set_code_de = u.serialNumber THEN COALESCE(set_price_de, set_price)
+                    WHEN set_code_pt = u.serialNumber THEN COALESCE(set_price_pt, set_price)
+                    WHEN set_code_sp = u.serialNumber THEN COALESCE(set_price_sp, set_price)
                     ELSE set_price
                   END
                   FROM yugioh_prints
@@ -1364,7 +1372,19 @@ class DatabaseHelper {
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
                       OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
                       OR set_code_pt = u.serialNumber OR set_code_sp = u.serialNumber)
-                  LIMIT 1) as cardtrader_value
+                  LIMIT 1) as cardtrader_value,
+               (SELECT ct_synced_at FROM yugioh_prints
+                  WHERE card_id = CAST(u.catalogId AS INTEGER)
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber OR set_code_sp = u.serialNumber)
+                  LIMIT 1) as ct_synced_at,
+               (SELECT ct_listing_count FROM yugioh_prints
+                  WHERE card_id = CAST(u.catalogId AS INTEGER)
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber OR set_code_sp = u.serialNumber)
+                  LIMIT 1) as ct_listing_count
         FROM cards u
         LEFT JOIN yugioh_cards yc ON yc.id = CAST(u.catalogId AS INTEGER)
         LEFT JOIN albums a ON a.id = u.albumId
@@ -1397,7 +1417,9 @@ class DatabaseHelper {
                  WHEN 'ko' THEN COALESCE(op.market_price_ko, op.market_price)
                  WHEN 'zh' THEN COALESCE(op.market_price_zh, op.market_price)
                  ELSE op.market_price
-               END as cardtrader_value
+               END as cardtrader_value,
+               op.ct_synced_at,
+               op.ct_listing_count
         FROM cards u
         LEFT JOIN onepiece_cards oc ON oc.id = CAST(u.catalogId AS INTEGER)
         LEFT JOIN onepiece_prints op ON op.card_id = oc.id AND op.card_set_id = u.serialNumber
@@ -1450,8 +1472,22 @@ class DatabaseHelper {
                   END
                   FROM pokemon_prints
                   WHERE card_id = pc.id
-                    AND set_code = u.serialNumber
-                  LIMIT 1) as cardtrader_value
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1) as cardtrader_value,
+               (SELECT ct_synced_at FROM pokemon_prints
+                  WHERE card_id = pc.id
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1) as ct_synced_at,
+               (SELECT ct_listing_count FROM pokemon_prints
+                  WHERE card_id = pc.id
+                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                      OR set_code_pt = u.serialNumber)
+                  LIMIT 1) as ct_listing_count
         FROM cards u
         LEFT JOIN pokemon_cards pc ON (pc.id = CAST(u.catalogId AS INTEGER) OR pc.api_id = u.catalogId)
         LEFT JOIN albums a ON a.id = u.albumId
@@ -4136,6 +4172,32 @@ class DatabaseHelper {
           ''', [lang, lang]);
         }
 
+        // Aggiorna metadati sync CT per ogni stampa: data e stato annunci.
+        await db.rawUpdate('''
+          UPDATE yugioh_prints
+          SET ct_synced_at = (
+            SELECT MAX(cp.synced_at)
+            FROM cardtrader_prices cp
+            JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
+            WHERE cp.catalog = 'yugioh'
+              AND cp.expansion_code = LOWER(yugioh_prints.set_id)
+              AND ${_normName('cp.card_name_en')} = ${_normName('yc.name')}
+              AND cp.min_price_any_cents IS NOT NULL
+          ),
+          ct_listing_count = COALESCE((
+            SELECT cp.listing_count
+            FROM cardtrader_prices cp
+            JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
+            WHERE cp.catalog = 'yugioh'
+              AND cp.expansion_code = LOWER(yugioh_prints.set_id)
+              AND ${_normName('cp.card_name_en')} = ${_normName('yc.name')}
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.listing_count > 0) DESC, cp.min_price_any_cents ASC
+            LIMIT 1
+          ), 0)
+          WHERE yugioh_prints.set_id IS NOT NULL
+        ''');
+
       case 'pokemon':
         const pokeLangCols = <String, String>{
           'en': 'set_price',
@@ -4204,6 +4266,31 @@ class DatabaseHelper {
               )
           ''', [lang, lang]);
         }
+
+        // Aggiorna metadati sync CT per ogni stampa Pokémon.
+        await db.rawUpdate('''
+          UPDATE pokemon_prints
+          SET ct_synced_at = (
+            SELECT MAX(cp.synced_at)
+            FROM cardtrader_prices cp
+            JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
+            WHERE cp.catalog = 'pokemon'
+              AND cp.expansion_code = LOWER(pc.set_id)
+              AND ${_normName('cp.card_name_en')} = ${_normName('pc.name')}
+              AND cp.min_price_any_cents IS NOT NULL
+          ),
+          ct_listing_count = COALESCE((
+            SELECT cp.listing_count
+            FROM cardtrader_prices cp
+            JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
+            WHERE cp.catalog = 'pokemon'
+              AND cp.expansion_code = LOWER(pc.set_id)
+              AND ${_normName('cp.card_name_en')} = ${_normName('pc.name')}
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.listing_count > 0) DESC, cp.min_price_any_cents ASC
+            LIMIT 1
+          ), 0)
+        ''');
 
       case 'onepiece':
         const opLangCols = <String, String>{
@@ -4280,6 +4367,32 @@ class DatabaseHelper {
               )
           ''', [lang, lang]);
         }
+
+        // Aggiorna metadati sync CT per ogni stampa One Piece.
+        await db.rawUpdate('''
+          UPDATE onepiece_prints
+          SET ct_synced_at = (
+            SELECT MAX(cp.synced_at)
+            FROM cardtrader_prices cp
+            JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
+            WHERE cp.catalog = 'onepiece'
+              AND cp.expansion_code = $opExpCode
+              AND ${_normName('cp.card_name_en')} = ${_normName('oc.name')}
+              AND cp.min_price_any_cents IS NOT NULL
+          ),
+          ct_listing_count = COALESCE((
+            SELECT cp.listing_count
+            FROM cardtrader_prices cp
+            JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
+            WHERE cp.catalog = 'onepiece'
+              AND cp.expansion_code = $opExpCode
+              AND ${_normName('cp.card_name_en')} = ${_normName('oc.name')}
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.listing_count > 0) DESC, cp.min_price_any_cents ASC
+            LIMIT 1
+          ), 0)
+          WHERE onepiece_prints.card_set_id IS NOT NULL
+        ''');
     }
 
     return total;

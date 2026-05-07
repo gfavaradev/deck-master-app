@@ -13,6 +13,8 @@ class CardModel {
   final double value;
   final double? cardtraderValue;
   final String? imageUrl; // Added to simplify UI
+  final String? cardtraderSyncedAt;
+  final int? cardtraderListingCount;
 
   CardModel({
     this.id,
@@ -29,6 +31,8 @@ class CardModel {
     this.value = 0.0,
     this.cardtraderValue,
     this.imageUrl,
+    this.cardtraderSyncedAt,
+    this.cardtraderListingCount,
   });
 
   Map<String, dynamic> toMap() {
@@ -67,6 +71,8 @@ class CardModel {
       value: (map['value'] as num?)?.toDouble() ?? 0.0,
       cardtraderValue: (map['cardtrader_value'] as num?)?.toDouble(),
       imageUrl: map['imageUrl'],
+      cardtraderSyncedAt: map['ct_synced_at'] as String?,
+      cardtraderListingCount: map['ct_listing_count'] as int?,
     );
   }
 
@@ -120,6 +126,8 @@ class CardModel {
     double? value,
     double? cardtraderValue,
     String? imageUrl,
+    String? cardtraderSyncedAt,
+    int? cardtraderListingCount,
     bool resetId = false,
   }) {
     return CardModel(
@@ -137,6 +145,8 @@ class CardModel {
       value: value ?? this.value,
       cardtraderValue: cardtraderValue ?? this.cardtraderValue,
       imageUrl: imageUrl ?? this.imageUrl,
+      cardtraderSyncedAt: cardtraderSyncedAt ?? this.cardtraderSyncedAt,
+      cardtraderListingCount: cardtraderListingCount ?? this.cardtraderListingCount,
     );
   }
 }

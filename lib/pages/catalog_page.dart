@@ -362,18 +362,6 @@ class _CatalogPageState extends State<CatalogPage> {
     });
   }
 
-  static String _opNormalizeSerial(String serial) {
-    final dashIdx = serial.indexOf('-');
-    if (dashIdx < 0) return serial;
-    final afterDash = serial.substring(dashIdx + 1);
-    if (afterDash.isEmpty) return serial;
-    final first = afterDash.codeUnitAt(0);
-    if (first >= 0x30 && first <= 0x39) return serial; // JP: "OP01-001"
-    final match = RegExp(r'^[A-Za-z]{2,}(\d.*)$').firstMatch(afterDash);
-    if (match != null) return '${serial.substring(0, dashIdx + 1)}${match.group(1)!}';
-    return serial;
-  }
-
   String _getCardKey(Map<String, dynamic> card) {
     final id = card['id']?.toString() ?? '';
     final setCode = (card['localizedSetCode'] ?? card['setCode'])?.toString() ?? '';
@@ -640,12 +628,10 @@ class _CatalogPageState extends State<CatalogPage> {
                           final displayName = isYugioh
                               ? (card['localizedName'] ?? card['name'])
                               : card['name'];
-                          // Show localized set code for yugioh/pokemon; normalize OP serial
+                          // Show localized set code for yugioh/pokemon; raw card_set_id for OP
                           final displaySetCode = isYugioh || widget.collectionKey == 'pokemon'
                               ? (card['localizedSetCode'] ?? card['setCode'])
-                              : isOnePiece
-                                  ? _opNormalizeSerial((card['setCode'] as String?) ?? '')
-                                  : card['setCode'];
+                              : card['setCode'];
                           final displayRarityCode = isYugioh
                               ? (card['localizedRarityCode'] ?? card['rarityCode'])
                               : isOnePiece
