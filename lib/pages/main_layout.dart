@@ -442,6 +442,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     () async {
       final total = keys.length;
       int successCount = 0;
+      Object? lastError;
       try {
         await BackgroundDownloadService.startDownload('Ripristino catalogo');
         for (int i = 0; i < keys.length; i++) {
@@ -486,15 +487,30 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             }
           }
 
-          await switch (key) {
-            'yugioh'   => _repo.redownloadYugiohCatalog(onProgress: onProg, onSaveProgress: onSave),
-            'pokemon'  => _repo.redownloadPokemonCatalog(onProgress: onProg, onSaveProgress: onSave),
-            'onepiece' => _repo.redownloadOnepieceCatalog(onProgress: onProg, onSaveProgress: onSave),
-            _ => Future.value(),
-          };
-          successCount++;
+          try {
+            await switch (key) {
+              'yugioh'   => _repo.redownloadYugiohCatalog(onProgress: onProg, onSaveProgress: onSave),
+              'pokemon'  => _repo.redownloadPokemonCatalog(onProgress: onProg, onSaveProgress: onSave),
+              'onepiece' => _repo.redownloadOnepieceCatalog(onProgress: onProg, onSaveProgress: onSave),
+              _ => Future.value(),
+            };
+            successCount++;
+          } catch (e) {
+            lastError = e;
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Errore ripristino $name: $e'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 6),
+                ),
+              );
+            }
+          }
         }
-      } catch (_) {} finally {
+      } catch (e) {
+        lastError = e;
+      } finally {
         await BackgroundDownloadService.stopDownload();
         if (mounted) {
           setState(() {
@@ -504,11 +520,19 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             _currentDownloadingKey = null;
             _currentDownloadingIndex = 0;
             _downloadPhase = _DownloadPhase.connecting;
-            _pendingUpdates = [];
+            if (successCount > 0) _pendingUpdates = [];
           });
           if (successCount > 0) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Catalogo ripristinato con successo!'), backgroundColor: Colors.green),
+            );
+          } else if (lastError != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Ripristino fallito: $lastError'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 8),
+              ),
             );
           }
         }

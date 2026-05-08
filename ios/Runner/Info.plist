@@ -41,10 +41,17 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Deck Master usa la fotocamera per scansionare barcode delle carte e riconoscerle automaticamente.</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>Deck Master invia notifiche per aggiornamenti del catalogo e nuove carte disponibili.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Deck Master può salvare immagini nella tua libreria foto.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Deck Master usa la tua libreria foto per aggiornare l'immagine del profilo.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>fetch</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
