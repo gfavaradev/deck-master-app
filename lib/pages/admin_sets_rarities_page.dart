@@ -1,9 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/database_helper.dart';
 import '../services/firestore_service.dart';
 import '../services/admin_translation_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class AdminSetsRaritiesPage extends StatefulWidget {
   final String? initialCollection;
@@ -134,6 +135,34 @@ class _CollectionSetsRarities extends StatelessWidget {
     required this.db,
   });
 
+  // ─── Firestore save (web path) ────────────────────────────────────────────
+
+  static Future<void> _saveTranslationToFirestore({
+    required String catalogKey,
+    required String firestoreField,
+    required String oldEnName,
+    required String newEnName,
+    required Map<String, String> translations,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final metaRef = FirebaseFirestore.instance
+        .collection('${catalogKey}_catalog')
+        .doc('metadata');
+    final doc = await metaRef.get();
+    final rawMap = doc.data()?[firestoreField];
+    final current = rawMap is Map
+        ? Map<String, dynamic>.from(rawMap.map((k, v) => MapEntry(k as String, v)))
+        : <String, dynamic>{};
+    if (oldEnName != newEnName) current.remove(oldEnName);
+    if (translations.isNotEmpty) current[newEnName] = translations;
+    await metaRef.set({
+      firestoreField: current,
+      'translationsUpdatedBy': uid,
+      'translationsUpdatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   // ─── Firestore loaders (web fallback) ─────────────────────────────────────
 
   static Future<List<Map<String, dynamic>>> _loadSetsFromFirestore(
@@ -231,9 +260,14 @@ class _CollectionSetsRarities extends StatelessWidget {
                   langs: langs,
                   nameKey: 'set_name',
                   emptyMsg: 'Nessuna espansione trovata',
-                  readOnly: kIsWeb,
                   onSave: kIsWeb
-                      ? (_, a, b) async {}
+                      ? (oldEn, newEn, translations) => _saveTranslationToFirestore(
+                            catalogKey: collectionKey,
+                            firestoreField: 'setTranslations',
+                            oldEnName: oldEn,
+                            newEnName: newEn,
+                            translations: translations,
+                          )
                       : (oldEn, newEn, translations) async {
                           await db.renameSetName(collectionKey, oldEn, newEn);
                           await db.updateSetTranslations(collectionKey, newEn, translations);
@@ -247,9 +281,14 @@ class _CollectionSetsRarities extends StatelessWidget {
                   langs: langs,
                   nameKey: 'rarity',
                   emptyMsg: 'Nessuna rarità trovata',
-                  readOnly: kIsWeb,
                   onSave: kIsWeb
-                      ? (_, a, b) async {}
+                      ? (oldEn, newEn, translations) => _saveTranslationToFirestore(
+                            catalogKey: collectionKey,
+                            firestoreField: 'rarityTranslations',
+                            oldEnName: oldEn,
+                            newEnName: newEn,
+                            translations: translations,
+                          )
                       : (oldEn, newEn, translations) async {
                           await db.renameRarity(collectionKey, oldEn, newEn);
                           await db.updateRarityTranslations(collectionKey, newEn, translations);
@@ -269,7 +308,6 @@ class _DataList extends StatefulWidget {
   final List<String> langs;
   final String nameKey;
   final String emptyMsg;
-  final bool readOnly;
   final Future<void> Function(String oldEnName, String newEnName, Map<String, String> translations) onSave;
 
   const _DataList({
@@ -279,7 +317,6 @@ class _DataList extends StatefulWidget {
     required this.nameKey,
     required this.emptyMsg,
     required this.onSave,
-    this.readOnly = false,
   });
 
   @override
@@ -412,8 +449,7 @@ class _DataListState extends State<_DataList> {
                 children: [
                   if (missing.isNotEmpty)
                     const Icon(Icons.warning_amber, size: 16, color: Colors.orange),
-                  if (!widget.readOnly)
-                    IconButton(
+                  IconButton(
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       tooltip: 'Modifica traduzioni',
                       onPressed: widget.langs.isEmpty ? null : () => _openEdit(row),

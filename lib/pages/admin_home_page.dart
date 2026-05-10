@@ -368,8 +368,8 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         final ctTotal = r['ctExpansionsTotal'] as int? ?? 0;
         final localSets = r['localSets'] as int? ?? 0;
         final err = r['errors'] as int? ?? 0;
-        // Refresh coverage stats after sync completes
-        if (mounted) setState(() { _coverageStatsFuture = _db.getCardtraderCoverageStats(); });
+        // Refresh coverage stats after sync completes (mobile only — SQLite required)
+        if (mounted && !kIsWeb) setState(() { _coverageStatsFuture = _db.getCardtraderCoverageStats(); });
         return '$total blueprint in $exps/$ctTotal espansioni CT (set locali: $localSets)'
             ' · $priced con prezzo · ${r['valuesUpdated'] ?? 0} carte'
             ' · ${r['catalogUpdated'] ?? 0} catalogo'
@@ -747,7 +747,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   }
 
   Widget _buildCardtraderSyncCard() {
-    _coverageStatsFuture ??= _db.getCardtraderCoverageStats();
+    if (!kIsWeb) _coverageStatsFuture ??= _db.getCardtraderCoverageStats();
     return Card(
       elevation: 2,
       color: AppColors.bgLight,

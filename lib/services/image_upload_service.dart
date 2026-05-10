@@ -77,8 +77,9 @@ class ImageUploadService {
         ? 'catalog/$catalog/images/${safeId}_$safeCode.jpg'
         : 'catalog/$catalog/images/$safeId.jpg';
 
-    // flutter_image_compress non supporta Windows — usa i bytes originali su desktop
-    final toUpload = (defaultTargetPlatform == TargetPlatform.windows ||
+    // flutter_image_compress non supporta Windows/Linux/Web — usa i bytes originali
+    final toUpload = (kIsWeb ||
+            defaultTargetPlatform == TargetPlatform.windows ||
             defaultTargetPlatform == TargetPlatform.linux)
         ? bytes
         : await FlutterImageCompress.compressWithList(
