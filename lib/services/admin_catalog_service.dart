@@ -1303,14 +1303,21 @@ class AdminCatalogService {
 
   Future<Map<int, Map<String, dynamic>>> _getExistingCardsMap(
       String catalogCollection) async {
-    final snapshot = await _firestore
+    final metaDoc = await _firestore
         .collection(catalogCollection)
-        .doc('chunks')
-        .collection('items')
+        .doc('metadata')
         .get();
+    final totalChunks = metaDoc.exists ? (metaDoc.data()?['totalChunks'] as int? ?? 0) : 0;
     final map = <int, Map<String, dynamic>>{};
-    for (final doc in snapshot.docs) {
-      for (final raw in (doc.data()['cards'] as List? ?? [])) {
+    for (int i = 0; i < totalChunks; i++) {
+      final chunkId = 'chunk_${(i + 1).toString().padLeft(3, '0')}';
+      final doc = await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+      for (final raw in (doc.data()?['cards'] as List? ?? [])) {
         final card = Map<String, dynamic>.from(raw as Map);
         final id = card['id'];
         if (id is int) map[id] = card;
@@ -1320,14 +1327,21 @@ class AdminCatalogService {
   }
 
   Future<Set<int>> _getExistingCardIds(String catalogCollection) async {
-    final snapshot = await _firestore
+    final metaDoc = await _firestore
         .collection(catalogCollection)
-        .doc('chunks')
-        .collection('items')
+        .doc('metadata')
         .get();
+    final totalChunks = metaDoc.exists ? (metaDoc.data()?['totalChunks'] as int? ?? 0) : 0;
     final ids = <int>{};
-    for (final doc in snapshot.docs) {
-      for (final card in (doc.data()['cards'] as List? ?? [])) {
+    for (int i = 0; i < totalChunks; i++) {
+      final chunkId = 'chunk_${(i + 1).toString().padLeft(3, '0')}';
+      final doc = await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+      for (final card in (doc.data()?['cards'] as List? ?? [])) {
         final id = (card as Map)['id'];
         if (id != null) ids.add((id as num).toInt());
       }
