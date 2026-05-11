@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'pages/splash_page.dart';
 import 'theme/app_colors.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -13,6 +14,11 @@ import 'services/ad_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Disabilita il download dei font da internet: usa solo gli asset bundlati.
+  // Senza questo, google_fonts tenta di scaricare i font da fonts.gstatic.com
+  // causando eccezioni non gestite su dispositivi senza connessione o con DNS limitato.
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   // Rendering edge-to-edge: il contenuto si estende sotto status bar e nav bar.
   // Funziona sia con gesture navigation che con la barra 3 pulsanti.

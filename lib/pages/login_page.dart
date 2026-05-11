@@ -6,7 +6,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
 import 'main_layout.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -225,7 +224,7 @@ class _LoginPageState extends State<LoginPage> {
             ).createShader(bounds),
             child: Text(
               'Deck Master',
-              style: GoogleFonts.poppins(
+              style: TextStyle(fontFamily: 'Poppins',
                 fontSize: 38,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
@@ -234,7 +233,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
           Text(
             'La tua collezione di carte',
-            style: GoogleFonts.poppins(
+            style: TextStyle(fontFamily: 'Poppins',
               fontSize: 14,
               color: Colors.white70,
             ),
@@ -242,7 +241,7 @@ class _LoginPageState extends State<LoginPage> {
           const Spacer(flex: 2),
           Text(
             'Accedi per continuare',
-            style: GoogleFonts.poppins(
+            style: TextStyle(fontFamily: 'Poppins',
               fontSize: 13,
               color: Colors.white54,
             ),
@@ -292,7 +291,7 @@ class _LoginPageState extends State<LoginPage> {
                 ).createShader(bounds),
                 child: Text(
                   'Deck Master',
-                  style: GoogleFonts.poppins(
+                  style: TextStyle(fontFamily: 'Poppins',
                     fontSize: 40,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
@@ -302,7 +301,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 8),
               Text(
                 'Accedi per continuare',
-                style: GoogleFonts.poppins(
+                style: TextStyle(fontFamily: 'Poppins',
                   fontSize: 14,
                   color: Colors.white70,
                 ),
@@ -325,7 +324,7 @@ class _LoginPageState extends State<LoginPage> {
                   children: [
                     Text(
                       _isLogin ? 'Accedi' : 'Registrati',
-                      style: GoogleFonts.poppins(
+                      style: TextStyle(fontFamily: 'Poppins',
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: Colors.blue.shade900,
@@ -372,7 +371,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           child: Text(
                             _isLogin ? 'ACCEDI' : 'REGISTRATI',
-                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                            style: TextStyle(fontFamily: 'Poppins',fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
@@ -396,7 +395,7 @@ class _LoginPageState extends State<LoginPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
                       'Oppure continua con',
-                      style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                      style: TextStyle(fontFamily: 'Poppins',color: Colors.white70, fontSize: 12),
                     ),
                   ),
                   const Expanded(child: Divider(color: Colors.white70)),

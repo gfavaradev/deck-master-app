@@ -13,9 +13,12 @@ import '../models/album_model.dart';
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
 
-// Top-level function so compute() can spawn it in a background isolate.
+// Top-level functions so compute() can spawn them in a background isolate.
 List<Map<String, dynamic>> _normalizeYugiohBatch(List<Map<String, dynamic>> cards) =>
     cards.map(DataRepository._normalizeCardForSQLite).toList();
+
+List<Map<String, dynamic>> _normalizePokemonBatch(List<Map<String, dynamic>> cards) =>
+    cards.map(DataRepository._normalizePokemonCardForSQLite).toList();
 
 /// Facade over DatabaseHelper + FirestoreService.
 /// All pages should use this instead of DatabaseHelper directly.
@@ -339,6 +342,7 @@ class DataRepository {
       CatalogConstants.yugioh,
       onBatch: (cards, chunksDone, chunksTotal) async {
         onProgress?.call(chunksDone, chunksTotal);
+        await Future.delayed(Duration.zero); // yield UI frame before heavy work
         final normalized = await compute(_normalizeYugiohBatch, cards);
         await _dbHelper.insertYugiohCards(normalized);
         totalDownloaded += cards.length;
@@ -643,7 +647,7 @@ class DataRepository {
         if (collection == 'yugioh' &&
             (imageUrl == null ||
              imageUrl.isEmpty ||
-             imageUrl.contains('firebasestorage'))) {
+             imageUrl.contains('cloudinary.com'))) {
           final cid = c['catalogId']?.toString();
           if (cid != null && cid.isNotEmpty) {
             imageUrl = 'https://images.ygoprodeck.com/images/cards/$cid.jpg';
@@ -1536,6 +1540,7 @@ class DataRepository {
       CatalogConstants.onepiece,
       onBatch: (cards, chunksDone, chunksTotal) async {
         onProgress?.call(chunksDone, chunksTotal);
+        await Future.delayed(Duration.zero); // yield UI frame before heavy work
         await _dbHelper.insertOnepieceCards(cards);
         totalDownloaded += cards.length;
         onSaveProgress?.call(chunksDone / chunksTotal);
@@ -1791,7 +1796,8 @@ class DataRepository {
       CatalogConstants.pokemon,
       onBatch: (cards, chunksDone, chunksTotal) async {
         onProgress?.call(chunksDone, chunksTotal);
-        final normalized = cards.map(_normalizePokemonCardForSQLite).toList();
+        await Future.delayed(Duration.zero); // yield UI frame before heavy work
+        final normalized = await compute(_normalizePokemonBatch, cards);
         await _dbHelper.insertPokemonCards(normalized);
         totalDownloaded += cards.length;
         onSaveProgress?.call(chunksDone / chunksTotal);

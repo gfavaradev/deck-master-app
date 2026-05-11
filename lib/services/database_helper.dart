@@ -2198,6 +2198,7 @@ class DatabaseHelper {
         await batch.commit(noResult: true);
       });
 
+      await Future.delayed(Duration.zero); // yield UI frame between batches
       onProgress?.call(end / total);
     }
   }
@@ -2534,6 +2535,7 @@ class DatabaseHelper {
         await batch.commit(noResult: true);
       });
 
+      await Future.delayed(Duration.zero); // yield UI frame between batches
       onProgress?.call(end / total);
     }
   }
@@ -3469,17 +3471,17 @@ class DatabaseHelper {
             );
           }
 
-          // Solo URL Firebase Storage sono accettati come immagini valide
-          bool isFbStorage(String? url) =>
-              url != null && url.contains('firebasestorage');
+          // Solo URL Cloudinary sono accettate come immagini valide
+          bool isCloudinaryUrl(String? url) =>
+              url != null && url.contains('cloudinary.com');
           final cardImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
-          final cardArtwork = isFbStorage(cardImageUrl) ? cardImageUrl : null;
+          final cardArtwork = isCloudinaryUrl(cardImageUrl) ? cardImageUrl : null;
           for (final p in prints) {
             final print = Map<String, dynamic>.from(p as Map);
             final rawArtwork = print['artwork'] as String? ?? cardImageUrl;
-            final artwork = isFbStorage(rawArtwork) ? rawArtwork : cardArtwork;
+            final artwork = isCloudinaryUrl(rawArtwork) ? rawArtwork : cardArtwork;
             // ON CONFLICT: aggiorna tutti i campi eccetto artwork — se il nuovo
-            // valore non è Firebase Storage, preserva quello già in SQLite.
+            // valore non è Cloudinary, preserva quello già in SQLite.
             await txn.rawInsert('''
               INSERT INTO onepiece_prints
                 (card_id, card_set_id, set_id, set_name, rarity,
@@ -3499,7 +3501,7 @@ class DatabaseHelper {
                 market_price_ko  = COALESCE(excluded.market_price_ko, market_price_ko),
                 market_price_zh  = COALESCE(excluded.market_price_zh, market_price_zh),
                 artwork          = COALESCE(
-                  CASE WHEN excluded.artwork LIKE '%firebasestorage%'
+                  CASE WHEN excluded.artwork LIKE '%cloudinary.com%'
                        THEN excluded.artwork END,
                   artwork
                 ),
@@ -3523,6 +3525,7 @@ class DatabaseHelper {
         }
       });
 
+      await Future.delayed(Duration.zero); // yield UI frame between batches
       processed += batch.length;
       onProgress?.call(processed / cards.length);
     }

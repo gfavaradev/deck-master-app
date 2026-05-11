@@ -1,20 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'cardtrader_service.dart' show CardtraderService;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:deck_master/models/pending_catalog_change.dart';
 import 'package:deck_master/services/database_helper.dart';
+import 'cloudinary_service.dart';
 
 /// Service for managing admin catalog operations
 class AdminCatalogService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
   static const String _pendingChangesKey = 'admin_pending_catalog_changes';
@@ -24,52 +21,47 @@ class AdminCatalogService {
   // Image Storage
   // ============================================================
 
-  /// Uploads a card image to Firebase Storage if not already there.
-  /// [catalog] determines the storage path (e.g. 'yugioh', 'pokemon', 'onepiece').
+  /// Uploads a card image to Cloudinary.
+  /// [catalog] determines the public_id prefix (e.g. 'yugioh', 'pokemon', 'onepiece').
   /// [cardId] can be an int (YuGiOh) or String (Pokémon api_id).
-  /// Returns the Firebase Storage download URL, or null on failure.
+  /// Returns the Cloudinary secure URL, or null on failure.
   Future<String?> _uploadCardImageIfNeeded(String catalog, dynamic cardId, String? sourceUrl) async {
     if (sourceUrl == null || sourceUrl.isEmpty) return null;
     final safeId = cardId.toString().replaceAll(RegExp(r'[/\s]'), '_');
-    final ref = _storage.ref('catalog/$catalog/images/$safeId.jpg');
     try {
-      return await ref.getDownloadURL(); // already uploaded
-    } catch (_) { // ignore: empty_catches
-      // Not in storage yet — download from source and upload
-      try {
-        // User-Agent obbligatorio per molti CDN (OPTCG, CT) che bloccano
-        // richieste senza browser header (403/404 silente).
-        final headers = {
-          'User-Agent': 'Mozilla/5.0 (compatible; DeckMasterBot/1.0)',
-          'Accept': 'image/webp,image/png,image/*,*/*;q=0.8',
-        };
+      // User-Agent obbligatorio per molti CDN (OPTCG, CT) che bloccano
+      // richieste senza browser header (403/404 silente).
+      final headers = {
+        'User-Agent': 'Mozilla/5.0 (compatible; DeckMasterBot/1.0)',
+        'Accept': 'image/webp,image/png,image/*,*/*;q=0.8',
+      };
 
-        String fetchUrl = sourceUrl;
-        var response = await http.get(Uri.parse(fetchUrl), headers: headers);
+      String fetchUrl = sourceUrl;
+      var response = await http.get(Uri.parse(fetchUrl), headers: headers);
 
-        // Alcuni CDN OPTCG servono .webp → fallback .png
-        if (response.statusCode == 404 && fetchUrl.endsWith('/high.webp')) {
-          fetchUrl = fetchUrl.replaceFirst('/high.webp', '/high.png');
-          response = await http.get(Uri.parse(fetchUrl), headers: headers);
-        }
+      // Alcuni CDN OPTCG servono .webp → fallback .png
+      if (response.statusCode == 404 && fetchUrl.endsWith('/high.webp')) {
+        fetchUrl = fetchUrl.replaceFirst('/high.webp', '/high.png');
+        response = await http.get(Uri.parse(fetchUrl), headers: headers);
+      }
 
-        if (response.statusCode != 200) {
-          debugPrint('[ImageUpload] HTTP ${response.statusCode} per $fetchUrl (id=$safeId)');
-          return null;
-        }
-        if (response.bodyBytes.isEmpty) {
-          debugPrint('[ImageUpload] Body vuoto per $fetchUrl (id=$safeId)');
-          return null;
-        }
-
-        final compressed = await _compressCardImage(response.bodyBytes);
-        await ref.putData(compressed, SettableMetadata(contentType: 'image/jpeg'));
-        final url = await ref.getDownloadURL();
-        return url;
-      } catch (e) {
-        debugPrint('[ImageUpload] Errore per $sourceUrl (id=$safeId): $e');
+      if (response.statusCode != 200) {
+        debugPrint('[ImageUpload] HTTP ${response.statusCode} per $fetchUrl (id=$safeId)');
         return null;
       }
+      if (response.bodyBytes.isEmpty) {
+        debugPrint('[ImageUpload] Body vuoto per $fetchUrl (id=$safeId)');
+        return null;
+      }
+
+      return await CloudinaryService.uploadBytes(
+        bytes: response.bodyBytes,
+        catalog: catalog,
+        cardId: cardId,
+      );
+    } catch (e) {
+      debugPrint('[ImageUpload] Errore per $sourceUrl (id=$safeId): $e');
+      return null;
     }
   }
 
@@ -91,7 +83,7 @@ class AdminCatalogService {
     updatedCard.remove('image_url');
 
     if (storageUrl != null) {
-      // Store Firebase Storage URL at card level (backward compat for web / old clients)
+      // Store Cloudinary URL at card level (backward compat for web / old clients)
       updatedCard['imageUrl'] = storageUrl;
 
       if (catalog == 'onepiece') {
@@ -102,7 +94,7 @@ class AdminCatalogService {
             final print = Map<String, dynamic>.from(p as Map);
             final existingArtwork = print['artwork'] as String?;
             if (existingArtwork == null || existingArtwork.isEmpty ||
-                !existingArtwork.contains('firebasestorage')) {
+                !existingArtwork.contains('cloudinary.com')) {
               print['artwork'] = storageUrl;
             }
             return print;
@@ -120,7 +112,7 @@ class AdminCatalogService {
               final existingUrl = entry['image_url'] as String?;
               // Replace ygoprodeck URLs with Firebase Storage URL; preserve admin-set Storage URLs
               if (existingUrl == null || existingUrl.isEmpty ||
-                  !existingUrl.contains('firebasestorage')) {
+                  !existingUrl.contains('cloudinary.com')) {
                 entry['image_url'] = storageUrl;
               }
               return entry;
@@ -665,7 +657,7 @@ class AdminCatalogService {
   /// Migrates all catalog card images from external URLs to Firebase Storage.
   ///
   /// Only processes cards that have `image_url` (external source) but no
-  /// `imageUrl` (Firebase Storage URL). Already-migrated cards are skipped.
+  /// `imageUrl` (Cloudinary URL). Already-migrated cards are skipped.
   ///
   /// Returns `{migrated, failed, chunksUpdated}`.
   Future<Map<String, dynamic>> migrateAllImagesToStorage({
@@ -674,17 +666,6 @@ class AdminCatalogService {
     required Function(int current, int total) onProgress,
   }) async {
     final catalogCollection = '${catalog}_catalog';
-
-    // 0. Delete all existing images in Storage for this catalog
-    try {
-      final folder = _storage.ref('catalog/$catalog/images');
-      final listResult = await folder.listAll();
-      for (final item in listResult.items) {
-        try { await item.delete(); } catch (_) {}
-      }
-    } catch (_) { // ignore: empty_catches
-      // Cartella non ancora esistente — procedi normalmente
-    }
 
     // 1. Download all chunks
     final chunkMap = await _downloadChunksMap(catalogCollection, onProgress);
@@ -741,7 +722,7 @@ class AdminCatalogService {
         updatedCard['imageUrl'] = storageUrl;
 
         // Populate image_url on all language set entries, replacing ygoprodeck
-        // URLs with Firebase Storage URL; existing Storage URLs are preserved
+        // URLs with Cloudinary URL; existing Cloudinary URLs are preserved
         final sets = updatedCard['sets'];
         if (sets is Map) {
           final updatedSets = Map<String, dynamic>.from(sets);
@@ -752,7 +733,7 @@ class AdminCatalogService {
                 final entry = Map<String, dynamic>.from(s as Map);
                 final existingUrl = entry['image_url'] as String?;
                 if (existingUrl == null || existingUrl.isEmpty ||
-                    !existingUrl.contains('firebasestorage')) {
+                    !existingUrl.contains('cloudinary.com')) {
                   entry['image_url'] = storageUrl;
                 }
                 return entry;
@@ -863,7 +844,7 @@ class AdminCatalogService {
     final imageUrlMap = <int, String>{};
     for (final entry in existingMap.entries) {
       final url = entry.value['imageUrl'] as String?;
-      if (url != null && url.contains('firebasestorage')) {
+      if (url != null && url.contains('cloudinary.com')) {
         imageUrlMap[entry.key] = url;
       }
     }
@@ -1486,19 +1467,6 @@ class AdminCatalogService {
 
   static const String _optcgBaseUrl = 'https://www.optcgapi.com/api';
 
-  /// Comprime un'immagine carta preservando i colori ICC (codec nativi).
-  /// Target: ~80-100 KB — buona qualità, ~40% risparmio rispetto all'originale.
-  Future<Uint8List> _compressCardImage(Uint8List bytes, {int maxWidth = 400, int quality = 78}) async {
-    final result = await FlutterImageCompress.compressWithList(
-      bytes,
-      minWidth: maxWidth,
-      minHeight: 9999, // no height constraint — only width is limited, aspect ratio preserved
-      quality: quality,
-      format: CompressFormat.jpeg,
-    );
-    return result;
-  }
-
   Future<List<dynamic>> _fetchOptcgEndpoint(String endpoint, {bool optional = false}) async {
     final response = await http
         .get(Uri.parse('$_optcgBaseUrl/$endpoint'))
@@ -1535,7 +1503,7 @@ class AdminCatalogService {
         final pm = Map<String, dynamic>.from(p as Map);
         final artwork = pm['artwork'] as String?;
         final cardSetId = pm['card_set_id'] as String?;
-        if (artwork != null && artwork.contains('firebasestorage') && cardSetId != null) {
+        if (artwork != null && artwork.contains('cloudinary.com') && cardSetId != null) {
           existingImageUrls[cardSetId] = artwork;
         }
       }
@@ -1653,7 +1621,7 @@ class AdminCatalogService {
         if (rawArtwork == null || rawArtwork.isEmpty) continue;
 
         // Già su Firebase Storage: preserva e usa come imageUrl della card
-        if (rawArtwork.contains('firebasestorage')) {
+        if (rawArtwork.contains('cloudinary.com')) {
           if (!cardStorageUrlSet) {
             card['imageUrl'] = rawArtwork;
             card.remove('image_url');
@@ -1742,7 +1710,7 @@ class AdminCatalogService {
           final sourceUrl = printUrl ?? cardLevelUrl;
           final needsMigration = sourceUrl != null &&
               sourceUrl.isNotEmpty &&
-              (force || artwork == null || !artwork.contains('firebasestorage'));
+              (force || artwork == null || !artwork.contains('cloudinary.com'));
           if (needsMigration) {
             toMigrate.add((
               chunkId: chunkId,
@@ -1780,24 +1748,21 @@ class AdminCatalogService {
       onProgress(i + 1, toMigrate.length);
 
       try {
-        final ref = _storage.ref('catalog/onepiece/images/${item.cardSetId}.jpg');
+        // Fix 2: prova prima sourceUrl (artwork del print), poi fallbackUrl (image_url della card)
         String? storageUrl;
-        try {
-          storageUrl = await ref.getDownloadURL();
-        } catch (_) { // ignore: empty_catches
-          // Fix 2: prova prima sourceUrl (artwork del print), poi fallbackUrl (image_url della card)
-          final candidates = [item.sourceUrl, if (item.fallbackUrl != null) item.fallbackUrl!];
-          for (final url in candidates) {
-            try {
-              final response = await http.get(Uri.parse(url));
-              if (response.statusCode == 200) {
-                final compressed = await _compressCardImage(response.bodyBytes);
-                await ref.putData(compressed, SettableMetadata(contentType: 'image/jpeg'));
-                storageUrl = await ref.getDownloadURL();
-                break;
-              }
-            } catch (_) { // ignore: empty_catches
+        final candidates = [item.sourceUrl, if (item.fallbackUrl != null) item.fallbackUrl!];
+        for (final url in candidates) {
+          try {
+            final response = await http.get(Uri.parse(url));
+            if (response.statusCode == 200) {
+              storageUrl = await CloudinaryService.uploadBytes(
+                bytes: response.bodyBytes,
+                catalog: 'onepiece',
+                cardId: item.cardSetId,
+              );
+              if (storageUrl != null) break;
             }
+          } catch (_) { // ignore: empty_catches
           }
         }
 
@@ -1812,7 +1777,7 @@ class AdminCatalogService {
           // sia image_url (snake_case per onepiece_cards.image_url in SQLite)
           card['imageUrl'] ??= storageUrl;
           if (card['image_url'] == null ||
-              !(card['image_url'] as String).contains('firebasestorage')) {
+              !(card['image_url'] as String).contains('cloudinary.com')) {
             card['image_url'] = storageUrl;
           }
           chunkMap[item.chunkId]![item.cardIndex] = card;
@@ -2340,7 +2305,7 @@ class AdminCatalogService {
         final apiId = card['api_id'] as String? ?? '';
         final needsMigration = sourceUrl != null &&
             sourceUrl.isNotEmpty &&
-            (force || storageUrl == null || !storageUrl.contains('firebasestorage'));
+            (force || storageUrl == null || !storageUrl.contains('cloudinary.com'));
         if (needsMigration && apiId.isNotEmpty) {
           toMigrate.add((
             chunkId: chunkId,

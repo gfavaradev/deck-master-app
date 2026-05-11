@@ -45,12 +45,12 @@ class AuthService {
       await _ensureGoogleInitialized();
       final googleUser = await _googleSignIn.authenticate();
       final googleAuth = googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
+      final idToken = googleAuth.idToken;
+      if (idToken == null) throw Exception('Google idToken is null — Credential Manager returned no token');
+      final credential = GoogleAuthProvider.credential(idToken: idToken);
       return await _auth.signInWithCredential(credential);
-    } catch (e) {
+    } catch (_) {
       // Credential Manager failed — fall back to browser OAuth.
-      // This covers older Android, missing SHA-1 in device keychain, and
-      // Play Services versions that don't support the new Credential Manager API.
       final googleProvider = GoogleAuthProvider();
       return await _auth.signInWithProvider(googleProvider);
     }

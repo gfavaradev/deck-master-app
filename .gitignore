@@ -108,3 +108,7 @@ logs/
 # Temporary test files
 **/api_sample.json
 test_*.json
+
+# Node.js
+node_modules/
+package-lock.json
