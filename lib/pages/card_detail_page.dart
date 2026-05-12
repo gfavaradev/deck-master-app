@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
 import '../services/cardtrader_service.dart' show CardtraderService;
 import '../widgets/cardtrader_price_badge.dart' show CardtraderAllPricesSection;
+import '../widgets/cardtrader_price_history.dart';
 
 String _langFromSerial(String sn, String collection) =>
     CardtraderService.languageFromSerial(sn, collection);
@@ -227,6 +228,11 @@ class _CardDetailPageState extends State<CardDetailPage> {
                 if (card.serialNumber.isNotEmpty) ...[
                   const Divider(color: AppColors.divider, height: 1),
                   _PricesPanel(card: card),
+                  const Divider(color: AppColors.divider, height: 1),
+                  _Panel(
+                    title: 'ANDAMENTO PREZZI',
+                    child: CardtraderPriceHistoryChart(card: card),
+                  ),
                 ],
 
                 // Deck

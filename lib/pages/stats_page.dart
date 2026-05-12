@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/collection_value_chart.dart';
 import 'set_completion_page.dart';
 
 class StatsPage extends StatefulWidget {
@@ -21,6 +22,8 @@ class _StatsPageState extends State<StatsPage> {
   List<Map<String, dynamic>> _collectionStats = [];
   List<Map<String, dynamic>> _rarityStats = [];
   bool _isLoading = true;
+  // false = questa collezione, true = globale (solo quando collectionKey != null)
+  bool _chartGlobal = false;
   StreamSubscription<String>? _syncSub;
 
   @override
@@ -44,6 +47,8 @@ class _StatsPageState extends State<StatsPage> {
       _dbHelper.getStatsPerCollection(),
       _dbHelper.getStatsPerRarity(),
     ]);
+    // Save today's snapshot whenever the user views stats (INSERT OR IGNORE)
+    _dbHelper.saveCollectionValueSnapshot();
     if (mounted) {
       setState(() {
         _stats = results[0] as Map<String, dynamic>;
@@ -86,12 +91,70 @@ class _StatsPageState extends State<StatsPage> {
                     _buildStatCard('Carte Totali', _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
                     _buildStatCard('Carte Uniche', _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
                     _buildStatCard('Valore Stimato', '€${(_stats?['totalValue'] as double? ?? 0.0).toStringAsFixed(2)}', Icons.euro, Colors.green),
+                    _buildValueChart(),
                     if (_collectionStats.isNotEmpty) _buildCollectionBreakdown(),
                     if (_rarityStats.isNotEmpty) _buildRarityBreakdown(),
                     if (widget.collectionKey != null) _buildExpansioniCard(),
                   ],
                 ),
             ),
+      ),
+    );
+  }
+
+  Widget _buildValueChart() {
+    final hasCollection = widget.collectionKey != null;
+    // Which data scope to show
+    final chartCollection =
+        hasCollection && !_chartGlobal ? widget.collectionKey : null;
+    final accentColor = hasCollection && !_chartGlobal
+        ? (_collectionColors[widget.collectionKey] ?? AppColors.gold)
+        : AppColors.gold;
+
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.show_chart_rounded,
+                      color: accentColor, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Andamento Valore',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                // Toggle scope — only when inside a collection
+                if (hasCollection)
+                  _ScopeRow(
+                    isGlobal: _chartGlobal,
+                    onChanged: (v) => setState(() => _chartGlobal = v),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            CollectionValueChart(
+              key: ValueKey('${chartCollection}_$_chartGlobal'),
+              collection: chartCollection,
+              accentColor: accentColor,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -275,6 +338,72 @@ class _StatsPageState extends State<StatsPage> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Scope toggle (Collezione / Globale) ──────────────────────────────────────
+
+class _ScopeRow extends StatelessWidget {
+  final bool isGlobal;
+  final ValueChanged<bool> onChanged;
+  const _ScopeRow({required this.isGlobal, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ToggleChip(
+          label: 'Collezione',
+          active: !isGlobal,
+          onTap: () => onChanged(false),
+        ),
+        const SizedBox(width: 4),
+        _ToggleChip(
+          label: 'Globale',
+          active: isGlobal,
+          onTap: () => onChanged(true),
+        ),
+      ],
+    );
+  }
+}
+
+class _ToggleChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _ToggleChip(
+      {required this.label, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: active
+              ? AppColors.gold.withValues(alpha: 0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: active
+                ? AppColors.gold
+                : AppColors.border.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: active ? FontWeight.bold : FontWeight.normal,
+            color: active ? AppColors.gold : AppColors.textHint,
+          ),
         ),
       ),
     );

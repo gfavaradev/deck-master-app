@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 30,
+      version: 32,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -377,6 +377,30 @@ class DatabaseHelper {
         await _addColumnIfMissing(db, table, 'ct_synced_at', 'TEXT');
         await _addColumnIfMissing(db, table, 'ct_listing_count', 'INTEGER');
       }
+    }
+    if (oldVersion < 31) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS price_history (
+          blueprint_id  INTEGER NOT NULL,
+          language      TEXT    NOT NULL,
+          first_edition INTEGER NOT NULL DEFAULT 0,
+          rarity        TEXT    NOT NULL DEFAULT '',
+          price_cents   INTEGER NOT NULL,
+          listing_count INTEGER NOT NULL DEFAULT 0,
+          recorded_date TEXT    NOT NULL,
+          PRIMARY KEY (blueprint_id, language, first_edition, rarity, recorded_date)
+        )
+      ''');
+    }
+    if (oldVersion < 32) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS collection_value_history (
+          collection    TEXT    NOT NULL,
+          total_cents   INTEGER NOT NULL,
+          recorded_date TEXT    NOT NULL,
+          PRIMARY KEY (collection, recorded_date)
+        )
+      ''');
     }
   }
 
@@ -867,6 +891,28 @@ class DatabaseHelper {
       'CREATE INDEX IF NOT EXISTS idx_ct_prices_collector '
       'ON cardtrader_prices(catalog, expansion_code, collector_number)',
     );
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS price_history (
+        blueprint_id  INTEGER NOT NULL,
+        language      TEXT    NOT NULL,
+        first_edition INTEGER NOT NULL DEFAULT 0,
+        rarity        TEXT    NOT NULL DEFAULT '',
+        price_cents   INTEGER NOT NULL,
+        listing_count INTEGER NOT NULL DEFAULT 0,
+        recorded_date TEXT    NOT NULL,
+        PRIMARY KEY (blueprint_id, language, first_edition, rarity, recorded_date)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS collection_value_history (
+        collection    TEXT    NOT NULL,
+        total_cents   INTEGER NOT NULL,
+        recorded_date TEXT    NOT NULL,
+        PRIMARY KEY (collection, recorded_date)
+      )
+    ''');
 
     // Dedicated expansion and rarity tables (v18)
     await _createExpansionRarityTables(db);
@@ -1919,6 +1965,54 @@ class DatabaseHelper {
       ORDER BY count DESC
       LIMIT 10
     ''');
+  }
+
+  /// Saves today's total value per collection into [collection_value_history].
+  /// Uses INSERT OR IGNORE so multiple calls on the same day are no-ops.
+  Future<void> saveCollectionValueSnapshot() async {
+    final db = await database;
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final rows = await db.rawQuery('''
+      ${_cardEffectiveValueCTE()}
+      SELECT collection,
+             CAST(ROUND(SUM(effective_price * quantity) * 100) AS INTEGER) AS total_cents
+      FROM card_values
+      GROUP BY collection
+    ''');
+    if (rows.isEmpty) return;
+    final batch = db.batch();
+    for (final row in rows) {
+      final cents = (row['total_cents'] as int?) ?? 0;
+      if (cents <= 0) continue;
+      batch.rawInsert('''
+        INSERT OR IGNORE INTO collection_value_history (collection, total_cents, recorded_date)
+        VALUES (?, ?, ?)
+      ''', [row['collection'], cents, today]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Returns daily total-value snapshots for [collection] (or global sum if null).
+  Future<List<Map<String, dynamic>>> getCollectionValueHistory({
+    String? collection,
+    required String from,
+  }) async {
+    final db = await database;
+    if (collection != null) {
+      return db.rawQuery('''
+        SELECT recorded_date, total_cents
+        FROM collection_value_history
+        WHERE collection = ? AND recorded_date >= ?
+        ORDER BY recorded_date ASC
+      ''', [collection, from]);
+    }
+    return db.rawQuery('''
+      SELECT recorded_date, SUM(total_cents) AS total_cents
+      FROM collection_value_history
+      WHERE recorded_date >= ?
+      GROUP BY recorded_date
+      ORDER BY recorded_date ASC
+    ''', [from]);
   }
 
   Future<List<Map<String, dynamic>>> getAllCardsForExport() async {
@@ -3714,6 +3808,54 @@ class DatabaseHelper {
       );
     }
     await batch.commit(noResult: true);
+  }
+
+  /// Inserts one price snapshot per (blueprint, language, edition, rarity) per day.
+  /// Uses INSERT OR IGNORE so re-running on the same day is a no-op.
+  Future<void> insertPriceHistorySnapshots(List<Map<String, dynamic>> priceMaps) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final m in priceMaps) {
+      final priceCents = (m['min_price_nm_cents'] ?? m['min_price_any_cents']) as int?;
+      if (priceCents == null) continue;
+      final syncedAt = m['synced_at'] as String? ?? '';
+      final recordedDate = syncedAt.length >= 10 ? syncedAt.substring(0, 10) : syncedAt;
+      if (recordedDate.isEmpty) continue;
+      batch.rawInsert('''
+        INSERT OR IGNORE INTO price_history
+          (blueprint_id, language, first_edition, rarity, price_cents, listing_count, recorded_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      ''', [
+        m['blueprint_id'],
+        m['language'],
+        m['first_edition'] ?? 0,
+        m['rarity'] ?? '',
+        priceCents,
+        m['listing_count'] ?? 0,
+        recordedDate,
+      ]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getPriceHistory({
+    required int blueprintId,
+    required String language,
+    required int firstEdition,
+    required String rarity,
+    required String from,
+  }) async {
+    final db = await database;
+    return db.rawQuery('''
+      SELECT recorded_date, price_cents, listing_count
+      FROM price_history
+      WHERE blueprint_id = ?
+        AND language = ?
+        AND first_edition = ?
+        AND rarity = ?
+        AND recorded_date >= ?
+      ORDER BY recorded_date ASC
+    ''', [blueprintId, language, firstEdition, rarity, from]);
   }
 
   /// Seeds blueprint rows for the target language.

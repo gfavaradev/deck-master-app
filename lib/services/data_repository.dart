@@ -1263,6 +1263,21 @@ class DataRepository {
     return await _dbHelper.getGlobalStats();
   }
 
+  Future<void> saveCollectionValueSnapshot() async {
+    if (kIsWeb) return;
+    await _dbHelper.saveCollectionValueSnapshot();
+  }
+
+  Future<List<Map<String, dynamic>>> getCollectionValueHistory({
+    String? collection,
+    required DateTime from,
+  }) async {
+    if (kIsWeb) return [];
+    final fromStr =
+        '${from.year}-${from.month.toString().padLeft(2, '0')}-${from.day.toString().padLeft(2, '0')}';
+    return _dbHelper.getCollectionValueHistory(collection: collection, from: fromStr);
+  }
+
   // ============================================================
   // Decks (write-through: SQLite + Firestore)
   // ============================================================

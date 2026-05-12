@@ -1,50 +1,92 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
+import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
 import 'op_lang_badge.dart';
 
-String? _formatSyncDate(String? isoDate) {
-  if (isoDate == null) return null;
-  final dt = DateTime.tryParse(isoDate);
-  if (dt == null) return null;
-  return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
+// ─── Live price lookup widget ─────────────────────────────────────────────────
+
+class _LivePriceText extends StatefulWidget {
+  final CardModel card;
+  final double fontSize;
+  const _LivePriceText({required this.card, required this.fontSize});
+
+  @override
+  State<_LivePriceText> createState() => _LivePriceTextState();
 }
 
-Widget _buildPriceText(CardModel card, {required double fontSize}) {
-  final price = card.cardtraderValue;
-  final isStale = (card.cardtraderListingCount ?? 1) == 0;
-  final dateLabel = isStale ? _formatSyncDate(card.cardtraderSyncedAt) : null;
+class _LivePriceTextState extends State<_LivePriceText> {
+  late final Future<CardtraderPrice?> _future;
 
-  if (price != null && price > 0) {
-    if (isStale && dateLabel != null) {
-      return Text.rich(
-        TextSpan(children: [
-          TextSpan(
-            text: '€${price.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontSize: fontSize,
-              color: Colors.orange.shade700,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          TextSpan(
-            text: ' ($dateLabel)',
-            style: TextStyle(fontSize: fontSize - 1, color: Colors.orange.shade700),
-          ),
-        ]),
-      );
-    }
-    return Text(
-      '€${price.toStringAsFixed(2)}',
-      style: TextStyle(
-        fontSize: fontSize,
-        color: const Color(0xFF2E7D32),
-        fontWeight: FontWeight.w600,
-      ),
+  static String _expCode(String sn) =>
+      sn.isEmpty ? '' : sn.split('-').first.toLowerCase();
+
+  static String _collectorNum(String sn) {
+    final idx = sn.indexOf('-');
+    return idx < 0 ? '' : sn.substring(idx + 1);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final c = widget.card;
+    _future = CardtraderService().getPriceForCard(
+      catalog: c.collection,
+      expansionCode: _expCode(c.serialNumber),
+      cardName: c.name,
+      language: CardtraderService.languageFromSerial(c.serialNumber, c.collection),
+      rarity: c.rarity.isNotEmpty ? c.rarity : null,
+      collectorNumber: _collectorNum(c.serialNumber),
+      catalogId: c.catalogId,
     );
   }
-  return Text('N/D', style: TextStyle(fontSize: fontSize, color: AppColors.textHint));
+
+  @override
+  Widget build(BuildContext context) {
+    final fs = widget.fontSize;
+    return FutureBuilder<CardtraderPrice?>(
+      future: _future,
+      builder: (_, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            width: fs, height: fs,
+            child: CircularProgressIndicator(strokeWidth: 1, color: AppColors.textHint),
+          );
+        }
+        final price = snap.data;
+        if (price == null) {
+          return Text('N/D', style: TextStyle(fontSize: fs, color: AppColors.textHint));
+        }
+        final cents = price.bestPriceCents;
+        if (cents == null) {
+          return Text('N/D', style: TextStyle(fontSize: fs, color: AppColors.textHint));
+        }
+        final priceStr = '€${(cents / 100).toStringAsFixed(2)}';
+        final isHistorical = price.listingCount == 0;
+        final color = isHistorical ? Colors.orange.shade700 : const Color(0xFF1A9B8A);
+        if (isHistorical) {
+          final d = price.syncedAtDate;
+          final date =
+              '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+          return Text.rich(TextSpan(children: [
+            TextSpan(
+              text: priceStr,
+              style: TextStyle(fontSize: fs, color: color, fontWeight: FontWeight.w600),
+            ),
+            TextSpan(
+              text: ' ($date)',
+              style: TextStyle(fontSize: fs - 1, color: color),
+            ),
+          ]));
+        }
+        return Text(
+          priceStr,
+          style: TextStyle(fontSize: fs, color: color, fontWeight: FontWeight.w600),
+        );
+      },
+    );
+  }
 }
 
 void _showFullScreenImage(BuildContext context, String imageUrl) {
@@ -198,7 +240,7 @@ class CardListItem extends StatelessWidget {
                           ),
                         ),
                         const Text(' • ', style: TextStyle(fontSize: 12)),
-                        _buildPriceText(card, fontSize: 12),
+                        _LivePriceText(card: card, fontSize: 12),
                       ],
                     ),
                   ],
@@ -362,7 +404,7 @@ class CardGridItem extends StatelessWidget {
                         ),
                         WidgetSpan(
                           alignment: PlaceholderAlignment.middle,
-                          child: _buildPriceText(card, fontSize: 8),
+                          child: _LivePriceText(card: card, fontSize: 8),
                         ),
                       ],
                     ),

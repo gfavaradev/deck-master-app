@@ -305,17 +305,16 @@ class _PriceRow extends StatelessWidget {
             ),
           ],
           const Spacer(),
-          // Listing count (active) or last-seen date (historical)
-          if (isHistorical)
-            Text(
-              _formatDate(price!.syncedAtDate),
-              style: TextStyle(fontSize: 9, color: Colors.orange.withValues(alpha: 0.8)),
-            )
-          else if (price!.listingCount > 0)
-            Text(
-              '${price!.listingCount} ann.',
-              style: const TextStyle(fontSize: 9, color: AppColors.textHint),
+          // Sync date (active) or last-seen date (historical)
+          Text(
+            _formatDate(price!.syncedAtDate),
+            style: TextStyle(
+              fontSize: 9,
+              color: isHistorical
+                  ? Colors.orange.withValues(alpha: 0.8)
+                  : AppColors.textHint,
             ),
+          ),
         ],
       ),
     );

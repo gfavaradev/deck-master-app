@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/admin_catalog_service.dart';
 import '../services/admin_translation_service.dart';
 import '../services/background_download_service.dart';
@@ -53,6 +54,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     try {
       // Avvia il foreground service: mantiene il processo vivo se l'app va in background
       await BackgroundDownloadService.startDownload(opLabel);
+      WakelockPlus.enable();
 
       final result = await task(uid);
       if (!mounted) return;
@@ -89,6 +91,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     } finally {
       // Ferma il foreground service al termine (successo o errore)
       await BackgroundDownloadService.stopDownload();
+      WakelockPlus.disable();
     }
   }
 

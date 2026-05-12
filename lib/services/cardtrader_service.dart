@@ -820,9 +820,44 @@ class CardtraderService {
     }
 
     if (prices.isNotEmpty) {
-      await _db.upsertCardtraderPrices(prices.map((p) => p.toMap()).toList());
+      final maps = prices.map((p) => p.toMap()).toList();
+      await _db.upsertCardtraderPrices(maps);
+      await _db.insertPriceHistorySnapshots(maps);
     }
     return prices.length;
+  }
+
+  /// Returns daily price snapshots for a card, ordered by date ascending.
+  /// Returns an empty list if the card has no history or the blueprint is unknown.
+  Future<List<Map<String, dynamic>>> getCardPriceHistory({
+    required String catalog,
+    required String expansionCode,
+    required String cardName,
+    required String language,
+    String? rarity,
+    String? collectorNumber,
+    String? catalogId,
+    required DateTime from,
+  }) async {
+    final price = await getPriceForCard(
+      catalog: catalog,
+      expansionCode: expansionCode,
+      cardName: cardName,
+      language: language,
+      rarity: rarity,
+      collectorNumber: collectorNumber,
+      catalogId: catalogId,
+    );
+    if (price == null) return [];
+    final fromStr =
+        '${from.year}-${from.month.toString().padLeft(2, '0')}-${from.day.toString().padLeft(2, '0')}';
+    return _db.getPriceHistory(
+      blueprintId: price.blueprintId,
+      language: price.language,
+      firstEdition: price.firstEdition ? 1 : 0,
+      rarity: price.rarity,
+      from: fromStr,
+    );
   }
 
   static int _min(int a, int b) => a < b ? a : b;
