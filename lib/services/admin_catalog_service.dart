@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'cardtrader_service.dart' show CardtraderService;
 import 'package:http/http.dart' as http;
 import 'package:deck_master/models/pending_catalog_change.dart';
