@@ -22,8 +22,10 @@ import '../services/data_repository.dart';
 import '../services/notification_service.dart';
 import '../services/review_service.dart';
 import '../services/sync_service.dart';
+import '../services/update_service.dart';
 import '../services/xp_service.dart';
 import '../widgets/banner_ad_widget.dart';
+import '../widgets/update_dialog.dart';
 import '../widgets/user_avatar_widget.dart';
 import 'notifications_page.dart';
 import 'card_scanner_page.dart';
@@ -99,6 +101,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       _loadPersistedPendingUpdates();
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) _checkCatalogUpdate();
+      if (mounted) _checkForAppUpdate();
     });
 
     if (widget.updateNotification != null) {
@@ -279,6 +282,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   Future<void> _checkUnreadNotifications() async {
     final count = await unreadNotificationCount();
     if (mounted) setState(() => _unreadCount = count);
+  }
+
+  /// Ritorna true se è stato mostrato il dialog di aggiornamento.
+  Future<bool> _checkForAppUpdate({bool force = false}) async {
+    final info = await UpdateService.checkForUpdate(force: force);
+    if (info == null || !mounted) return false;
+    await showUpdateDialog(context, info);
+    return true;
   }
 
   static const _kCatalogCheckedAtKey = 'catalog_update_checked_at';
@@ -837,6 +848,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               if (value == 'profile') {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
                 if (mounted) setState(() => _avatarVersion++);
+              } else if (value == 'check_update') {
+                final messenger = ScaffoldMessenger.of(context);
+                final shown = await _checkForAppUpdate(force: true);
+                if (!shown && mounted) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('Sei già all\'ultima versione disponibile.')),
+                  );
+                }
               } else if (value == 'settings') {
                 final result = await Navigator.push<Map<String, dynamic>>(
                   context,
@@ -867,6 +886,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 child: ListTile(
                   leading: Icon(Icons.settings),
                   title: Text('Impostazioni'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'check_update',
+                child: ListTile(
+                  leading: Icon(Icons.system_update_alt_rounded),
+                  title: Text('Controlla aggiornamenti'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),

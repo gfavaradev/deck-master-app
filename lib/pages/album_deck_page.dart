@@ -637,7 +637,7 @@ class _AlbumDialogState extends State<_AlbumDialog> {
                       controller: _nameCtrl,
                       autofocus: true,
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                        FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 ]')),
                         LengthLimitingTextInputFormatter(19),
                       ],
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
@@ -808,7 +808,7 @@ class _DeckDialogState extends State<_DeckDialog> {
             controller: _nameCtrl,
             autofocus: true,
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 ]')),
               LengthLimitingTextInputFormatter(19),
             ],
             style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),

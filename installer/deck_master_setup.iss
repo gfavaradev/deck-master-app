@@ -1,13 +1,13 @@
 [Setup]
 AppName=Deck Master
-AppVersion=1.2.1
-AppPublisher=Giuseppe
-AppPublisherURL=
-AppSupportURL=
+AppVersion=1.3.2
+AppPublisher=Giuseppe Favara
+AppPublisherURL=https://github.com/GiuseppeFavara97
+AppSupportURL=https://github.com/GiuseppeFavara97
 DefaultDirName={autopf}\Deck Master
 DefaultGroupName=Deck Master
 OutputDir=..\installer_output
-OutputBaseFilename=DeckMaster_Setup_1.2.1
+OutputBaseFilename=DeckMaster_Setup_1.3.2
 SetupIconFile=..\windows\runner\resources\app_icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes

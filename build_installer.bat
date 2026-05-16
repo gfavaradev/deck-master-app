@@ -3,20 +3,23 @@ setlocal
 
 set PROJECT_DIR=%~dp0
 set RELEASE_DIR=%PROJECT_DIR%build\windows\x64\runner\Release
-set DEBUG_DIR=%PROJECT_DIR%build\windows\x64\runner\Debug
+:: Cerca Inno Setup in tutti i percorsi comuni
 set ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe
+if not exist "%ISCC%" set ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+if not exist "%ISCC%" set ISCC=C:\Program Files\Inno Setup 6\ISCC.exe
 set ISS=%PROJECT_DIR%installer\deck_master_setup.iss
 
 echo ============================================
-echo  Deck Master - Build Installer
+echo  Deck Master - Build Installer v1.3.2
 echo ============================================
 echo.
 
 :: 1. Flutter build release
-echo [1/3] Flutter build windows --release...
+echo [1/2] Flutter build windows --release...
 cd /d "%PROJECT_DIR%"
-call flutter build windows --release
+call flutter build windows --release --dart-define-from-file=dart_defines.json
 if errorlevel 1 (
+    echo.
     echo ERRORE: flutter build fallita.
     pause
     exit /b 1
@@ -24,28 +27,28 @@ if errorlevel 1 (
 echo OK
 echo.
 
-:: 2. Copia DLL e data da Debug a Release
-echo [2/3] Copia DLL e assets in Release...
-if not exist "%DEBUG_DIR%\flutter_windows.dll" (
-    echo ERRORE: DLL non trovate in Debug.
+:: Verifica che i file Release esistano
+if not exist "%RELEASE_DIR%\deck_master.exe" (
+    echo ERRORE: deck_master.exe non trovato in:
+    echo   %RELEASE_DIR%
     pause
     exit /b 1
 )
-copy /Y "%DEBUG_DIR%\*.dll" "%RELEASE_DIR%\" >nul
-if exist "%RELEASE_DIR%\data" rmdir /S /Q "%RELEASE_DIR%\data"
-xcopy /E /I /Q "%DEBUG_DIR%\data" "%RELEASE_DIR%\data" >nul
-echo OK
-echo.
 
-:: 3. Compila installer con Inno Setup
-echo [3/3] Compilazione installer...
+:: 2. Compila installer con Inno Setup
+echo [2/2] Compilazione installer con Inno Setup...
 if not exist "%ISCC%" (
-    echo ERRORE: Inno Setup non trovato in %ISCC%
+    echo.
+    echo ERRORE: Inno Setup 6 non trovato.
+    echo Scaricalo da: https://jrsoftware.org/isdl.php
+    echo Installalo in: %LOCALAPPDATA%\Programs\Inno Setup 6\
     pause
     exit /b 1
 )
+
 "%ISCC%" "%ISS%"
 if errorlevel 1 (
+    echo.
     echo ERRORE: Inno Setup ha fallito.
     pause
     exit /b 1

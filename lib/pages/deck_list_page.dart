@@ -48,7 +48,7 @@ class _AddDeckDialogState extends State<_AddDeckDialog> {
             controller: _nameController,
             autofocus: true,
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 ]')),
               LengthLimitingTextInputFormatter(19),
             ],
             style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
