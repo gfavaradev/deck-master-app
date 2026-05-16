@@ -32,6 +32,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   String _statusText = '';
   String _currentOp = '';
   Future<List<Map<String, dynamic>>>? _coverageStatsFuture;
+  _CancellationToken? _cancelToken;
 
   // ─── Operations ───────────────────────────────────────────────────────────
 
@@ -44,11 +45,13 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
+    final token = _CancellationToken();
     setState(() {
       _isRunning = true;
       _progress = null;
       _statusText = '';
       _currentOp = opLabel;
+      _cancelToken = token;
     });
 
     try {
@@ -58,17 +61,24 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
       final result = await task(uid);
       if (!mounted) return;
-      setState(() { _isRunning = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(successMessage(result)),
           duration: const Duration(seconds: 5),
         ),
       );
-    } catch (e) {
-
+    } on _CancelledException {
       if (mounted) {
-        setState(() { _isRunning = false; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Operazione annullata.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -89,9 +99,10 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         );
       }
     } finally {
-      // Ferma il foreground service al termine (successo o errore)
+      // Ferma il foreground service al termine (successo, errore o annullamento)
       await BackgroundDownloadService.stopDownload();
       WakelockPlus.disable();
+      if (mounted) setState(() { _isRunning = false; _cancelToken = null; });
     }
   }
 
@@ -125,6 +136,8 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   }
 
   void _onProgress(String status, double? progress) {
+    // Controlla il token prima di aggiornare — se annullato interrompe l'operazione.
+    if (_cancelToken?.isCancelled ?? false) throw const _CancelledException();
     if (mounted) setState(() { _statusText = status; _progress = progress; });
     BackgroundDownloadService.updateStatus(status);
   }
@@ -163,6 +176,26 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             : '${r['newCards']} carte nuove aggiunte.',
       );
 
+  String _migrationResultMessage(Map<String, dynamic> r) {
+    final migrated = r['migrated'] as int? ?? 0;
+    final failed = r['failed'] as int? ?? 0;
+    final chunks = r['chunksUpdated'] as int? ?? 0;
+    final verified = r['verified'] as int?;
+    final verifiedOf = r['verifiedOf'] as int? ?? 0;
+    final diagMsg = r['diagMsg'] as String?;
+
+    if (migrated == 0 && failed == 0) {
+      return diagMsg != null
+          ? 'Nessuna immagine da migrare.\nDiagnostica: $diagMsg'
+          : 'Nessuna immagine da migrare.';
+    }
+
+    final verifyNote = (verified != null && verifiedOf > 0)
+        ? '\nVerifica: $verified/$verifiedOf URL raggiungibili su Cloudinary'
+        : '';
+    return '$migrated migrate, $failed errori, $chunks chunk aggiornati.$verifyNote';
+  }
+
   Future<void> _migrateImages() => _confirmAndRun(
         'yugioh',
         'Migrazione Immagini',
@@ -176,9 +209,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           onProgress: (cur, tot) =>
               _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
         ),
-        (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
-            ? 'Tutte le immagini erano già migrate.'
-            : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
+        _migrationResultMessage,
       );
 
   Future<void> _translateMissingYugioh() => _confirmAndRun(
@@ -240,6 +271,23 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
   // ─── One Piece action handlers ─────────────────────────────────────────────
 
+  Future<void> _downloadIncrementalOnePiece() => _confirmAndRun(
+        'onepiece',
+        'Aggiornamento Incrementale One Piece',
+        'Aggiorna Nuove Carte One Piece',
+        'Aggiunge solo le carte One Piece nuove presenti sull\'OPTCG API '
+            'che non sono ancora nel catalogo Firestore.\n\n'
+            'Le carte esistenti e tutti i dati di prezzo vengono preservati. Continuare?',
+        (uid) => _service.downloadIncrementalOnepieceCatalog(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => (r['newCards'] as int? ?? 0) == 0
+            ? 'Nessuna carta One Piece nuova trovata.'
+            : '${r['newCards']} carte nuove aggiunte'
+                '${(r['imagesOk'] as int? ?? 0) > 0 ? " (${r['imagesOk']} immagini ok)" : ""}.',
+      );
+
   Future<void> _downloadFullOnePiece() => _confirmAndRun(
         'onepiece',
         'Download Completo One Piece',
@@ -270,12 +318,27 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           onProgress: (cur, tot) =>
               _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
         ),
-        (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
-            ? 'Tutte le immagini erano già migrate.'
-            : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
+        _migrationResultMessage,
       );
 
   // ─── Pokémon action handlers ──────────────────────────────────────────────
+
+  Future<void> _downloadIncrementalPokemon() => _confirmAndRun(
+        'pokemon',
+        'Aggiornamento Incrementale Pokémon',
+        'Aggiorna Nuove Carte Pokémon',
+        'Aggiunge solo le carte Pokémon nuove presenti su pokemontcg.io '
+            'che non sono ancora nel catalogo Firestore.\n\n'
+            'Le carte esistenti e tutti i dati di prezzo vengono preservati. Continuare?',
+        (uid) => _service.downloadIncrementalPokemonCatalog(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => (r['newCards'] as int? ?? 0) == 0
+            ? 'Nessuna carta Pokémon nuova trovata.'
+            : '${r['newCards']} carte nuove aggiunte'
+                '${(r['imagesOk'] as int? ?? 0) > 0 ? " (${r['imagesOk']} immagini ok)" : ""}.',
+      );
 
   Future<void> _downloadFullPokemon() => _confirmAndRun(
         'pokemon',
@@ -307,9 +370,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           onProgress: (cur, tot) =>
               _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
         ),
-        (r) => (r['migrated'] as int? ?? 0) == 0 && (r['failed'] as int? ?? 0) == 0
-            ? 'Tutte le immagini erano già migrate.'
-            : '${r['migrated']} migrate, ${r['failed']} errori, ${r['chunksUpdated']} chunk aggiornati.',
+        _migrationResultMessage,
       );
 
   Future<void> _fillMissingSetsOnePiece() => _confirmAndRun(
@@ -445,34 +506,70 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   }
 
   Widget _buildGlobalProgress() {
+    final alreadyCancelled = _cancelToken?.isCancelled ?? false;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.bgMedium,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.blue.withValues(alpha: 0.4)),
+        border: Border.all(
+          color: alreadyCancelled
+              ? Colors.orange.withValues(alpha: 0.5)
+              : AppColors.blue.withValues(alpha: 0.4),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const SizedBox(
+              SizedBox(
                 width: 16, height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.blue),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: alreadyCancelled ? Colors.orange : AppColors.blue,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(child: Text(
-                _currentOp,
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary),
+                alreadyCancelled ? 'Annullamento in corso...' : _currentOp,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: alreadyCancelled ? Colors.orange : AppColors.textPrimary,
+                ),
               )),
+              // Bottone Annulla — si disabilita dopo il primo tap
+              TextButton.icon(
+                onPressed: alreadyCancelled
+                    ? null
+                    : () => setState(() => _cancelToken?.cancel()),
+                icon: Icon(
+                  Icons.stop_circle_outlined,
+                  size: 16,
+                  color: alreadyCancelled ? AppColors.textHint : Colors.orange,
+                ),
+                label: Text(
+                  alreadyCancelled ? 'Annullamento…' : 'Annulla',
+                  style: TextStyle(
+                    color: alreadyCancelled ? AppColors.textHint : Colors.orange,
+                    fontSize: 12,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           LinearProgressIndicator(
             value: _progress,
             backgroundColor: AppColors.bgDark,
-            valueColor: const AlwaysStoppedAnimation(AppColors.blue),
+            valueColor: AlwaysStoppedAnimation(
+              alreadyCancelled ? Colors.orange : AppColors.blue,
+            ),
             minHeight: 3,
           ),
           if (_statusText.isNotEmpty) ...[
@@ -631,14 +728,16 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
       case 'onepiece':
         return [
           _StepDef(Icons.cloud_download, 'Scarica Catalogo (CT)', 'Blueprint e metadati da CardTrader (senza immagini)', () => _downloadFromCardtrader('onepiece')),
-          _StepDef(Icons.download_for_offline, 'Scarica da OPTCG API', 'Fonte alternativa (solo se CT non funziona)', _downloadFullOnePiece),
+          _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove da OPTCG API (prezzi preservati)', _downloadIncrementalOnePiece),
+          _StepDef(Icons.download_for_offline, 'Scarica da OPTCG API', 'Download completo — fonte alternativa', _downloadFullOnePiece),
           _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini CT su Firebase Storage', _migrateOnePieceImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsOnePiece),
         ];
       case 'pokemon':
         return [
           _StepDef(Icons.cloud_download, 'Scarica Catalogo (CT)', 'Blueprint e metadati da CardTrader (senza immagini)', () => _downloadFromCardtrader('pokemon')),
-          _StepDef(Icons.download_for_offline, 'Scarica da pokemontcg.io', 'Fonte alternativa (solo se CT non funziona)', _downloadFullPokemon),
+          _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove da pokemontcg.io (prezzi preservati)', _downloadIncrementalPokemon),
+          _StepDef(Icons.download_for_offline, 'Scarica da pokemontcg.io', 'Download completo — fonte alternativa', _downloadFullPokemon),
           _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini CT su Firebase Storage', _migratePokemonImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsPokemon),
         ];
@@ -981,6 +1080,18 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     );
   }
 
+}
+
+// ── Cancellation support ───────────────────────────────────────────────────
+
+class _CancelledException implements Exception {
+  const _CancelledException();
+}
+
+class _CancellationToken {
+  bool _cancelled = false;
+  bool get isCancelled => _cancelled;
+  void cancel() => _cancelled = true;
 }
 
 // ── Data classes for stepper UI ────────────────────────────────────────────

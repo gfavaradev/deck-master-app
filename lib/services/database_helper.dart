@@ -3272,11 +3272,61 @@ class DatabaseHelper {
   /// These are orphaned rows (sync was lost) — they would duplicate remote items
   /// when pullFromCloud() inserts them with a firestoreId.
   Future<void> deleteOrphanedItems() async {
-    // Intentionally a no-op: deleting cards/albums without a firestoreId is
-    // too aggressive — those records are valid local data that hasn't been
-    // pushed to Firestore yet (e.g. added offline or before sync was implemented).
-    // Removing them would silently wipe the user's collection on every startup
-    // if the Firestore pull returns 0 results (permission error, offline, etc).
+    // Safe to call only after Firestore is confirmed reachable (called inside
+    // pullFromCloud after the fetch succeeds). Deletes rows that have no
+    // firestoreId AND are not in pending_sync — those are true orphans left
+    // by a partial/timed-out push where Firestore accepted the write but the
+    // local updateFirestoreId never ran. Without this, pullFromCloud() sees
+    // them as "not in Firestore" → inserts a fresh copy → duplicate.
+    // Records in pending_sync are offline additions waiting to be pushed → kept.
+    final db = await database;
+    await db.rawDelete('''
+      DELETE FROM cards
+      WHERE firestoreId IS NULL
+        AND id NOT IN (
+          SELECT local_id FROM pending_sync WHERE table_name = 'cards'
+        )
+    ''');
+    await db.rawDelete('''
+      DELETE FROM albums
+      WHERE firestoreId IS NULL
+        AND id NOT IN (
+          SELECT local_id FROM pending_sync WHERE table_name = 'albums'
+        )
+    ''');
+  }
+
+  /// Find a local card with no firestoreId matching the given print.
+  /// Used by pullFromCloud() to claim a pending-sync card as the pulled one
+  /// instead of inserting a duplicate.
+  Future<CardModel?> findOrphanCard({
+    required String serialNumber,
+    required String collection,
+  }) async {
+    final db = await database;
+    final r = await db.query(
+      'cards',
+      where: 'serialNumber = ? AND collection = ? AND firestoreId IS NULL',
+      whereArgs: [serialNumber, collection],
+      limit: 1,
+    );
+    return r.isNotEmpty ? CardModel.fromMap(r.first) : null;
+  }
+
+  /// Find a local album with no firestoreId matching the given name+collection.
+  /// Used by pullFromCloud() to avoid inserting a duplicate album.
+  Future<AlbumModel?> findOrphanAlbum({
+    required String name,
+    required String collection,
+  }) async {
+    final db = await database;
+    final r = await db.query(
+      'albums',
+      where: 'name = ? AND collection = ? AND firestoreId IS NULL',
+      whereArgs: [name, collection],
+      limit: 1,
+    );
+    return r.isNotEmpty ? AlbumModel.fromMap(r.first) : null;
   }
 
   /// Delete albums that have a firestoreId but it's NOT in [keepIds].

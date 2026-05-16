@@ -9,8 +9,8 @@ import 'donations_page.dart';
 import 'home_page_simple.dart';
 import 'card_list_page.dart';
 import 'catalog_page.dart';
-import 'album_list_page.dart';
-import 'deck_list_page.dart';
+import 'album_deck_page.dart';
+import 'news_page.dart';
 import 'stats_page.dart';
 import 'settings_page.dart';
 import 'login_page.dart';
@@ -611,14 +611,11 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             collectionKey: _currentCollectionKey!,
             collectionName: _currentCollectionName!,
           ),
-          AlbumListPage(
+          AlbumDeckPage(
             collectionKey: _currentCollectionKey!,
             collectionName: _currentCollectionName!,
           ),
-          DeckListPage(
-            collectionKey: _currentCollectionKey!,
-            collectionName: _currentCollectionName!,
-          ),
+          const NewsPage(),
         ],
       );
     } else {
@@ -638,7 +635,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     if (!inCollection) {
       appBarTitle = _isAdmin ? 'Admin — Gestione Catalogo' : 'Deck Master';
     } else {
-      const titles = ['Home', 'Le mie Carte', 'Catalogo', 'Album', 'Deck'];
+      const titles = ['Home', 'Le mie Carte', 'Catalogo', 'Raccolta', 'News'];
       appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';
     }
 
@@ -667,8 +664,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             destinations: const [
               NavigationRailDestination(icon: Icon(Icons.style), label: Text('Carte')),
               NavigationRailDestination(icon: Icon(Icons.search), label: Text('Catalogo')),
-              NavigationRailDestination(icon: Icon(Icons.book), label: Text('Album')),
-              NavigationRailDestination(icon: Icon(Icons.deck), label: Text('Deck')),
+              NavigationRailDestination(icon: Icon(Icons.book), label: Text('Raccolta')),
+              NavigationRailDestination(icon: Icon(Icons.newspaper_outlined), label: Text('News')),
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1),
@@ -935,8 +932,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
                 BottomNavigationBarItem(icon: Icon(Icons.style), label: 'Carte'),
                 BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Catalogo'),
-                BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Album'),
-                BottomNavigationBarItem(icon: Icon(Icons.deck), label: 'Deck'),
+                BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Raccolta'),
+                BottomNavigationBarItem(icon: Icon(Icons.newspaper_outlined), label: 'News'),
               ],
               onTap: _onNavTap,
             )

@@ -78,13 +78,28 @@ class NotificationService {
       );
     });
 
-    // Se le notifiche erano abilitate, rinnova il token FCM
+    // Se le notifiche erano abilitate, rinnova il token FCM.
+    // Nota: questo può fallire silenziosamente se l'auth non è ancora pronta
+    // (caso tipico dopo un aggiornamento app). Il listener sotto copre quel caso.
     if (_prefs?.getBool(_kEnabled) ?? false) {
-      _refreshAndSaveToken(); // Chiamata non bloccante
+      _refreshAndSaveToken();
     }
 
-    // Listener per aggiornamenti del token
+    // Listener token refresh: salva subito il nuovo token. Può arrivare prima
+    // che l'auth sia pronta (es. dopo aggiornamento app) — in quel caso
+    // _saveTokenToFirestore ritorna early ma il listener authStateChanges
+    // recupera non appena l'utente si autentica.
     _fcm.onTokenRefresh.listen((token) => _saveTokenToFirestore(token));
+
+    // Dopo ogni login (incluso il restore della sessione all'avvio post-update)
+    // ri-sincronizza il token FCM se le notifiche sono abilitate.
+    // Questo garantisce che un token rigenerato durante l'update venga sempre
+    // scritto su Firestore, indipendentemente dalla race condition auth vs FCM.
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null && (_prefs?.getBool(_kEnabled) ?? false)) {
+        _refreshAndSaveToken();
+      }
+    });
   }
 
   // ── Permesso ─────────────────────────────────────────────────────────────────

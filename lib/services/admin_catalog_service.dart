@@ -1348,6 +1348,54 @@ class AdminCatalogService {
     return ids;
   }
 
+  Future<Set<String>> _getExistingStringIds(String catalogCollection, String idField) async {
+    final metaDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
+    final totalChunks = metaDoc.exists ? (metaDoc.data()?['totalChunks'] as int? ?? 0) : 0;
+    final ids = <String>{};
+    for (int i = 0; i < totalChunks; i++) {
+      final chunkId = 'chunk_${(i + 1).toString().padLeft(3, '0')}';
+      final doc = await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+      for (final card in (doc.data()?['cards'] as List? ?? [])) {
+        final id = (card as Map)[idField];
+        if (id != null) ids.add(id.toString());
+      }
+    }
+    return ids;
+  }
+
+  Future<({Set<String> groupKeys, int maxId})> _getExistingOnepieceState() async {
+    final metaDoc = await _firestore.collection('onepiece_catalog').doc('metadata').get();
+    final totalChunks = metaDoc.exists ? (metaDoc.data()?['totalChunks'] as int? ?? 0) : 0;
+    final keys = <String>{};
+    int maxId = 0;
+    for (int i = 0; i < totalChunks; i++) {
+      final chunkId = 'chunk_${(i + 1).toString().padLeft(3, '0')}';
+      final doc = await _firestore
+          .collection('onepiece_catalog')
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+      for (final raw in (doc.data()?['cards'] as List? ?? [])) {
+        final card = raw as Map;
+        final id = card['id'];
+        if (id is num && id.toInt() > maxId) maxId = id.toInt();
+        final prints = card['prints'] as List?;
+        if (prints == null || prints.isEmpty) continue;
+        final firstCardSetId = (prints.first as Map)['card_set_id'] as String? ?? '';
+        if (firstCardSetId.isEmpty) continue;
+        final gk = firstCardSetId.contains('_') ? firstCardSetId.split('_')[0] : firstCardSetId;
+        if (gk.isNotEmpty) keys.add(gk);
+      }
+    }
+    return (groupKeys: keys, maxId: maxId);
+  }
+
   /// Uploads [cards] to Firestore in chunks.
   /// If [isIncremental], appends to existing chunks; otherwise deletes all
   /// existing chunks first (full replace).
@@ -1685,6 +1733,140 @@ class AdminCatalogService {
     };
   }
 
+  /// Downloads **only new cards** (not already in Firestore) from OPTCG API
+  /// and appends them to the existing One Piece catalog, preserving all existing price data.
+  Future<Map<String, dynamic>> downloadIncrementalOnepieceCatalog({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    onProgress('Scaricando carte dall\'OPTCG API...', null);
+    final setCards = await _fetchOptcgEndpoint('allSetCards/');
+
+    onProgress('Verificando carte esistenti su Firestore...', null);
+    final existingState = await _getExistingOnepieceState();
+    final existingGroupKeys = existingState.groupKeys;
+    int nextId = existingState.maxId + 1;
+
+    onProgress('Elaborando carte nuove...', null);
+
+    final Map<String, Map<String, dynamic>> cardMap = {};
+    final Map<String, int> cardIdMap = {};
+
+    for (final raw in setCards) {
+      final m = Map<String, dynamic>.from(raw as Map);
+      final name = (m['card_name'] as String? ?? '').trim();
+      final type = (m['card_type'] as String? ?? '').trim();
+      final color = (m['card_color'] as String? ?? '').trim();
+      final cost = m['card_cost'];
+      final power = m['card_power'];
+      final life = m['life'];
+      final cardSetId = (m['card_set_id'] as String? ?? '').trim();
+      if (cardSetId.isEmpty || name.isEmpty) continue;
+
+      final groupKey = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
+
+      if (existingGroupKeys.contains(groupKey)) continue;
+
+      if (!cardIdMap.containsKey(groupKey)) {
+        cardIdMap[groupKey] = nextId++;
+        cardMap[groupKey] = {
+          'id': cardIdMap[groupKey],
+          'name': name,
+          'card_type': type,
+          'color': color,
+          'cost': cost is num ? cost.toInt() : int.tryParse(cost?.toString() ?? ''),
+          'power': power is num ? power.toInt() : int.tryParse(power?.toString() ?? ''),
+          'life': life is num ? life.toInt() : int.tryParse(life?.toString() ?? ''),
+          'sub_types': (m['sub_types'] is List)
+              ? jsonEncode(m['sub_types'])
+              : m['sub_types']?.toString(),
+          'counter_amount': m['counter_amount'] is num
+              ? (m['counter_amount'] as num).toInt()
+              : int.tryParse(m['counter_amount']?.toString() ?? ''),
+          'attribute': m['attribute']?.toString(),
+          'card_text': m['card_text']?.toString(),
+          'image_url': m['card_image']?.toString(),
+          'prints': <Map<String, dynamic>>[],
+        };
+      }
+
+      (cardMap[groupKey]!['prints'] as List<Map<String, dynamic>>).add({
+        'card_set_id': cardSetId,
+        'set_id': m['set_id']?.toString(),
+        'set_name': m['set_name']?.toString(),
+        'rarity': m['rarity']?.toString(),
+        'inventory_price': _parseDouble(m['inventory_price']),
+        'market_price': _parseDouble(m['market_price']),
+        'artwork': m['card_image']?.toString(),
+      });
+    }
+
+    if (cardMap.isEmpty) return {'newCards': 0, 'imagesOk': 0, 'imagesFailed': 0};
+
+    final newCards = cardMap.values.toList();
+    int imagesOk = 0, imagesFailed = 0;
+    final total = newCards.length;
+
+    onProgress('$total carte nuove. Caricando immagini su Firebase Storage...', 0);
+
+    for (int i = 0; i < total; i++) {
+      final card = newCards[i];
+      final prints = card['prints'] as List<Map<String, dynamic>>;
+      bool cardStorageUrlSet = false;
+
+      for (int j = 0; j < prints.length; j++) {
+        final print = prints[j];
+        final cardSetId = print['card_set_id'] as String? ?? '';
+        final rawArtwork = print['artwork'] as String?;
+
+        if (rawArtwork == null || rawArtwork.isEmpty) continue;
+        if (rawArtwork.contains('cloudinary.com')) {
+          if (!cardStorageUrlSet) {
+            card['imageUrl'] = rawArtwork;
+            card.remove('image_url');
+            cardStorageUrlSet = true;
+          }
+          continue;
+        }
+
+        final storageUrl = await _uploadCardImageIfNeeded('onepiece', cardSetId, rawArtwork);
+        if (storageUrl != null) {
+          prints[j] = {...print, 'artwork': storageUrl};
+          if (!cardStorageUrlSet) {
+            card['imageUrl'] = storageUrl;
+            card.remove('image_url');
+            cardStorageUrlSet = true;
+          }
+          imagesOk++;
+        } else {
+          imagesFailed++;
+        }
+      }
+
+      if (i % 50 == 0 || i == total - 1) {
+        onProgress(
+          'Immagini: ${i + 1}/$total — ok: $imagesOk, fallite: $imagesFailed',
+          (i + 1) / total,
+        );
+      }
+    }
+
+    onProgress('Salvando $total carte nuove su Firestore...', null);
+    await _uploadCatalogChunks(
+      catalogCollection: 'onepiece_catalog',
+      cards: newCards,
+      adminUid: adminUid,
+      isIncremental: true,
+      onProgress: (cur, tot) => onProgress('Caricando chunk $cur di $tot...', cur / tot),
+    );
+
+    return {
+      'newCards': total,
+      'imagesOk': imagesOk,
+      'imagesFailed': imagesFailed,
+    };
+  }
+
   /// Migra le immagini One Piece su Firebase Storage aggiornando il campo `artwork` nei prints.
   /// [force] = true salta il controllo sull'URL esistente e ri-verifica ogni file su Storage.
   Future<Map<String, dynamic>> migrateOnepieceImagesToStorage({
@@ -1705,43 +1887,60 @@ class AdminCatalogService {
       int printIndex,
       String cardSetId,
       String sourceUrl,
-      String? fallbackUrl, // card-level image_url, tentato se sourceUrl non è raggiungibile
+      String? fallbackUrl,
     })>[];
+
+    // Diagnostic counters
+    int diagTotalCards = 0;
+    int diagNoPrints = 0;
+    int diagNoCardSetId = 0;
+    int diagSurrogate = 0;
+    int diagAlreadyMigrated = 0;
+
     for (final chunkId in sortedChunkIds) {
       final cards = chunkMap[chunkId]!;
       for (int i = 0; i < cards.length; i++) {
+        diagTotalCards++;
         final card = cards[i];
         final prints = card['prints'] as List<dynamic>? ?? [];
+        if (prints.isEmpty) { diagNoPrints++; continue; }
         for (int j = 0; j < prints.length; j++) {
           final p = Map<String, dynamic>.from(prints[j] as Map);
-          // Fix 4: salta print senza card_set_id — evita path Storage vuoti/errati
           final cardSetId = (p['card_set_id'] as String?)?.trim() ?? '';
-          if (cardSetId.isEmpty) continue;
-          final artwork = p['artwork'] as String?;
-          final cardLevelUrl = card['image_url'] as String? ?? card['imageUrl'] as String?;
-          final printUrl = artwork;
-          final sourceUrl = printUrl ?? cardLevelUrl;
-          final needsMigration = sourceUrl != null &&
-              sourceUrl.isNotEmpty &&
-              (force || artwork == null || !artwork.contains('cloudinary.com'));
-          if (needsMigration) {
-            toMigrate.add((
-              chunkId: chunkId,
-              cardIndex: i,
-              printIndex: j,
-              cardSetId: cardSetId,
-              sourceUrl: sourceUrl,
-              // Fix 2: fallback solo quando diverso da sourceUrl
-              fallbackUrl: (printUrl != null && printUrl != cardLevelUrl) ? cardLevelUrl : null,
-            ));
+          if (cardSetId.isEmpty) { diagNoCardSetId++; continue; }
+
+          // Skip surrogate IDs (CT blueprint ID as fallback — invalid OPTCG paths)
+          final numPart = cardSetId.split('-').last;
+          if (numPart.length > 4 && RegExp(r'^\d+$').hasMatch(numPart)) {
+            diagSurrogate++;
+            continue;
           }
+
+          final artwork = p['artwork'] as String?;
+          final alreadyMigrated = artwork != null && artwork.contains('cloudinary.com');
+          if (alreadyMigrated && !force) { diagAlreadyMigrated++; continue; }
+
+          final sourceUrl = (artwork != null && !artwork.contains('cloudinary.com'))
+              ? artwork
+              : 'https://en.onepiece-cardgame.com/images/cardlist/card/$cardSetId.png';
+
+          toMigrate.add((
+            chunkId: chunkId,
+            cardIndex: i,
+            printIndex: j,
+            cardSetId: cardSetId,
+            sourceUrl: sourceUrl,
+            fallbackUrl: null,
+          ));
         }
       }
     }
 
-    // Fix 1: bumpa sempre la versione anche se non c'è nulla da migrare, così
-    // i client con catalogo obsoleto ricevono la notifica di aggiornamento.
     if (toMigrate.isEmpty) {
+      final diagMsg = 'cards=$diagTotalCards noPrints=$diagNoPrints '
+          'noId=$diagNoCardSetId surrogate=$diagSurrogate '
+          'alreadyDone=$diagAlreadyMigrated';
+      debugPrint('[OPMigration] Niente da migrare — $diagMsg');
       final metadataDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
       final currentVersion = metadataDoc.exists ? (metadataDoc.data()?['version'] as int? ?? 0) : 0;
       await _firestore.collection(catalogCollection).doc('metadata').set({
@@ -1750,7 +1949,7 @@ class AdminCatalogService {
         'updatedBy': adminUid,
         'modifiedChunks': [],
       }, SetOptions(merge: true));
-      return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+      return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0, 'diagMsg': diagMsg};
     }
 
     int migrated = 0, failed = 0;
@@ -1761,22 +1960,13 @@ class AdminCatalogService {
       onProgress(i + 1, toMigrate.length);
 
       try {
-        // Fix 2: prova prima sourceUrl (artwork del print), poi fallbackUrl (image_url della card)
+        // Prova prima sourceUrl (artwork del print), poi fallbackUrl (image_url della card).
+        // _uploadCardImageIfNeeded include User-Agent headers (necessario per OPTCG CDN).
         String? storageUrl;
         final candidates = [item.sourceUrl, if (item.fallbackUrl != null) item.fallbackUrl!];
         for (final url in candidates) {
-          try {
-            final response = await http.get(Uri.parse(url));
-            if (response.statusCode == 200) {
-              storageUrl = await CloudinaryService.uploadBytes(
-                bytes: response.bodyBytes,
-                catalog: 'onepiece',
-                cardId: item.cardSetId,
-              );
-              if (storageUrl != null) break;
-            }
-          } catch (_) { // ignore: empty_catches
-          }
+          storageUrl = await _uploadCardImageIfNeeded('onepiece', item.cardSetId, url);
+          if (storageUrl != null) break;
         }
 
         if (storageUrl != null) {
@@ -1824,7 +2014,28 @@ class AdminCatalogService {
       'modifiedChunks': [],
     }, SetOptions(merge: true));
 
-    return {'migrated': migrated, 'failed': failed, 'chunksUpdated': affectedChunkIds.length};
+    // Verify a sample of uploaded URLs to confirm they're actually on Cloudinary.
+    final uploadedUrls = affectedChunkIds
+        .expand((id) => chunkMap[id]!)
+        .map((c) => (c['prints'] as List?)?.firstOrNull)
+        .whereType<Map>()
+        .map((p) => p['artwork'] as String?)
+        .where((u) => u != null && u.contains('cloudinary.com'))
+        .cast<String>()
+        .take(5)
+        .toList();
+    int verified = 0;
+    for (final url in uploadedUrls) {
+      if (await CloudinaryService.verifyUrl(url)) verified++;
+    }
+
+    return {
+      'migrated': migrated,
+      'failed': failed,
+      'chunksUpdated': affectedChunkIds.length,
+      'verified': verified,
+      'verifiedOf': uploadedUrls.length,
+    };
   }
 
   // ============================================================
@@ -2295,6 +2506,80 @@ class AdminCatalogService {
     };
   }
 
+  /// Downloads **only new cards** (not already in Firestore) from pokemontcg.io
+  /// and appends them to the existing Pokémon catalog, preserving all existing price data.
+  Future<Map<String, dynamic>> downloadIncrementalPokemonCatalog({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    onProgress('Scaricando lista carte da pokemontcg.io...', null);
+    final allCards = await _fetchAllPokemonCards(onProgress);
+
+    onProgress('Verificando carte esistenti su Firestore...', null);
+    final existingIds = await _getExistingStringIds('pokemon_catalog', 'api_id');
+
+    final newCards = allCards
+        .where((c) => !existingIds.contains(c['api_id'] as String? ?? ''))
+        .toList();
+
+    if (newCards.isEmpty) return {'newCards': 0, 'imagesOk': 0, 'imagesFailed': 0};
+
+    final total = newCards.length;
+    onProgress('$total carte nuove. Caricando immagini su Firebase Storage...', 0);
+
+    int done = 0, failed = 0;
+    final processedCards = <Map<String, dynamic>>[];
+
+    for (int i = 0; i < total; i++) {
+      final card = Map<String, dynamic>.from(newCards[i]);
+      final apiId = card['api_id'] as String?;
+      final sourceUrl = card['image_url'] as String?;
+
+      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
+        final storageUrl = await _uploadCardImageIfNeeded('pokemon', apiId, sourceUrl);
+        if (storageUrl != null) {
+          done++;
+          card.remove('image_url');
+          card['imageUrl'] = storageUrl;
+          final rawSets = card['sets'] as Map<String, dynamic>?;
+          if (rawSets != null) {
+            final enList = rawSets['en'] as List?;
+            if (enList != null && enList.isNotEmpty) {
+              final enEntry = Map<String, dynamic>.from(enList[0] as Map)
+                ..['image_url'] = storageUrl;
+              card['sets'] = {...rawSets, 'en': [enEntry]};
+            }
+          }
+        } else {
+          failed++;
+        }
+      }
+
+      processedCards.add(card);
+      if (i % 50 == 0 || i == total - 1) {
+        onProgress(
+          'Immagini: ${i + 1}/$total — ok: $done, fallite: $failed',
+          (i + 1) / total,
+        );
+      }
+    }
+
+    onProgress('Salvando ${processedCards.length} carte su Firestore...', null);
+    await _uploadCatalogChunks(
+      catalogCollection: 'pokemon_catalog',
+      cards: processedCards,
+      adminUid: adminUid,
+      isIncremental: true,
+      onProgress: (cur, tot) => onProgress('Caricando chunk $cur di $tot...', cur / tot),
+    );
+
+    return {
+      'newCards': processedCards.length,
+      'imagesOk': done,
+      'imagesFailed': failed,
+    };
+  }
+
   /// Migrates Pokémon card images to Firebase Storage,
   /// updating `imageUrl` on the card and `artwork` on each print.
   Future<Map<String, dynamic>> migratePokemonImagesToStorage({
@@ -2313,20 +2598,32 @@ class AdminCatalogService {
       final cards = chunkMap[chunkId]!;
       for (int i = 0; i < cards.length; i++) {
         final card = cards[i];
-        final sourceUrl = (card['image_url'] ?? card['imageUrl']) as String?;
         final storageUrl = card['imageUrl'] as String?;
         final apiId = card['api_id'] as String? ?? '';
-        final needsMigration = sourceUrl != null &&
-            sourceUrl.isNotEmpty &&
-            (force || storageUrl == null || !storageUrl.contains('cloudinary.com'));
-        if (needsMigration && apiId.isNotEmpty) {
-          toMigrate.add((
-            chunkId: chunkId,
-            cardIndex: i,
-            apiId: apiId,
-            sourceUrl: sourceUrl,
-          ));
+        if (apiId.isEmpty) continue;
+        if (storageUrl != null && storageUrl.contains('cloudinary.com') && !force) continue;
+
+        // Prefer stored CT URL; fall back to pokemontcg.io (reconstructed from api_id).
+        // CT download with uploadImages:false stores image_url only when the blueprint
+        // has an image — if it's absent we need the API fallback to have something to migrate.
+        String? rawSource = (card['image_url'] ?? card['imageUrl']) as String?;
+        if (rawSource == null || rawSource.isEmpty || rawSource.contains('cloudinary.com')) {
+          // apiId format: 'swsh1-1'  →  set='swsh1', number='1'
+          final dash = apiId.lastIndexOf('-');
+          if (dash > 0) {
+            final setCode = apiId.substring(0, dash);
+            final num = apiId.substring(dash + 1);
+            rawSource = 'https://images.pokemontcg.io/$setCode/${num}_hires.png';
+          }
         }
+        if (rawSource == null || rawSource.isEmpty) continue;
+
+        toMigrate.add((
+          chunkId: chunkId,
+          cardIndex: i,
+          apiId: apiId,
+          sourceUrl: rawSource,
+        ));
       }
     }
 
@@ -2389,10 +2686,25 @@ class AdminCatalogService {
       'updatedBy': adminUid,
     }, SetOptions(merge: true));
 
+    // Verify a sample of uploaded URLs.
+    final uploadedUrls = affectedChunkIds
+        .expand((id) => chunkMap[id]!)
+        .map((c) => c['imageUrl'] as String?)
+        .where((u) => u != null && u.contains('cloudinary.com'))
+        .cast<String>()
+        .take(5)
+        .toList();
+    int verified = 0;
+    for (final url in uploadedUrls) {
+      if (await CloudinaryService.verifyUrl(url)) verified++;
+    }
+
     return {
       'migrated': migrated,
       'failed': failed,
       'chunksUpdated': affectedChunkIds.length,
+      'verified': verified,
+      'verifiedOf': uploadedUrls.length,
     };
   }
 
@@ -2808,7 +3120,8 @@ class AdminCatalogService {
       );
 
       try {
-        final blueprints = await ctService.fetchBlueprintsForExpansion(expId);
+        final rawBlueprints = await ctService.fetchBlueprintsForExpansion(expId);
+        final blueprints = rawBlueprints.where(_isCardBlueprint).toList();
         if (blueprints.isEmpty) { skippedEmpty++; continue; }
 
         // Helper: extract a field checking top-level first, then fixed_properties
@@ -2864,11 +3177,17 @@ class AdminCatalogService {
           if (nameEn.isEmpty) continue;
           final rarity = bpRarityFn(enBp, '');
 
-          final ctImageUrl = CardtraderService.extractBlueprintImageUrl(enBp);
           final apiId = '$expCode-$collectorNumber';
-          final storageUrl = (uploadImages && ctImageUrl != null)
-              ? await _uploadCardImageIfNeeded('pokemon', apiId, ctImageUrl)
-              : null;
+
+          // Image upload only when explicitly requested.
+          // When false the migration reconstructs pokemontcg.io URLs from api_id.
+          String? storageUrl;
+          if (uploadImages) {
+            final ctImageUrl = CardtraderService.extractBlueprintImageUrl(enBp);
+            if (ctImageUrl != null) {
+              storageUrl = await _uploadCardImageIfNeeded('pokemon', apiId, ctImageUrl);
+            }
+          }
 
           // Build sets map: one entry per language
           final setsMap = <String, dynamic>{};
@@ -2898,7 +3217,6 @@ class AdminCatalogService {
             'name': nameEn,
             'catalog': 'pokemon',
             'rarity': rarity,
-            if (!uploadImages && ctImageUrl != null) 'image_url': ctImageUrl,
             'sets': setsMap,
           });
         }
@@ -2930,6 +3248,8 @@ class AdminCatalogService {
     final allCards = <Map<String, dynamic>>[];
     final errors = <String>[];
     int skippedEmpty = 0;
+    int skippedNoCollNum = 0;
+    int skippedNoName = 0;
     int nextId = 1;
 
     for (int i = 0; i < expansions.length; i++) {
@@ -2945,7 +3265,8 @@ class AdminCatalogService {
       );
 
       try {
-        final blueprints = await ctService.fetchBlueprintsForExpansion(expId);
+        final rawBlueprints = await ctService.fetchBlueprintsForExpansion(expId);
+        final blueprints = rawBlueprints.where(_isCardBlueprint).toList();
         if (blueprints.isEmpty) { skippedEmpty++; continue; }
 
         // Helpers: check top-level field first, then fixed_properties
@@ -2964,10 +3285,18 @@ class AdminCatalogService {
           final top = bp['collector_number'] ?? bp['number'];
           if (top != null) return top.toString().trim();
           final p = bpProps(bp);
-          final nested = p['collector_number'] ?? p['number'];
+          final nested = p['collector_number'] ?? p['number'] ?? p['onepiece_number'];
           if (nested != null) return nested.toString().trim();
+          // Fall back to CT blueprint ID — used only as a surrogate key when CT
+          // does not expose the card's collector number (e.g. promo sets).
+          // Callers detect the surrogate via _isSurrogateBlueprintId().
           return bp['id']?.toString() ?? '';
         }
+
+        // Returns true when [collNum] is a CT-internal blueprint ID (≥5 raw digits)
+        // rather than a real card collector number (e.g. "001", "OP01-001").
+        bool isSurrogateBlueprintId(String collNum) =>
+            RegExp(r'^\d{5,}$').hasMatch(collNum);
 
         String bpRarityFn(Map<String, dynamic> bp, String fallback) {
           final top = bp['rarity']?.toString() ?? '';
@@ -2981,7 +3310,7 @@ class AdminCatalogService {
         for (final bp in blueprints) {
           final nameEn = (bp['name_en'] as String?)?.trim() ??
               (bp['name'] as String?)?.trim() ?? '';
-          if (nameEn.isEmpty) continue;
+          if (nameEn.isEmpty) { skippedNoName++; continue; }
           byNameEn.putIfAbsent(nameEn, () => []).add(bp);
         }
 
@@ -2997,44 +3326,34 @@ class AdminCatalogService {
           final rarity = bpRarityFn(jaBp, '');
           final jaName = (jaBp['name'] as String?)?.trim() ?? nameEn;
 
-          // Una sola stampa per carta usando il blueprint JA come base.
-          // I prezzi per lingua (EN/FR/KO/ZH) vengono popolati dal sync CT
-          // separato (syncCatalogPricesToFirestore) → market_price_en ecc.
-          // Questo evita la collisione di card_set_id quando CT assegna lo
-          // stesso collector_number per JP e EN della stessa carta.
           final collNum = bpCollNum(jaBp);
-          if (collNum.isEmpty) continue;
+          if (collNum.isEmpty) { skippedNoCollNum++; continue; }
 
           final collUpper = collNum.toUpperCase();
           final cardSetId = collUpper.startsWith(expCode)
               ? collUpper
               : '$expCode-$collUpper'; // e.g. "OP01-001"
 
-          // Immagine: prendi dal blueprint JA, con fallback agli altri blueprint
-          String? ctImageUrl = CardtraderService.extractBlueprintImageUrl(jaBp);
-          if (ctImageUrl == null) {
-            for (final bp in langBps) {
-              ctImageUrl = CardtraderService.extractBlueprintImageUrl(bp);
-              if (ctImageUrl != null) break;
+          // Image upload only when explicitly requested (uploadImages=true).
+          // When false the migration step reconstructs OPTCG URLs from card_set_id.
+          String? artworkUrl;
+          if (uploadImages) {
+            String? ctImageUrl = CardtraderService.extractBlueprintImageUrl(jaBp);
+            if (ctImageUrl == null) {
+              for (final bp in langBps) {
+                ctImageUrl = CardtraderService.extractBlueprintImageUrl(bp);
+                if (ctImageUrl != null) break;
+              }
+            }
+            final optcgUrl = isSurrogateBlueprintId(collNum)
+                ? null
+                : 'https://en.onepiece-cardgame.com/images/cardlist/card/$cardSetId.png';
+            final bestSourceUrl = ctImageUrl ?? optcgUrl;
+            if (bestSourceUrl != null) {
+              artworkUrl = await _uploadCardImageIfNeeded(
+                  'onepiece', '${expCode}_$collUpper', bestSourceUrl);
             }
           }
-          final optcgUrl = 'https://en.onepiece-cardgame.com/images/cardlist/card/$cardSetId.png';
-          final bestSourceUrl = ctImageUrl ?? optcgUrl;
-          final storageUrl = uploadImages
-              ? await _uploadCardImageIfNeeded('onepiece', '${expCode}_$collUpper', bestSourceUrl)
-              : null;
-          final artworkUrl = storageUrl ?? bestSourceUrl;
-
-          final prints = <Map<String, dynamic>>[
-            {
-              'card_set_id': cardSetId,
-              'set_id': expCode,
-              'set_name': expName,
-              'rarity': rarity,
-              'artwork': artworkUrl,
-            }
-          ];
-          if (prints.isEmpty) continue;
 
           allCards.add({
             'id': nextId++,
@@ -3042,8 +3361,15 @@ class AdminCatalogService {
             if (jaName != nameEn) 'name_ja': jaName,
             'catalog': 'onepiece',
             'rarity': rarity,
-            'image_url': artworkUrl,
-            'prints': prints,
+            'prints': [
+              {
+                'card_set_id': cardSetId,
+                'set_id': expCode,
+                'set_name': expName,
+                'rarity': rarity,
+                if (artworkUrl != null) 'artwork': artworkUrl,
+              }
+            ],
           });
         }
         await Future.delayed(const Duration(milliseconds: 150));
@@ -3054,13 +3380,44 @@ class AdminCatalogService {
 
     if (allCards.isEmpty) {
       final detail = [
-        if (skippedEmpty > 0) '$skippedEmpty/${expansions.length} espansioni con 0 blueprint',
+        if (skippedEmpty > 0) '$skippedEmpty/${expansions.length} espansioni con 0 blueprint dopo filtro',
+        if (skippedNoName > 0) '$skippedNoName blueprint senza nome',
+        if (skippedNoCollNum > 0) '$skippedNoCollNum blueprint senza collector_number',
         if (errors.isNotEmpty) 'errori: ${errors.take(3).join(' | ')}',
-        if (skippedEmpty == 0 && errors.isEmpty) 'tutte le espansioni erano vuote',
+        if (skippedEmpty == 0 && skippedNoName == 0 && skippedNoCollNum == 0 && errors.isEmpty)
+          'tutte le espansioni erano vuote o filtrate',
       ].join('; ');
       throw Exception('Nessuna carta One Piece estratta da CT. $detail');
     }
     return allCards;
+  }
+
+  // ============================================================
+  // Blueprint card-type filter
+  // ============================================================
+
+  /// Returns true if [bp] is a single trading card (not a sealed product,
+  /// accessory, or other non-card item). Uses name-based matching since CT
+  /// blueprints don't expose a reliable category_id at the top level.
+  static bool _isCardBlueprint(Map<String, dynamic> bp) {
+    final name = ((bp['name_en'] ?? bp['name']) as String? ?? '').toLowerCase();
+    const nonCardPatterns = [
+      'booster box', 'booster pack', 'booster bundle', 'booster case',
+      'booster display',
+      'elite trainer box', 'trainer box', 'trainer kit', ' etb',
+      'playmat', 'play mat',
+      ' sleeves', 'card sleeve', 'deck sleeve', 'sleeve pack',
+      'deck box', 'deck case', 'deck shield',
+      'blister pack', 'blister box', 'blister bundle',
+      'gift box', 'gift set', 'collection box', 'collector chest',
+      'theme deck', 'starter deck', 'battle deck', 'league deck',
+      'pre-release pack', 'prerelease pack', 'prerelease kit',
+      'tin box', 'collection tin', 'promo tin',
+      'binder', 'card portfolio',
+      'dice set', 'coin set', 'coin bundle',
+      'display box',
+    ];
+    return !nonCardPatterns.any((p) => name.contains(p));
   }
 
   // ============================================================

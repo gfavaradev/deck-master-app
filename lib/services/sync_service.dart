@@ -203,9 +203,25 @@ class SyncService {
           );
           firestoreToLocalAlbumId[firestoreId] = existing.id!;
         } else {
-          final localId = await _dbHelper.insertAlbum(incoming);
-          await _dbHelper.updateFirestoreId('albums', localId, firestoreId);
-          firestoreToLocalAlbumId[firestoreId] = localId;
+          // Before inserting, look for a pending-sync (or recently-orphaned) local
+          // album that matches by name+collection. This happens when pushAlbumChange
+          // timed out after Firestore accepted the write — the local album has no
+          // firestoreId yet. Claiming it prevents a duplicate row.
+          final orphan = await _dbHelper.findOrphanAlbum(
+            name: incoming.name,
+            collection: incoming.collection,
+          );
+          if (orphan != null) {
+            await _dbHelper.updateFirestoreId('albums', orphan.id!, firestoreId);
+            await _dbHelper.updateAlbum(
+              incoming.copyWith(id: orphan.id, firestoreId: firestoreId),
+            );
+            firestoreToLocalAlbumId[firestoreId] = orphan.id!;
+          } else {
+            final localId = await _dbHelper.insertAlbum(incoming);
+            await _dbHelper.updateFirestoreId('albums', localId, firestoreId);
+            firestoreToLocalAlbumId[firestoreId] = localId;
+          }
         }
       }
 
@@ -252,8 +268,25 @@ class SyncService {
             cardtraderValue: existing.cardtraderValue,
           ));
         } else {
-          final localId = await _dbHelper.insertCard(card);
-          await _dbHelper.updateFirestoreId('cards', localId, firestoreId);
+          // Before inserting, look for a local card without firestoreId that matches
+          // by serialNumber+collection. This happens when pushCardChange timed out
+          // after Firestore accepted the write — the local card has no firestoreId
+          // yet. Claiming it (setting its firestoreId) prevents a duplicate row.
+          final orphan = await _dbHelper.findOrphanCard(
+            serialNumber: card.serialNumber,
+            collection: card.collection,
+          );
+          if (orphan != null) {
+            await _dbHelper.updateFirestoreId('cards', orphan.id!, firestoreId);
+            await _dbHelper.updateCard(card.copyWith(
+              id: orphan.id,
+              value: orphan.value,
+              cardtraderValue: orphan.cardtraderValue,
+            ));
+          } else {
+            final localId = await _dbHelper.insertCard(card);
+            await _dbHelper.updateFirestoreId('cards', localId, firestoreId);
+          }
         }
       }
 
