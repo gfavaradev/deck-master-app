@@ -282,9 +282,7 @@ class FirestoreService {
 
   Future<String> insertAlbum(String userId, AlbumModel album) async {
     final ref = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('albums')
+        .collection(FirestorePaths.userAlbums(userId))
         .add({
       'name': album.name,
       'collection': album.collection,
@@ -296,10 +294,7 @@ class FirestoreService {
 
   Future<void> updateAlbum(String userId, String firestoreId, AlbumModel album) async {
     await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('albums')
-        .doc(firestoreId)
+        .doc(FirestorePaths.userAlbum(userId, firestoreId))
         .update({
       'name': album.name,
       'collection': album.collection,
@@ -310,18 +305,13 @@ class FirestoreService {
 
   Future<void> deleteAlbum(String userId, String firestoreId) async {
     await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('albums')
-        .doc(firestoreId)
+        .doc(FirestorePaths.userAlbum(userId, firestoreId))
         .delete();
   }
 
   Future<List<Map<String, dynamic>>> getAlbums(String userId) async {
     final snapshot = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('albums')
+        .collection(FirestorePaths.userAlbums(userId))
         .get();
 
     return snapshot.docs.map((doc) {
@@ -341,9 +331,7 @@ class FirestoreService {
 
   Future<String> insertCard(String userId, CardModel card, {String? albumFirestoreId}) async {
     final ref = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('cards')
+        .collection(FirestorePaths.userCards(userId))
         .add({
       'catalogId': card.catalogId,
       'name': card.name,
@@ -365,10 +353,7 @@ class FirestoreService {
 
   Future<void> updateCard(String userId, String firestoreId, CardModel card, {String? albumFirestoreId}) async {
     await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('cards')
-        .doc(firestoreId)
+        .doc(FirestorePaths.userCard(userId, firestoreId))
         .update({
       'catalogId': card.catalogId,
       'name': card.name,
@@ -389,18 +374,13 @@ class FirestoreService {
 
   Future<void> deleteCard(String userId, String firestoreId) async {
     await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('cards')
-        .doc(firestoreId)
+        .doc(FirestorePaths.userCard(userId, firestoreId))
         .delete();
   }
 
   Future<List<Map<String, dynamic>>> getCards(String userId) async {
     final snapshot = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('cards')
+        .collection(FirestorePaths.userCards(userId))
         .get();
 
     return snapshot.docs.map((doc) {
@@ -429,9 +409,7 @@ class FirestoreService {
 
   Future<String> insertDeck(String userId, String name, String collection) async {
     final ref = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('decks')
+        .collection(FirestorePaths.userDecks(userId))
         .add({
       'name': name,
       'collection': collection,
@@ -443,19 +421,13 @@ class FirestoreService {
 
   Future<void> deleteDeck(String userId, String firestoreId) async {
     await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('decks')
-        .doc(firestoreId)
+        .doc(FirestorePaths.userDeck(userId, firestoreId))
         .delete();
   }
 
   Future<void> addCardToDeck(String userId, String deckFirestoreId, int cardId, int quantity) async {
     await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('decks')
-        .doc(deckFirestoreId)
+        .doc(FirestorePaths.userDeck(userId, deckFirestoreId))
         .update({
       'cards': FieldValue.arrayUnion([
         {'cardId': cardId, 'quantity': quantity}
@@ -465,34 +437,22 @@ class FirestoreService {
   }
 
   Future<void> removeCardFromDeck(String userId, String deckFirestoreId, int cardId) async {
-    // Need to read current cards, remove the one, then write back
-    final doc = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('decks')
-        .doc(deckFirestoreId)
-        .get();
-
-    if (doc.exists) {
+    final ref = _firestore.doc(FirestorePaths.userDeck(userId, deckFirestoreId));
+    await _firestore.runTransaction((transaction) async {
+      final doc = await transaction.get(ref);
+      if (!doc.exists) return;
       final List<dynamic> cards = doc.data()?['cards'] ?? [];
       cards.removeWhere((c) => c['cardId'] == cardId);
-      await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('decks')
-          .doc(deckFirestoreId)
-          .update({
+      transaction.update(ref, {
         'cards': cards,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-    }
+    });
   }
 
   Future<List<Map<String, dynamic>>> getDecks(String userId) async {
     final snapshot = await _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('decks')
+        .collection(FirestorePaths.userDecks(userId))
         .get();
 
     return snapshot.docs.map((doc) {
@@ -511,14 +471,14 @@ class FirestoreService {
   // ============================================================
 
   Future<void> updateLastSync(String userId) async {
-    await _firestore.collection('users').doc(userId).set({
+    await _firestore.doc(FirestorePaths.user(userId)).set({
       'lastSyncAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
   Future<DateTime?> getLastSync(String userId) async {
     try {
-      final doc = await _firestore.collection('users').doc(userId).get();
+      final doc = await _firestore.doc(FirestorePaths.user(userId)).get();
       final ts = doc.data()?['lastSyncAt'];
       if (ts is Timestamp) return ts.toDate();
     } catch (_) {}
@@ -527,35 +487,26 @@ class FirestoreService {
 
   Future<bool> hasUserData(String userId) async {
     try {
-      // Check if user document exists OR if user has any subcollections
       final doc = await _firestore
-          .collection('users')
-          .doc(userId)
+          .doc(FirestorePaths.user(userId))
           .get()
           .timeout(const Duration(seconds: 8));
       if (doc.exists) return true;
 
-      // Check albums subcollection (most reliable indicator of real data)
       final albums = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('albums')
+          .collection(FirestorePaths.userAlbums(userId))
           .limit(1)
           .get()
           .timeout(const Duration(seconds: 8));
       if (albums.docs.isNotEmpty) return true;
 
-      // Check cards subcollection
       final cards = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('cards')
+          .collection(FirestorePaths.userCards(userId))
           .limit(1)
           .get()
           .timeout(const Duration(seconds: 8));
       return cards.docs.isNotEmpty;
-    } catch (_) { // ignore: empty_catches
-      // Offline o timeout → assume che i dati remoti esistano se c'è cache locale
+    } catch (_) {
       return false;
     }
   }
@@ -632,11 +583,15 @@ class FirestoreService {
   /// Delete all albums, cards and decks documents for a user.
   /// Used by resetAndResync to start from a clean slate.
   Future<void> clearUserData(String userId) async {
-    for (final col in ['albums', 'cards', 'decks']) {
+    for (final colPath in [
+      FirestorePaths.userAlbums(userId),
+      FirestorePaths.userCards(userId),
+      FirestorePaths.userDecks(userId),
+    ]) {
       QuerySnapshot snapshot;
       do {
         snapshot = await _firestore
-            .collection('users/$userId/$col')
+            .collection(colPath)
             .limit(450)
             .get();
         if (snapshot.docs.isEmpty) break;

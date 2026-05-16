@@ -2802,6 +2802,22 @@ class DatabaseHelper {
     return await db.insert('decks', {'name': name, 'collection': collection});
   }
 
+  Future<Map<String, dynamic>?> getDeckByFirestoreId(String firestoreId) async {
+    final db = await database;
+    final r = await db.query('decks', where: 'firestoreId = ?', whereArgs: [firestoreId]);
+    return r.isNotEmpty ? r.first : null;
+  }
+
+  Future<void> updateDeckFields(String firestoreId, String name, String collection) async {
+    final db = await database;
+    await db.update(
+      'decks',
+      {'name': name, 'collection': collection},
+      where: 'firestoreId = ?',
+      whereArgs: [firestoreId],
+    );
+  }
+
   Future<List<Map<String, dynamic>>> getDecksByCollection(String collection) async {
     Database db = await database;
     return await db.query('decks', where: 'collection = ?', whereArgs: [collection]);

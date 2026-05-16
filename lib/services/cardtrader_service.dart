@@ -90,8 +90,6 @@ class CardtraderService {
     }
   }
 
-  static String _normalizeLang(String ctLang) => normalizeLang(ctLang);
-
   /// Extracts the image URL from a CT blueprint map.
   /// CT may return image as a String URL or as a nested map {original, show}.
   static String? extractBlueprintImageUrl(Map<String, dynamic> blueprint) {
@@ -517,7 +515,7 @@ class CardtraderService {
 
       for (final listing in listings) {
         final ph = listing['properties_hash'] as Map<String, dynamic>? ?? {};
-        final lang = _normalizeLang(ph[langKey] as String? ?? 'en');
+        final lang = normalizeLang(ph[langKey] as String? ?? 'en');
         final isFirst = (ph['first_edition'] as bool?) == true ? 1 : 0;
         final rarity = (ph[rarityKey] as String? ?? '').toLowerCase();
         final condition = ph['condition'] as String? ?? '';
@@ -679,7 +677,7 @@ class CardtraderService {
       final props = (bp['fixed_properties'] as Map<String, dynamic>?) ??
           (bp['properties_hash'] as Map<String, dynamic>?) ??
           {};
-      final lang = _normalizeLang(props[langKey] as String? ?? 'en');
+      final lang = normalizeLang(props[langKey] as String? ?? 'en');
       result.putIfAbsent(lang, () => []).add(bp);
     }
     return result;
@@ -778,7 +776,7 @@ class CardtraderService {
 
       for (final listing in listings) {
         final ph = listing['properties_hash'] as Map<String, dynamic>? ?? {};
-        final lang = _normalizeLang(ph[langKey] as String? ?? 'en');
+        final lang = normalizeLang(ph[langKey] as String? ?? 'en');
         final isFirst = (ph['first_edition'] as bool?) == true ? 1 : 0;
         final rarity = (ph[rarityKey] as String? ?? '').toLowerCase();
         final condition = ph['condition'] as String? ?? '';

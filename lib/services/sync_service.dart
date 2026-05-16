@@ -8,6 +8,7 @@ import 'auth_service.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
+import '../utils/app_logger.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -138,8 +139,8 @@ class SyncService {
       await _dbHelper.clearPendingSync();
 
 
-    } catch (e) { // ignore: empty_catches
-
+    } catch (e) {
+      AppLogger.error('initialUpload failed', tag: 'SyncService', error: e);
       rethrow;
     }
   }
@@ -294,18 +295,16 @@ class SyncService {
       await _dbHelper.deleteCardsNotInFirestoreIds(remoteCardFsIds);
 
       // ── Decks: upsert by firestoreId ──────────────────────────────────────
-      final db = await _dbHelper.database;
       for (final deckData in remoteDecks) {
         final firestoreId = deckData['firestoreId'] as String?;
         if (firestoreId == null) continue;
 
-        final existing = await db.query('decks',
-            where: 'firestoreId = ?', whereArgs: [firestoreId]);
-        if (existing.isNotEmpty) {
-          await db.update(
-            'decks',
-            {'name': deckData['name'], 'collection': deckData['collection']},
-            where: 'firestoreId = ?', whereArgs: [firestoreId],
+        final existing = await _dbHelper.getDeckByFirestoreId(firestoreId);
+        if (existing != null) {
+          await _dbHelper.updateDeckFields(
+            firestoreId,
+            deckData['name'] ?? '',
+            deckData['collection'] ?? '',
           );
         } else {
           final localDeckId = await _dbHelper.insertDeck(
@@ -323,8 +322,8 @@ class SyncService {
       await _syncCardtraderPrices();
 
       _remoteChangeController.add('cards');
-    } catch (e) { // ignore: empty_catches
-
+    } catch (e) {
+      AppLogger.error('pullFromCloud failed', tag: 'SyncService', error: e);
       rethrow;
     }
   }
@@ -461,8 +460,8 @@ class SyncService {
       final now = DateTime.now();
       _lastSyncTime = now;
       await _saveLocalLastSyncAt(now);
-    } catch (e) { // ignore: empty_catches
-
+    } catch (e) {
+      AppLogger.error('syncOnLogin failed', tag: 'SyncService', error: e);
     } finally {
       _isSyncing = false;
     }
@@ -512,8 +511,8 @@ class SyncService {
           }
           break;
       }
-    } catch (e) { // ignore: empty_catches
-
+    } catch (e) {
+      AppLogger.error('pushAlbumChange failed ($changeType)', tag: 'SyncService', error: e);
       if (album.id != null) {
         await _dbHelper.addPendingSync('albums', album.id!, changeType);
       }
@@ -586,8 +585,8 @@ class SyncService {
           }
           break;
       }
-    } catch (e) { // ignore: empty_catches
-
+    } catch (e) {
+      AppLogger.error('pushCardChange failed ($changeType)', tag: 'SyncService', error: e);
       if (card.id != null) {
         await _dbHelper.addPendingSync('cards', card.id!, changeType);
       }
@@ -628,8 +627,8 @@ class SyncService {
           }
           break;
       }
-    } catch (e) { // ignore: empty_catches
-
+    } catch (e) {
+      AppLogger.error('pushDeckChange failed ($changeType)', tag: 'SyncService', error: e);
       await _dbHelper.addPendingSync('decks', deckId, changeType);
     }
   }
@@ -642,8 +641,8 @@ class SyncService {
     try {
       await _firestoreService.setCollectionUnlocked(userId, collectionKey, true)
           .timeout(const Duration(seconds: 10));
-    } catch (e) { // ignore: empty_catches
-
+    } catch (e) {
+      AppLogger.error('pushCollectionUnlock failed', tag: 'SyncService', error: e);
     }
   }
 
@@ -681,8 +680,8 @@ class SyncService {
 
       onStatus?.call('Completato!');
 
-    } catch (e) { // ignore: empty_catches
-
+    } catch (e) {
+      AppLogger.error('resetAndResync failed', tag: 'SyncService', error: e);
       rethrow;
     } finally {
       startListening();
@@ -700,6 +699,12 @@ class SyncService {
 
 
 
+    // Load all local data once to avoid N×getAllCards/getAllAlbums queries inside the loop.
+    final allAlbums = await _dbHelper.getAllAlbums();
+    final allCards  = await _dbHelper.getAllCards();
+    final albumById = {for (final a in allAlbums) a.id!: a};
+    final cardById  = {for (final c in allCards) c.id!: c};
+
     for (var item in pending) {
       try {
         final tableName = item['table_name'] as String;
@@ -710,23 +715,18 @@ class SyncService {
 
         switch (tableName) {
           case 'albums':
-            final albums = await _dbHelper.getAllAlbums();
-            final album = albums.where((a) => a.id == localId).firstOrNull;
+            final album = albumById[localId];
             if (album != null) {
               await pushAlbumChange(album, changeType);
             } else if (changeType == 'delete' && storedFirestoreId != null) {
-              // Album already deleted locally; push the delete to Firestore directly.
               await _firestoreService.deleteAlbum(userId, storedFirestoreId);
             }
-            // If album is null and no storedFirestoreId, it was never synced → nothing to do.
             break;
           case 'cards':
-            final cards = await _dbHelper.getAllCards();
-            final card = cards.where((c) => c.id == localId).firstOrNull;
+            final card = cardById[localId];
             if (card != null) {
               await pushCardChange(card, changeType);
             } else if (changeType == 'delete' && storedFirestoreId != null) {
-              // Card already deleted locally; push the delete to Firestore directly.
               await _firestoreService.deleteCard(userId, storedFirestoreId);
             }
             break;
@@ -736,9 +736,9 @@ class SyncService {
         }
 
         await _dbHelper.clearPendingSync(id: item['id'] as int);
-      } catch (e) { // ignore: empty_catches
-
-        // Keep the item in the queue for next attempt
+      } catch (e) {
+        AppLogger.error('flushPendingQueue item failed', tag: 'SyncService', error: e);
+        // Keep the item in the queue for the next attempt
       }
     }
   }

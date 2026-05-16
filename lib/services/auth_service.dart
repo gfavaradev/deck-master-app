@@ -1,5 +1,4 @@
 import 'dart:io' show Platform;
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
@@ -7,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:deck_master/services/user_service.dart';
 import 'package:deck_master/services/database_helper.dart';
+import 'package:deck_master/services/firestore_service.dart';
 import 'package:deck_master/services/sync_service.dart';
+import 'package:deck_master/utils/app_logger.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -140,7 +141,8 @@ class AuthService {
         return userCredential;
       }
       return null;
-    } catch (e) { // ignore: empty_catches
+    } catch (e) {
+      AppLogger.error('signInWithFacebook failed', tag: 'AuthService', error: e);
       return null;
     }
   }
@@ -202,20 +204,23 @@ class AuthService {
     if (!kIsWeb) {
       try {
         await _googleSignIn.signOut();
-      } catch (e) { // ignore: empty_catches
+      } catch (e) {
+        AppLogger.warning('Google signOut failed', tag: 'AuthService');
       }
     }
 
     if (isFacebookAuthSupported) {
       try {
         await FacebookAuth.instance.logOut();
-      } catch (e) { // ignore: empty_catches
+      } catch (e) {
+        AppLogger.warning('Facebook logOut failed', tag: 'AuthService');
       }
     }
 
     try {
       await _auth.signOut();
-    } catch (e) { // ignore: empty_catches
+    } catch (e) {
+      AppLogger.error('Firebase signOut failed', tag: 'AuthService', error: e);
     }
 
     // SQLite is not available on web — skip local data clear
@@ -223,7 +228,8 @@ class AuthService {
       try {
         final dbHelper = DatabaseHelper();
         await dbHelper.clearUserData();
-      } catch (e) { // ignore: empty_catches
+      } catch (e) {
+        AppLogger.error('clearUserData on signOut failed', tag: 'AuthService', error: e);
       }
     }
 
@@ -252,17 +258,12 @@ class AuthService {
     // Stop real-time listeners before deleting
     SyncService().stopListening();
 
-    // Delete Firestore subcollections and user document
+    // Delete Firestore subcollections (batched) and user document
     try {
-      final firestore = FirebaseFirestore.instance;
-      for (final col in ['decks', 'albums', 'cards']) {
-        final docs = await firestore.collection('users/$uid/$col').get();
-        for (final doc in docs.docs) {
-          await doc.reference.delete();
-        }
-      }
+      await FirestoreService().clearUserData(uid);
       await _userService.deleteUser(uid);
-    } catch (e) { // ignore: empty_catches
+    } catch (e) {
+      AppLogger.error('deleteAccount: Firestore cleanup failed', tag: 'AuthService', error: e);
     }
 
     // Clear local SQLite data

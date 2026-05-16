@@ -41,7 +41,7 @@ void main() async {
   if (!kIsWeb && !kDebugMode) {
     FirebaseAppCheck.instance.activate(
       providerAndroid: const AndroidPlayIntegrityProvider(),
-      providerApple: const AppleDebugProvider(),
+      providerApple: const AppleAppAttestProvider(),
     ).catchError((_) {});
   }
 
@@ -55,7 +55,7 @@ void main() async {
   NotificationService().initialize().catchError((_) {});
   AdService.initialize().catchError((_) {});
   // Mostra reminder catalogo se era stato posticipato nella sessione precedente
-  NotificationService().checkAndShowPendingCatalogReminder();
+  NotificationService().checkAndShowPendingCatalogReminder().catchError((_) {});
 
   runApp(const MyApp());
 }
