@@ -1,8 +1,13 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../models/collection_model.dart';
+import '../services/ad_service.dart';
 import '../services/data_repository.dart';
+import '../services/subscription_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
+import 'pro_page.dart';
 
 /// Home page semplificata - mostra solo la griglia delle collezioni
 class HomePageSimple extends StatefulWidget {
@@ -22,18 +27,52 @@ class HomePageSimple extends StatefulWidget {
 }
 
 class _HomePageSimpleState extends State<HomePageSimple> {
-  static const _catalogAvailable = {'yugioh', 'onepiece', 'pokemon'};
+  static const _catalogAvailable = {'yugioh', 'onepiece', 'pokemon', 'magic'};
 
   final DataRepository _repo = DataRepository();
   List<CollectionModel> _unlockedCollections = [];
   List<CollectionModel> _availableCollections = [];
   bool _isLoading = true;
 
+  // ── Rewarded ad & Pro ────────────────────────────────────────────────────
+  bool _isPro = false;
+  RewardedAd? _rewardedAd;
+  bool _adLoading = false;
+
   @override
   void initState() {
     super.initState();
     _loadCollections();
+    _loadProAndAd();
   }
+
+  @override
+  void dispose() {
+    _rewardedAd?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProAndAd() async {
+    final isPro = await SubscriptionService().currentUserHasPro();
+    if (!mounted) return;
+    setState(() => _isPro = isPro);
+    if (!isPro && !kIsWeb) _preloadRewardedAd();
+  }
+
+  void _preloadRewardedAd() {
+    setState(() => _adLoading = true);
+    AdService.loadRewardedAd(
+      onLoaded: (ad) {
+        if (!mounted) { ad.dispose(); return; }
+        setState(() { _rewardedAd = ad; _adLoading = false; });
+      },
+      onFailed: (_) {
+        if (mounted) setState(() { _rewardedAd = null; _adLoading = false; });
+      },
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _loadCollections() async {
     final all = await _repo.getCollections();
@@ -55,8 +94,166 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   Future<void> _unlock(CollectionModel collection) async {
     await _repo.unlockCollection(collection.key);
     await _loadCollections();
-    // Delega a MainLayout: usa il suo pallino con percentuale e la cloud-icon "Più tardi"
     widget.onCatalogRefreshNeeded?.call();
+  }
+
+  bool get _isFirstCollection => _unlockedCollections.isEmpty;
+
+  void _handleUnlockTap(CollectionModel collection) {
+    // Prima collezione o utente Pro → sblocco diretto
+    if (_isFirstCollection || _isPro) {
+      _showFreeUnlockDialog(collection);
+      return;
+    }
+    // Free + 2ª+ collezione → rewarded ad
+    _showRewardedUnlockDialog(collection);
+  }
+
+  void _showFreeUnlockDialog(CollectionModel collection) {
+    final isFirst = _isFirstCollection;
+    showDialog<bool>(
+      context: context,
+      builder: (_) => AppConfirmDialog(
+        title: 'Sblocca ${collection.name}',
+        icon: isFirst ? Icons.lock_open_outlined : Icons.workspace_premium,
+        iconColor: isFirst ? AppColors.blue : AppColors.gold,
+        message: isFirst
+            ? 'Vuoi aggiungere ${collection.name} come tua prima collezione? È completamente gratuita!'
+            : 'Con il piano Pro sblocchi tutte le collezioni senza pubblicità.',
+        confirmLabel: 'Sblocca',
+        confirmColor: isFirst ? AppColors.blue : AppColors.gold,
+      ),
+    ).then((confirmed) {
+      if (confirmed == true) _unlock(collection);
+    });
+  }
+
+  void _showRewardedUnlockDialog(CollectionModel collection) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AppDialog(
+        title: 'Sblocca ${collection.name}',
+        icon: Icons.ondemand_video_outlined,
+        iconColor: AppColors.blue,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Guarda un breve video per sbloccare questa collezione gratuitamente.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.glowGold,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.workspace_premium, color: AppColors.gold, size: 18),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Con il piano Pro sblocchi tutto senza pubblicità.',
+                      style: TextStyle(color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.gold,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Vai Pro', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: appDialogCancelStyle(),
+            child: const Text('Annulla'),
+          ),
+          FilledButton.icon(
+            icon: _adLoading
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.play_circle_outline, size: 18),
+            label: const Text('Guarda Video'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.blue,
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: _adLoading
+                ? null
+                : () {
+                    Navigator.pop(ctx);
+                    _playRewardedAdFor(collection);
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _playRewardedAdFor(CollectionModel collection) {
+    final ad = _rewardedAd;
+    if (ad == null) {
+      // Ad non disponibile: riprova e mostra un messaggio
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Video non disponibile al momento. Riprova tra qualche secondo.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        _preloadRewardedAd();
+      }
+      return;
+    }
+
+    // Svuota il riferimento subito: non usare la stessa istanza due volte
+    setState(() => _rewardedAd = null);
+
+    AdService.showRewardedAd(
+      ad,
+      onRewarded: () {
+        // Ricompensa guadagnata → sblocca la collezione
+        _unlock(collection);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${collection.name} sbloccata!'),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      onDismissed: () {
+        // Ricarica sempre il prossimo ad dopo la chiusura
+        if (mounted && !_isPro) _preloadRewardedAd();
+      },
+      onFailed: (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Errore durante il video. Riprova.')),
+          );
+          _preloadRewardedAd();
+        }
+      },
+    );
   }
 
   @override
@@ -157,7 +354,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
           if (isUnlocked) {
             widget.onCollectionSelected(collection.key, collection.name);
           } else {
-            _showUnlockDialog(collection);
+            _handleUnlockTap(collection);
           }
         },
         borderRadius: BorderRadius.circular(16),
@@ -204,13 +401,10 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                 Positioned(
                   top: 7,
                   right: 7,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.lock_outline, size: 13, color: color.withValues(alpha: 0.85)),
+                  child: _UnlockBadge(
+                    isFree: _isFirstCollection,
+                    isPro: _isPro,
+                    color: color,
                   ),
                 ),
               if (!hasCatalog)
@@ -244,22 +438,6 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     );
   }
 
-  void _showUnlockDialog(CollectionModel collection) {
-    showDialog<bool>(
-      context: context,
-      builder: (_) => AppConfirmDialog(
-        title: 'Sblocca ${collection.name}',
-        icon: Icons.lock_open_outlined,
-        iconColor: AppColors.blue,
-        message: 'Vuoi aggiungere ${collection.name} alle tue collezioni?',
-        confirmLabel: 'Sblocca',
-        confirmColor: AppColors.blue,
-      ),
-    ).then((confirmed) {
-      if (confirmed == true) _unlock(collection);
-    });
-  }
-
   String _getCollectionLogoUrl(String key) => switch (key) {
     'yugioh'           => 'assets/images/collections/yugioh-logo.png',
     'pokemon'          => 'assets/images/collections/pokemon-logo.png',
@@ -276,4 +454,61 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     'union-arena'      => 'assets/images/collections/union-arena-logo.png',
     _                  => 'assets/images/collections/yugioh-logo.png',
   };
+}
+
+// ─── Unlock badge ─────────────────────────────────────────────────────────────
+
+class _UnlockBadge extends StatelessWidget {
+  final bool isFree;
+  final bool isPro;
+  final Color color;
+
+  const _UnlockBadge({
+    required this.isFree,
+    required this.isPro,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isFree) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.success.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Text(
+          'GRATIS',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+      );
+    }
+
+    if (isPro) {
+      return Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppColors.gold.withValues(alpha: 0.85),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.workspace_premium, size: 11, color: Colors.black87),
+      );
+    }
+
+    // Free + 2ª+ collezione → richiede video
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.60),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(Icons.play_circle_outline, size: 13, color: color.withValues(alpha: 0.9)),
+    );
+  }
 }

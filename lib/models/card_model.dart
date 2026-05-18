@@ -15,6 +15,7 @@ class CardModel {
   final String? imageUrl; // Added to simplify UI
   final String? cardtraderSyncedAt;
   final int? cardtraderListingCount;
+  final double? purchasePrice;
 
   CardModel({
     this.id,
@@ -33,6 +34,7 @@ class CardModel {
     this.imageUrl,
     this.cardtraderSyncedAt,
     this.cardtraderListingCount,
+    this.purchasePrice,
   });
 
   Map<String, dynamic> toMap() {
@@ -50,6 +52,7 @@ class CardModel {
       'quantity': quantity,
       'value': value,
       'cardtrader_value': cardtraderValue,
+      'purchase_price': purchasePrice,
       // added_at is intentionally excluded: set once at insert time and
       // must not be overwritten by subsequent updateCard() calls.
     };
@@ -73,6 +76,7 @@ class CardModel {
       imageUrl: map['imageUrl'],
       cardtraderSyncedAt: map['ct_synced_at'] as String?,
       cardtraderListingCount: map['ct_listing_count'] as int?,
+      purchasePrice: (map['purchase_price'] as num?)?.toDouble(),
     );
   }
 
@@ -128,6 +132,7 @@ class CardModel {
     String? imageUrl,
     String? cardtraderSyncedAt,
     int? cardtraderListingCount,
+    double? purchasePrice,
     bool resetId = false,
   }) {
     return CardModel(
@@ -147,6 +152,7 @@ class CardModel {
       imageUrl: imageUrl ?? this.imageUrl,
       cardtraderSyncedAt: cardtraderSyncedAt ?? this.cardtraderSyncedAt,
       cardtraderListingCount: cardtraderListingCount ?? this.cardtraderListingCount,
+      purchasePrice: purchasePrice ?? this.purchasePrice,
     );
   }
 }

@@ -5,6 +5,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'main_layout.dart';
 import 'login_page.dart';
+import 'onboarding_page.dart';
+import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
 
@@ -85,6 +87,14 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
         .first
         .timeout(const Duration(seconds: 8), onTimeout: () => null);
 
+    // Prima apertura assoluta: mostra onboarding indipendentemente dall'auth state
+    if (!AppPreferences.instance.isOnboardingDone) {
+      await Future.delayed(Duration.zero);
+      if (!mounted) return;
+      _navigateToOnboarding(isLoggedIn: user != null);
+      return;
+    }
+
     if (user != null) {
       // Sync parte subito in parallelo con il greeting — non blocca la UI
       // ma aspettiamo che finisca prima di navigare (max 2s extra dopo il greeting)
@@ -150,6 +160,28 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 400),
         pageBuilder: (_, _, _) => const LoginPage(),
+        transitionsBuilder: (_, anim, _, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  void _navigateToOnboarding({required bool isLoggedIn}) {
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (_, _, _) => OnboardingPage(
+          onComplete: () {
+            if (isLoggedIn) {
+              _navigateToMain();
+            } else {
+              _navigateToLogin();
+            }
+          },
+        ),
         transitionsBuilder: (_, anim, _, child) => FadeTransition(
           opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
           child: child,

@@ -29,6 +29,9 @@ import '../widgets/update_dialog.dart';
 import '../widgets/user_avatar_widget.dart';
 import 'notifications_page.dart';
 import 'card_scanner_page.dart';
+import 'wishlist_page.dart';
+import 'roi_page.dart';
+import '../services/price_alert_service.dart';
 
 /// Layout principale con barra di navigazione persistente
 class MainLayout extends StatefulWidget {
@@ -158,6 +161,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       _flushOnBackground();
     } else if (state == AppLifecycleState.resumed) {
       _loadPersistedPendingUpdates();
+      PriceAlertService.checkAlerts();
     }
   }
 
@@ -725,6 +729,22 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 ),
               ),
             ),
+          IconButton(
+            icon: const Icon(Icons.favorite_border),
+            tooltip: 'Wishlist',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const WishlistPage()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.trending_up),
+            tooltip: 'Analisi ROI',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RoiPage()),
+            ),
+          ),
           Stack(
             alignment: Alignment.center,
             children: [

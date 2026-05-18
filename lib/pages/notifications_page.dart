@@ -439,9 +439,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
     }
 
-    // Sorted newest first by detectedAt (ISO8601 string comparison works correctly)
+    // Primary: detectedAt descending. Tie-break: data['date'] descending (app_update
+    // entries detected in the same session all share the same detectedAt timestamp).
     final sorted = [..._history]
-      ..sort((a, b) => b.detectedAt.compareTo(a.detectedAt));
+      ..sort((a, b) {
+        final cmp = b.detectedAt.compareTo(a.detectedAt);
+        if (cmp != 0) return cmp;
+        final aDate = a.data['date'] as String? ?? '';
+        final bDate = b.data['date'] as String? ?? '';
+        return bDate.compareTo(aDate);
+      });
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),

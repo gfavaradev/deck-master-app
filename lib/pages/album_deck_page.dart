@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
+import '../services/subscription_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/top_undo_bar.dart';
+import 'ai_deck_builder_page.dart';
 import 'card_list_page.dart';
 import 'deck_detail_page.dart';
+import 'shared_deck_view_page.dart';
 
 class AlbumDeckPage extends StatefulWidget {
   final String collectionName;
@@ -36,6 +39,7 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
   List<Map<String, dynamic>> _decks = [];
   bool _loadingDecks = true;
   bool _fabExpanded = false;
+  bool _isPro = false;
 
   StreamSubscription<String>? _syncSub;
 
@@ -49,6 +53,7 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
     );
     _refreshAlbums();
     _refreshDecks();
+    _checkPro();
     _syncSub = SyncService().onRemoteChange.listen((_) {
       if (mounted) {
         _refreshAlbums();
@@ -63,6 +68,11 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
     _fabAnim.dispose();
     _syncSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _checkPro() async {
+    final pro = await SubscriptionService().currentUserHasPro();
+    if (mounted) setState(() => _isPro = pro);
   }
 
   Future<void> _refreshAlbums() async {
@@ -240,16 +250,51 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
       );
     }
 
+    final importBanner = InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SharedDeckViewPage()),
+      ),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.bgMedium,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.link, color: AppColors.textHint, size: 18),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Visualizza deck condiviso',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textHint, size: 18),
+          ],
+        ),
+      ),
+    );
+
     Widget deckContent;
     if (_loadingDecks) {
       deckContent = const Center(child: CircularProgressIndicator());
     } else if (_decks.isEmpty) {
-      deckContent = const Center(child: Text('Nessun deck creato.'));
+      deckContent = Column(
+        children: [
+          importBanner,
+          const Expanded(child: Center(child: Text('Nessun deck creato.'))),
+        ],
+      );
     } else {
       deckContent = ListView.builder(
-        itemCount: _decks.length,
+        itemCount: _decks.length + 1,
         itemBuilder: (_, i) {
-          final deck = _decks[i];
+          if (i == 0) return importBanner;
+          final deck = _decks[i - 1];
           return ListTile(
             leading: const Icon(Icons.style, color: AppColors.blue),
             title: Text(deck['name']),
@@ -370,6 +415,28 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      if (widget.collectionKey == 'yugioh')
+                        _FabOption(
+                          icon: Icons.auto_awesome,
+                          label: _isPro ? 'AI Deck Builder' : 'AI Deck Builder ✦',
+                          color: const Color(0xFF9C6FFF),
+                          onTap: () {
+                            _closeFab();
+                            final nav = Navigator.of(context);
+                            Future.delayed(
+                              const Duration(milliseconds: 180),
+                              () {
+                                if (!mounted) return;
+                                nav.push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const AiDeckBuilderPage(),
+                                  ),
+                                ).then((_) => _refreshDecks());
+                              },
+                            );
+                          },
+                        ),
+                      if (widget.collectionKey == 'yugioh') const SizedBox(height: 10),
                       _FabOption(
                         icon: Icons.style_outlined,
                         label: 'Nuovo Deck',

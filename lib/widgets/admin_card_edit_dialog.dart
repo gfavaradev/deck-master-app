@@ -122,6 +122,15 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
   late TextEditingController _opSubTypesController; // e.g. "Straw Hat Crew"
   late TextEditingController _opTriggerController;
 
+  // --- Magic: The Gathering fields ---
+  late TextEditingController _mgManaCostController;   // e.g. "{2}{W}{U}"
+  late TextEditingController _mgCmcController;        // converted mana cost
+  late TextEditingController _mgTypeLineController;   // e.g. "Creature — Human Wizard"
+  late TextEditingController _mgPowerController;
+  late TextEditingController _mgToughnessController;
+  List<String> _mgColors = [];                        // W, U, B, R, G
+  String _mgRarity = 'common';
+
   // --- Translations: name + description per language ---
   static const List<Map<String, String>> _languages = [
     {'code': 'it', 'label': 'Italiano'},
@@ -272,6 +281,21 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     _opAttribute = card['op_attribute'] ?? '';
     _opSubTypesController = TextEditingController(text: card['op_subtypes'] ?? '');
     _opTriggerController = TextEditingController(text: card['op_trigger'] ?? '');
+
+    // Magic init
+    _mgManaCostController = TextEditingController(text: card['mana_cost'] ?? '');
+    _mgCmcController = TextEditingController(text: card['cmc']?.toString() ?? '');
+    _mgTypeLineController = TextEditingController(
+        text: card['type_line'] ?? card['type'] ?? '');
+    _mgPowerController = TextEditingController(text: card['power'] ?? '');
+    _mgToughnessController = TextEditingController(text: card['toughness'] ?? '');
+    final rawColors = card['colors'];
+    _mgColors = rawColors is List
+        ? List<String>.from(rawColors)
+        : (rawColors is String && rawColors.isNotEmpty)
+            ? rawColors.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+            : [];
+    _mgRarity = card['rarity'] ?? 'common';
   }
 
   int _generateCustomCardId() {
@@ -302,6 +326,11 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     _opLifeController.dispose();
     _opSubTypesController.dispose();
     _opTriggerController.dispose();
+    _mgManaCostController.dispose();
+    _mgCmcController.dispose();
+    _mgTypeLineController.dispose();
+    _mgPowerController.dispose();
+    _mgToughnessController.dispose();
     super.dispose();
   }
 
@@ -509,7 +538,9 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
           ] else if (_catalog == 'pokemon')
             _buildPokemonInfoSection()
           else if (_catalog == 'onepiece')
-            _buildOnePieceInfoSection(),
+            _buildOnePieceInfoSection()
+          else if (_catalog == 'magic')
+            _buildMagicInfoSection(),
         ],
       ),
     );
@@ -644,6 +675,69 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
         _dropdown('Attributo', _opAttribute, attributes, (v) => setState(() => _opAttribute = v!)),
         _field('Famiglie / Sottotipi', _opSubTypesController),
         _field('Effetto Trigger', _opTriggerController, maxLines: 3),
+      ],
+    );
+  }
+
+  // ─── Magic Info Section ──────────────────────────────────────────────────────
+
+  Widget _buildMagicInfoSection() {
+    const colorPips = ['W', 'U', 'B', 'R', 'G'];
+    const colorLabels = {'W': 'Bianco', 'U': 'Blu', 'B': 'Nero', 'R': 'Rosso', 'G': 'Verde'};
+    const colorTints = {
+      'W': Color(0xFFF9F6EE),
+      'U': Color(0xFF0E68AB),
+      'B': Color(0xFF150B00),
+      'R': Color(0xFFD3202A),
+      'G': Color(0xFF00733E),
+    };
+    const rarities = ['common', 'uncommon', 'rare', 'mythic', 'special', 'bonus'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Tipo e Mana'),
+        _field('Type Line', _mgTypeLineController,
+            hint: 'es. Creature — Human Wizard'),
+        Row(children: [
+          Expanded(child: _field('Mana Cost', _mgManaCostController,
+              hint: '{2}{W}{U}')),
+          const SizedBox(width: 8),
+          Expanded(child: _field('CMC', _mgCmcController, number: true)),
+        ]),
+        _sectionTitle('Colori'),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: colorPips.map((pip) {
+            final selected = _mgColors.contains(pip);
+            final tint = colorTints[pip]!;
+            return FilterChip(
+              label: Text('$pip  ${colorLabels[pip]}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: selected
+                        ? (pip == 'W' ? Colors.black87 : Colors.white)
+                        : Colors.black87,
+                  )),
+              selected: selected,
+              selectedColor: tint,
+              onSelected: (v) => setState(() {
+                if (v) { _mgColors.add(pip); } else { _mgColors.remove(pip); }
+              }),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 12),
+        _sectionTitle('Statistiche Creatura'),
+        Row(children: [
+          Expanded(child: _field('Power', _mgPowerController, hint: '*')),
+          const SizedBox(width: 8),
+          Expanded(child: _field('Toughness', _mgToughnessController, hint: '*')),
+        ]),
+        _sectionTitle('Rarità'),
+        _dropdown('Rarità', _mgRarity, rarities,
+            (v) => setState(() => _mgRarity = v!)),
       ],
     );
   }
@@ -1459,12 +1553,17 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
         child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold)),
       );
 
-  Widget _field(String label, TextEditingController controller, {int maxLines = 1, bool number = false}) {
+  Widget _field(String label, TextEditingController controller, {int maxLines = 1, bool number = false, String? hint}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
         controller: controller,
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
         maxLines: maxLines,
         keyboardType: number ? TextInputType.number : TextInputType.text,
         inputFormatters: number ? [FilteringTextInputFormatter.digitsOnly] : null,
@@ -1596,6 +1695,16 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
       if (_opAttribute.isNotEmpty) cardData['op_attribute'] = _opAttribute;
       if (_opSubTypesController.text.isNotEmpty) cardData['op_subtypes'] = _opSubTypesController.text.trim();
       if (_opTriggerController.text.isNotEmpty) cardData['op_trigger'] = _opTriggerController.text.trim();
+    }
+
+    if (_catalog == 'magic') {
+      if (_mgManaCostController.text.isNotEmpty) cardData['mana_cost'] = _mgManaCostController.text.trim();
+      if (_mgCmcController.text.isNotEmpty) cardData['cmc'] = double.tryParse(_mgCmcController.text);
+      if (_mgTypeLineController.text.isNotEmpty) cardData['type_line'] = _mgTypeLineController.text.trim();
+      if (_mgPowerController.text.isNotEmpty) cardData['power'] = _mgPowerController.text.trim();
+      if (_mgToughnessController.text.isNotEmpty) cardData['toughness'] = _mgToughnessController.text.trim();
+      if (_mgColors.isNotEmpty) cardData['colors'] = _mgColors;
+      cardData['rarity'] = _mgRarity;
     }
 
     // One Piece: convert sets map → prints array (CT-compatible format)

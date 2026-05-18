@@ -248,6 +248,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
 
   bool get _isYugioh => widget.collectionKey == 'yugioh';
   bool get _isPokemon => widget.collectionKey == 'pokemon';
+  bool get _isMagic => widget.collectionKey == 'magic';
   bool get _isLocalized => _isYugioh || _isPokemon;
 
   @override
@@ -312,6 +313,8 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       sets = await _dbHelper.getYugiohCardPrints(id, language: _preferredLanguage);
     } else if (_isPokemon) {
       sets = await _dbHelper.getPokemonCardPrints(id, language: _preferredLanguage);
+    } else if (_isMagic) {
+      sets = await _dbHelper.getMagicCardPrints(id);
     } else {
       sets = await _dbHelper.getOnepieceCardPrints(id);
     }

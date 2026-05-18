@@ -17,9 +17,10 @@ class AdminSetsRaritiesPage extends StatefulWidget {
 class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
     with SingleTickerProviderStateMixin {
   static const _collections = [
-    {'key': 'yugioh',   'name': 'Yu-Gi-Oh!',  'langs': ['it','fr','de','pt','sp']},
-    {'key': 'pokemon',  'name': 'Pokémon',     'langs': ['it','fr','de','es','pt']},
-    {'key': 'onepiece', 'name': 'One Piece',   'langs': ['fr', 'ko', 'zh']},
+    {'key': 'yugioh',   'name': 'Yu-Gi-Oh!',          'langs': ['it','fr','de','pt','sp']},
+    {'key': 'pokemon',  'name': 'Pokémon',             'langs': ['it','fr','de','es','pt']},
+    {'key': 'onepiece', 'name': 'One Piece',           'langs': ['fr', 'ko', 'zh']},
+    {'key': 'magic',    'name': 'Magic: The Gathering', 'langs': ['fr','de','it','pt','es']},
   ];
 
   late final TabController _tabController;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/app_preferences.dart';
 import '../services/export_service.dart';
 import '../services/notification_service.dart';
 import '../services/auth_service.dart';
@@ -39,6 +40,9 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isResetting = false;
   String _resetStatus = '';
 
+  String _languageCode = 'it';
+  String _currencyCode = 'EUR';
+
   Set<String> _unlockedCatalogKeys = {};
 
   @override
@@ -48,6 +52,15 @@ class _SettingsPageState extends State<SettingsPage> {
     _checkAdminStatus();
     _loadNotificationPreference();
     _loadUnlockedCatalogKeys();
+    _loadAppPreferences();
+  }
+
+  void _loadAppPreferences() {
+    final prefs = AppPreferences.instance;
+    setState(() {
+      _languageCode = prefs.languageCode;
+      _currencyCode = prefs.currencyCode;
+    });
   }
 
   Future<void> _loadUnlockedCatalogKeys() async {
@@ -919,7 +932,139 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  void _showLanguagePicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgMedium,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            width: 36, height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textHint, borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Text('Lingua App',
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
+          ),
+          Container(height: 0.5, color: AppColors.divider),
+          for (final lang in AppPreferences.languages) ...[
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await AppPreferences.instance.setLanguage(lang.code);
+                  if (mounted) setState(() => _languageCode = lang.code);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Row(
+                    children: [
+                      Text(lang.flag, style: const TextStyle(fontSize: 24)),
+                      const SizedBox(width: 14),
+                      Expanded(child: Text(lang.name,
+                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 15))),
+                      if (_languageCode == lang.code)
+                        const Icon(Icons.check, color: AppColors.gold, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (lang != AppPreferences.languages.last)
+              Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 62)),
+          ],
+          SizedBox(height: MediaQuery.of(ctx).viewInsets.bottom + 20),
+        ],
+      ),
+    );
+  }
+
+  void _showCurrencyPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgMedium,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            width: 36, height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textHint, borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Text('Valuta',
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
+          ),
+          Container(height: 0.5, color: AppColors.divider),
+          for (final curr in AppPreferences.currencies) ...[
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await AppPreferences.instance.setCurrency(curr.code);
+                  if (mounted) setState(() => _currencyCode = curr.code);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36, height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.bgLight,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Center(child: Text(curr.symbol,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary))),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(curr.code, style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+                            Text(curr.name, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      if (_currencyCode == curr.code)
+                        const Icon(Icons.check, color: AppColors.gold, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (curr != AppPreferences.currencies.last)
+              Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 70)),
+          ],
+          SizedBox(height: MediaQuery.of(ctx).viewInsets.bottom + 20),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGeneralSection() {
+    final langEntry = AppPreferences.languages.firstWhere(
+      (l) => l.code == _languageCode, orElse: () => AppPreferences.languages.first);
+    final currEntry = AppPreferences.currencies.firstWhere(
+      (c) => c.code == _currencyCode, orElse: () => AppPreferences.currencies.first);
+
     return _buildSectionCard(
       title: 'Generale',
       icon: Icons.tune,
@@ -977,9 +1122,20 @@ class _SettingsPageState extends State<SettingsPage> {
         _buildTile(
           icon: Icons.language,
           title: 'Lingua App',
-          subtitle: 'Italiano',
+          subtitle: '${langEntry.flag}  ${langEntry.name}',
+          iconColor: AppColors.purple,
+          trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
+          onTap: _showLanguagePicker,
+        ),
+        _tileDivider(),
+        _buildTile(
+          icon: Icons.monetization_on_outlined,
+          title: 'Valuta',
+          subtitle: '${currEntry.symbol}  ${currEntry.code} — ${currEntry.name}',
           iconColor: AppColors.purple,
           isLast: true,
+          trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
+          onTap: _showCurrencyPicker,
         ),
       ],
     );

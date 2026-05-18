@@ -1,9 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/card_model.dart';
 import '../services/data_repository.dart';
+import '../services/deck_sharing_service.dart';
+import '../services/subscription_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_dialog.dart';
 import 'card_detail_page.dart';
+import 'pro_page.dart';
 
 class DeckDetailPage extends StatefulWidget {
   final int deckId;
@@ -29,12 +34,15 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
   List<CardModel> _ownedCards = [];
   List<CardModel> _filteredOwned = [];
   bool _isLoading = true;
+  bool _isPro = false;
+  bool _sharing = false;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_applyFilter);
     _load();
+    SubscriptionService().currentUserHasPro().then((v) { if (mounted) setState(() => _isPro = v); });
   }
 
   @override
@@ -107,6 +115,148 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
     );
   }
 
+  Future<void> _shareDeck() async {
+    if (!_isPro) {
+      showDialog(
+        context: context,
+        builder: (_) => AppDialog(
+          title: 'Condivisione Pro',
+          icon: Icons.workspace_premium,
+          iconColor: AppColors.gold,
+          content: const Text(
+            'La condivisione dei deck è disponibile per gli utenti Pro.\nUpgrada per condividere i tuoi deck con la community!',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.pop(context),
+              style: appDialogCancelStyle(),
+              child: const Text('Annulla'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
+              },
+              style: appDialogConfirmStyle(),
+              child: const Text('Vai a Pro'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (_deckCards.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aggiungi carte al deck prima di condividerlo'), backgroundColor: AppColors.warning),
+      );
+      return;
+    }
+
+    setState(() => _sharing = true);
+    try {
+      final collectionName = {
+        'yugioh': 'Yu-Gi-Oh!',
+        'pokemon': 'Pokémon',
+        'onepiece': 'One Piece TCG',
+        'magic': 'Magic: The Gathering',
+      }[widget.collectionKey] ?? widget.collectionKey;
+
+      final cards = _deckCards.map((c) => {
+        'name': c['name'] ?? '',
+        'quantity': c['deckQuantity'] ?? 1,
+        'serialNumber': c['serialNumber'] ?? '',
+        'rarity': c['rarity'] ?? '',
+        'imageUrl': c['imageUrl'],
+      }).toList();
+
+      final code = await DeckSharingService.publishDeck(
+        deckName: widget.deckName,
+        collectionKey: widget.collectionKey,
+        collectionName: collectionName,
+        cards: cards,
+      );
+
+      if (!mounted) return;
+      _showShareDialog(code);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Errore: $e'), backgroundColor: AppColors.error),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  void _showShareDialog(String code) {
+    showDialog(
+      context: context,
+      builder: (_) => AppDialog(
+        title: 'Deck Condiviso!',
+        icon: Icons.check_circle_outline,
+        iconColor: AppColors.success,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Condividi questo codice con altri giocatori:',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: code));
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Codice copiato!'), duration: Duration(seconds: 2)),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.bgLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.gold.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      code,
+                      style: const TextStyle(
+                        color: AppColors.gold,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 6,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.copy, color: AppColors.textHint, size: 18),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Il codice è valido fino alla rimozione manuale.',
+              style: TextStyle(color: AppColors.textHint, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            style: appDialogConfirmStyle(),
+            child: const Text('Chiudi'),
+          ),
+        ],
+      ),
+    );
+  }
+
   CardModel? _findOwnedCard(int cardId) {
     try {
       return _ownedCards.firstWhere((c) => c.id == cardId);
@@ -154,6 +304,21 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
             ),
           ],
         ),
+        actions: [
+          _sharing
+              ? const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.gold)),
+                )
+              : IconButton(
+                  icon: Icon(
+                    Icons.share_outlined,
+                    color: _isPro ? AppColors.gold : AppColors.textHint,
+                  ),
+                  tooltip: _isPro ? 'Condividi Deck' : 'Condividi Deck (Pro)',
+                  onPressed: _shareDeck,
+                ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(height: 1, color: AppColors.divider),

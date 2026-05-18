@@ -603,4 +603,22 @@ class FirestoreService {
       } while (snapshot.docs.length == 450);
     }
   }
+
+  // ============================================================
+  // News
+  // ============================================================
+
+  /// Fetch news relevant to [collectionKeys] (unlocked collections).
+  /// Documents with collections: ['all'] are always included.
+  Future<List<Map<String, dynamic>>> getNews(List<String> collectionKeys) async {
+    final tags = ['all', ...collectionKeys];
+    // arrayContainsAny supports up to 10 values — safe since we have ≤5 tags.
+    final snap = await _firestore
+        .collection('news')
+        .where('collections', arrayContainsAny: tags)
+        .orderBy('publishedAt', descending: true)
+        .limit(50)
+        .get();
+    return snap.docs.map((d) => <String, dynamic>{...d.data(), 'id': d.id}).toList();
+  }
 }

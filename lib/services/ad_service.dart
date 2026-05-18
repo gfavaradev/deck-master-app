@@ -15,32 +15,81 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 class AdService {
   AdService._();
 
-  // ── IDs produzione (da sostituire con i tuoi dati AdMob) ──────────────────
-  static const _androidBannerProdId = 'ca-app-pub-8286949651686497/7191944552';
-  static const _iosBannerProdId     = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+  // ── Banner IDs ────────────────────────────────────────────────────────────
+  static const _androidBannerProdId  = 'ca-app-pub-8286949651686497/7191944552';
+  static const _iosBannerProdId      = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+  static const _androidBannerTestId  = 'ca-app-pub-3940256099942544/6300978111';
+  static const _iosBannerTestId      = 'ca-app-pub-3940256099942544/2934735716';
 
-  // ── IDs test ufficiali Google (non modificare) ────────────────────────────
-  static const _androidBannerTestId = 'ca-app-pub-3940256099942544/6300978111';
-  static const _iosBannerTestId     = 'ca-app-pub-3940256099942544/2934735716';
+  // ── Rewarded IDs ──────────────────────────────────────────────────────────
+  static const _androidRewardedProdId  = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+  static const _iosRewardedProdId      = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+  static const _androidRewardedTestId  = 'ca-app-pub-3940256099942544/5224354917';
+  static const _iosRewardedTestId      = 'ca-app-pub-3940256099942544/1712485313';
 
-  /// Ad unit ID da usare: test in debug, produzione in release.
+  static bool get _isIos => defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// Ad unit ID banner: test in debug, produzione in release.
   static String get bannerAdUnitId {
-    final isIos = defaultTargetPlatform == TargetPlatform.iOS;
-    if (kDebugMode) {
-      return isIos ? _iosBannerTestId : _androidBannerTestId;
-    }
-    return isIos ? _iosBannerProdId : _androidBannerProdId;
+    if (kDebugMode) return _isIos ? _iosBannerTestId : _androidBannerTestId;
+    return _isIos ? _iosBannerProdId : _androidBannerProdId;
+  }
+
+  /// Ad unit ID rewarded: test in debug, produzione in release.
+  static String get rewardedAdUnitId {
+    if (kDebugMode) return _isIos ? _iosRewardedTestId : _androidRewardedTestId;
+    return _isIos ? _iosRewardedProdId : _androidRewardedProdId;
   }
 
   /// Inizializza AdMob. Chiamare una sola volta in main() prima di runApp.
   static Future<void> initialize() async {
     await MobileAds.instance.initialize();
-    // Registra i dispositivi di test per evitare click non validi durante lo sviluppo.
-    // Aggiungi qui l'ID del tuo dispositivo (visibile nei log AdMob all'avvio).
     MobileAds.instance.updateRequestConfiguration(
       RequestConfiguration(
         testDeviceIds: ['1F9CDB810B965089B9CAD8D41B30B255'],
       ),
     );
+  }
+
+  /// Carica un rewarded ad e lo restituisce via callback.
+  /// [onLoaded] → ad pronto.
+  /// [onFailed] → errore di caricamento.
+  static void loadRewardedAd({
+    required void Function(RewardedAd ad) onLoaded,
+    required void Function(LoadAdError error) onFailed,
+  }) {
+    RewardedAd.load(
+      adUnitId: rewardedAdUnitId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: onLoaded,
+        onAdFailedToLoad: onFailed,
+      ),
+    );
+  }
+
+  /// Mostra un rewarded ad già caricato.
+  /// [onRewarded] → ricompensa guadagnata (chiamato prima della chiusura).
+  /// [onDismissed] → ad chiusa (con o senza ricompensa).
+  /// [onFailed]    → errore durante la visualizzazione.
+  static void showRewardedAd(
+    RewardedAd ad, {
+    required VoidCallback onRewarded,
+    required VoidCallback onDismissed,
+    required void Function(AdError error) onFailed,
+  }) {
+    bool rewarded = false;
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (a) {
+        a.dispose();
+        if (rewarded) onRewarded();
+        onDismissed();
+      },
+      onAdFailedToShowFullScreenContent: (a, error) {
+        a.dispose();
+        onFailed(error);
+      },
+    );
+    ad.show(onUserEarnedReward: (a, r) => rewarded = true);
   }
 }

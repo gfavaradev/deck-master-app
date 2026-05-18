@@ -12,6 +12,9 @@ import '../constants/app_constants.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
+import '../models/wishlist_model.dart';
+import 'price_alert_service.dart';
+import 'scryfall_service.dart';
 
 // Top-level functions so compute() can spawn them in a background isolate.
 List<Map<String, dynamic>> _normalizeYugiohBatch(List<Map<String, dynamic>> cards) =>
@@ -19,6 +22,9 @@ List<Map<String, dynamic>> _normalizeYugiohBatch(List<Map<String, dynamic>> card
 
 List<Map<String, dynamic>> _normalizePokemonBatch(List<Map<String, dynamic>> cards) =>
     cards.map(DataRepository._normalizePokemonCardForSQLite).toList();
+
+List<Map<String, dynamic>> _normalizeMagicBatch(List<Map<String, dynamic>> cards) =>
+    cards.map(DataRepository._normalizeMagicCardForSQLite).toList();
 
 /// Facade over DatabaseHelper + FirestoreService.
 /// All pages should use this instead of DatabaseHelper directly.
@@ -35,6 +41,11 @@ class DataRepository {
   final SyncService _syncService = SyncService();
   final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
+
+  Future<void> _applyPricesAndCheckAlerts(String catalog) async {
+    try { await CardtraderService().applyLocalPricesToCollection(catalog); } catch (_) {}
+    PriceAlertService.checkAlerts();
+  }
 
   // ── Pending catalog updates (persisted across sessions) ──────────────────
 
@@ -261,6 +272,27 @@ class DataRepository {
     return updated;
   }
 
+  /// Converte una carta Magic dal formato Firestore al formato SQLite (magic_cards).
+  static Map<String, dynamic> _normalizeMagicCardForSQLite(Map<String, dynamic> card) {
+    return {
+      'api_id':           card['api_id'] ?? card['id'],
+      'name':             card['name'] ?? '',
+      'mana_cost':        card['mana_cost'],
+      'cmc':              card['cmc'],
+      'type_line':        card['type'] ?? card['type_line'],
+      'oracle_text':      card['oracle_text'],
+      'power':            card['power'],
+      'toughness':        card['toughness'],
+      'colors':           card['colors'],
+      'rarity':           card['rarity'],
+      'set_code':         card['set_code'],
+      'set_name':         card['set_name'],
+      'collector_number': card['collector_number'],
+      'image_url':        card['imageUrl'] ?? card['image_url'],
+      'price_eur':        card['price_eur'],
+    };
+  }
+
   /// Converts a Pokémon card from the Firestore `sets`-map format to the flat
   /// `prints` list expected by [DatabaseHelper.insertPokemonCards].
   /// Cards already in the old `prints` format are passed through unchanged.
@@ -365,7 +397,7 @@ class DataRepository {
       }
     }
 
-    try { await CardtraderService().applyLocalPricesToCollection('yugioh'); } catch (_) {}
+    await _applyPricesAndCheckAlerts('yugioh');
   }
 
   /// Applies an incremental catalog update: fetches only the modified chunks,
@@ -417,7 +449,7 @@ class DataRepository {
       }
     }
 
-    try { await CardtraderService().applyLocalPricesToCollection('yugioh'); } catch (_) {}
+    await _applyPricesAndCheckAlerts('yugioh');
   }
 
   Future<void> redownloadYugiohCatalog({
@@ -469,6 +501,16 @@ class DataRepository {
       await _dbHelper.unlockCollection(collectionKey);
     }
     await _syncService.pushCollectionUnlock(collectionKey);
+  }
+
+  /// Returns news filtered by the user's unlocked collections.
+  Future<List<Map<String, dynamic>>> getNews() async {
+    final collections = await getCollections();
+    final unlockedKeys = collections
+        .where((c) => c.isUnlocked)
+        .map((c) => c.key)
+        .toList();
+    return _firestoreService.getNews(unlockedKeys);
   }
 
   // ============================================================
@@ -971,6 +1013,7 @@ class DataRepository {
     switch (collectionKey) {
       case 'onepiece': return checkOnepieceCatalogUpdates();
       case 'pokemon': return checkPokemonCatalogUpdates();
+      case 'magic': return checkMagicCatalogUpdates();
       default: return checkCatalogUpdates(); // yugioh
     }
   }
@@ -978,7 +1021,7 @@ class DataRepository {
   /// Checks all unlocked supported collections for catalog updates (in parallel).
   /// Returns a list of update-info maps, each with 'collectionKey' and 'collectionName' added.
   Future<List<Map<String, dynamic>>> checkAllUnlockedCatalogUpdates() async {
-    const supported = {'yugioh', 'pokemon', 'onepiece'};
+    const supported = {'yugioh', 'pokemon', 'onepiece', 'magic'};
     final collections = await getCollections();
     final unlocked = collections.where((c) => c.isUnlocked && supported.contains(c.key)).toList();
     final futures = unlocked.map((col) => checkCollectionCatalogUpdates(col.key)
@@ -1015,6 +1058,13 @@ class DataRepository {
           break;
         case 'pokemon':
           await downloadPokemonCatalog(
+            updateInfo: updateInfo,
+            onProgress: onProgress,
+            onSaveProgress: onSaveProgress,
+          );
+          break;
+        case 'magic':
+          await downloadMagicCatalog(
             updateInfo: updateInfo,
             onProgress: onProgress,
             onSaveProgress: onSaveProgress,
@@ -1189,6 +1239,11 @@ class DataRepository {
   Future<List<Map<String, dynamic>>> getOnepieceCardPrints(int cardId) async {
     if (kIsWeb) return [];
     return await _dbHelper.getOnepieceCardPrints(cardId);
+  }
+
+  Future<List<Map<String, dynamic>>> getMagicCardPrints(int cardId) async {
+    if (kIsWeb) return [];
+    return _dbHelper.getMagicCardPrints(cardId);
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCardPrints(int cardId, {required String language}) async {
@@ -1574,7 +1629,7 @@ class DataRepository {
       );
     }
 
-    try { await CardtraderService().applyLocalPricesToCollection('onepiece'); } catch (_) {}
+    await _applyPricesAndCheckAlerts('onepiece');
   }
 
   Future<void> _applyOnepieceIncrementalUpdate({
@@ -1606,7 +1661,7 @@ class DataRepository {
       );
     }
 
-    try { await CardtraderService().applyLocalPricesToCollection('onepiece'); } catch (_) {}
+    await _applyPricesAndCheckAlerts('onepiece');
   }
 
   Future<void> redownloadOnepieceCatalog({
@@ -1800,7 +1855,7 @@ class DataRepository {
           lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
         );
       }
-      try { await CardtraderService().applyLocalPricesToCollection('pokemon'); } catch (_) {}
+      await _applyPricesAndCheckAlerts('pokemon');
       return;
     }
 
@@ -1831,7 +1886,7 @@ class DataRepository {
       );
     }
 
-    try { await CardtraderService().applyLocalPricesToCollection('pokemon'); } catch (_) {}
+    await _applyPricesAndCheckAlerts('pokemon');
   }
 
   Future<void> redownloadPokemonCatalog({
@@ -1842,6 +1897,127 @@ class DataRepository {
     await _dbHelper.clearPokemonCatalog();
     await downloadPokemonCatalog(onProgress: onProgress, onSaveProgress: onSaveProgress);
     await _dbHelper.rebuildExpansionsAndRarities('pokemon');
+  }
+
+  // ============================================================
+  // Magic: The Gathering Catalog (from Firestore / Scryfall live)
+  // ============================================================
+
+  Future<Map<String, dynamic>> checkMagicCatalogUpdates() async {
+    if (kIsWeb) return {'needsUpdate': false, 'totalCards': 0};
+    try {
+      final remoteMetadata = await _firestoreService.getCatalogMetadata('magic');
+      if (remoteMetadata == null) {
+        return {'needsUpdate': false, 'error': 'Remote metadata not found'};
+      }
+      final remoteVersion = remoteMetadata['version'] as int? ?? 0;
+      final remoteTotalCards = remoteMetadata['totalCards'] as int? ?? 0;
+      final localMetadata = await _dbHelper.getCatalogMetadata('magic');
+      if (localMetadata == null) {
+        return {
+          'needsUpdate': true,
+          'isFirstDownload': true,
+          'remoteVersion': remoteVersion,
+          'totalCards': remoteTotalCards,
+        };
+      }
+      final localVersion = localMetadata['version'] as int? ?? 0;
+      final localTotalCards = localMetadata['total_cards'] as int? ?? 0;
+      if (remoteVersion > localVersion) {
+        final versionDiff = remoteVersion - localVersion;
+        final modifiedChunks = remoteMetadata['modifiedChunks'] as List<dynamic>? ?? [];
+        final canDoIncremental = versionDiff == 1 && modifiedChunks.isNotEmpty;
+        return {
+          'needsUpdate': true,
+          'isFirstDownload': false,
+          'localVersion': localVersion,
+          'remoteVersion': remoteVersion,
+          'localTotalCards': localTotalCards,
+          'totalCards': remoteTotalCards,
+          'canDoIncremental': canDoIncremental,
+          'modifiedChunks': canDoIncremental ? modifiedChunks : [],
+          'deletedCards': canDoIncremental
+              ? (remoteMetadata['deletedCards'] as List<dynamic>? ?? [])
+              : [],
+        };
+      }
+      return {
+        'needsUpdate': false,
+        'localVersion': localVersion,
+        'totalCards': localTotalCards,
+        'lastUpdated': localMetadata['last_updated'],
+      };
+    } catch (e) {
+      return {'needsUpdate': false, 'error': e.toString()};
+    }
+  }
+
+  Future<void> downloadMagicCatalog({
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+    Map<String, dynamic>? updateInfo,
+  }) async {
+    if (kIsWeb) return;
+    if (updateInfo?['canDoIncremental'] == true) {
+      final modifiedChunks = (updateInfo!['modifiedChunks'] as List<dynamic>).cast<String>();
+      final deletedCards = updateInfo['deletedCards'] as List<dynamic>? ?? [];
+      final remoteMetadata = await _firestoreService.getCatalogMetadata('magic');
+      final modifiedCards = await _firestoreService.fetchCatalogChunks(
+        CatalogConstants.magic, modifiedChunks, onProgress: onProgress,
+      );
+      final deletedIds = deletedCards.whereType<String>().toList();
+      if (deletedIds.isNotEmpty) await _dbHelper.deleteMagicCardsByApiIds(deletedIds);
+      if (modifiedCards.isNotEmpty) {
+        final normalized = await compute(_normalizeMagicBatch, modifiedCards);
+        await _dbHelper.insertMagicCards(normalized, onProgress: onSaveProgress);
+      }
+      if (remoteMetadata != null) {
+        await _dbHelper.saveCatalogMetadata(
+          catalogName: 'magic',
+          version: remoteMetadata['version'] as int? ?? 1,
+          totalCards: remoteMetadata['totalCards'] as int? ?? 0,
+          totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+          lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+        );
+      }
+      return;
+    }
+
+    final remoteMetadata = await _firestoreService.getCatalogMetadata('magic');
+    int totalDownloaded = 0;
+
+    await _firestoreService.streamCatalog(
+      CatalogConstants.magic,
+      onBatch: (cards, chunksDone, chunksTotal) async {
+        onProgress?.call(chunksDone, chunksTotal);
+        await Future.delayed(Duration.zero);
+        final normalized = await compute(_normalizeMagicBatch, cards);
+        await _dbHelper.insertMagicCards(normalized);
+        totalDownloaded += cards.length;
+        onSaveProgress?.call(chunksDone / chunksTotal);
+      },
+    );
+
+    if (totalDownloaded == 0) return;
+
+    if (remoteMetadata != null) {
+      await _dbHelper.saveCatalogMetadata(
+        catalogName: 'magic',
+        version: remoteMetadata['version'] as int? ?? 1,
+        totalCards: remoteMetadata['totalCards'] as int? ?? totalDownloaded,
+        totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+        lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  Future<void> redownloadMagicCatalog({
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+  }) async {
+    if (kIsWeb) return;
+    await _dbHelper.clearMagicCatalog();
+    await downloadMagicCatalog(onProgress: onProgress, onSaveProgress: onSaveProgress);
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCatalogCards({
@@ -1943,6 +2119,47 @@ class DataRepository {
     return rows;
   }
 
+  /// Cerca carte Magic via Scryfall API e le mette in cache nel DB locale.
+  Future<List<Map<String, dynamic>>> getMagicCatalogCards({
+    String? query,
+    int limit = 30,
+  }) async {
+    if (query == null || query.trim().isEmpty) return [];
+    try {
+      final cards = await ScryfallService.searchFuzzy(query.trim(), limit: limit);
+      final result = <Map<String, dynamic>>[];
+      for (final card in cards) {
+        // Cache in local DB
+        final localId = await _dbHelper.upsertMagicCard(card.toMap());
+        final setCode = card.setCode ?? '';
+        final collector = card.collectorNumber ?? '';
+        result.add({
+          'id': localId,
+          'catalogId': card.apiId,
+          'name': card.name,
+          'localizedName': card.name,
+          'description': card.oracleText,
+          'localizedDescription': card.oracleText,
+          'type': card.typeLine,
+          'rarity': card.rarity,
+          'setCode': '$setCode-$collector',
+          'localizedSetCode': '$setCode-$collector',
+          'setName': card.setName,
+          'localizedSetName': card.setName,
+          'setRarity': card.rarity,
+          'localizedRarity': card.rarity,
+          'marketPrice': card.priceEur ?? 0.0,
+          'artwork': card.imageUrl,
+          'collection': 'magic',
+          'isOwned': 0,
+        });
+      }
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Metodo unificato: instrada alla query corretta in base alla collezione.
   /// Usare questo invece dei tre metodi separati nei widget.
   Future<List<Map<String, dynamic>>> getCatalogCardsByCollection(
@@ -1973,10 +2190,47 @@ class DataRepository {
         limit: limit,
         offset: offset,
       );
+    } else if (collection == 'magic') {
+      if (offset > 0) return [];
+      return getMagicCatalogCards(query: query, limit: limit);
     } else {
       // Cataloghi generici: carica tutto (no paginazione)
       if (offset > 0) return [];
       return getCatalogCards(collection, query: query);
     }
   }
+
+  // ── Wishlist ──────────────────────────────────────────────────────────────
+
+  Future<List<WishlistModel>> getWishlistItems() async {
+    final rows = await _dbHelper.getWishlistItemsEnriched();
+    return rows.map(WishlistModel.fromMap).toList();
+  }
+
+  Future<bool> isInWishlist(String catalogId) => _dbHelper.isInWishlist(catalogId);
+
+  Future<int> addToWishlist(WishlistModel item) => _dbHelper.insertWishlistItem(item.toMap());
+
+  Future<void> removeFromWishlist(int id) => _dbHelper.deleteWishlistItem(id);
+
+  Future<void> removeFromWishlistByCatalogId(String catalogId) =>
+      _dbHelper.deleteWishlistItemByCatalogId(catalogId);
+
+  Future<void> updateWishlistTargetPrice(int id, double? price) =>
+      _dbHelper.updateWishlistTargetPrice(id, price);
+
+  // ── AI Deck Builder ───────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getOwnedYugiohCardsForAi() =>
+      _dbHelper.getOwnedYugiohCardsForAi();
+
+  // ── ROI / Analisi investimento ────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getRoiSummary() => _dbHelper.getRoiSummary();
+
+  Future<List<Map<String, dynamic>>> getRoiCardList({String? collection, int limit = 50}) =>
+      _dbHelper.getRoiCardList(collection: collection, limit: limit);
+
+  Future<void> updateCardPurchasePrice(int cardId, double? price) =>
+      _dbHelper.updateCardPurchasePrice(cardId, price);
 }

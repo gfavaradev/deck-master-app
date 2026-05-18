@@ -3424,6 +3424,226 @@ class AdminCatalogService {
   // Collection list
   // ============================================================
 
+  // ============================================================
+  // Scryfall — Magic: The Gathering Catalog
+  // ============================================================
+
+  /// Scarica l'intero catalogo Magic da Scryfall (bulk data "oracle_cards"),
+  /// carica le immagini su Cloudinary e pubblica su Firestore come magic_catalog.
+  Future<Map<String, dynamic>> downloadMagicCatalogFromAPI({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    onProgress('Recupero URL bulk data da Scryfall...', null);
+    final cards = await _fetchAllMagicCards(onProgress);
+    if (cards.isEmpty) throw Exception('Nessuna carta ricevuta da Scryfall');
+
+    final total = cards.length;
+    onProgress('$total carte ricevute. Caricando immagini su Cloudinary...', 0);
+
+    int done = 0, failed = 0;
+    final processedCards = <Map<String, dynamic>>[];
+
+    for (int i = 0; i < total; i++) {
+      final card = Map<String, dynamic>.from(cards[i]);
+      final apiId = card['api_id'] as String?;
+      final sourceUrl = card['image_url'] as String?;
+
+      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
+        final storageUrl = await _uploadCardImageIfNeeded('magic', apiId, sourceUrl);
+        if (storageUrl != null) {
+          done++;
+          card['imageUrl'] = storageUrl;
+        } else {
+          failed++;
+        }
+      }
+      processedCards.add(card);
+
+      if (i % 200 == 0 || i == total - 1) {
+        onProgress(
+          'Immagini: ${i + 1}/$total — ok: $done, fallite: $failed',
+          (i + 1) / total,
+        );
+      }
+    }
+
+    // Preserve admin-modified cards from the existing catalog.
+    final adminModifiedList = await _loadAdminModifiedCards('magic_catalog');
+    if (adminModifiedList.isNotEmpty) {
+      final adminMap = <String, Map<String, dynamic>>{
+        for (final c in adminModifiedList)
+          if ((c['api_id'] as String?)?.isNotEmpty == true) c['api_id'] as String: c,
+      };
+      for (int i = 0; i < processedCards.length; i++) {
+        final apiId = processedCards[i]['api_id'] as String?;
+        if (apiId != null && adminMap.containsKey(apiId)) {
+          processedCards[i] = adminMap[apiId]!;
+        }
+      }
+    }
+
+    onProgress('Salvando ${processedCards.length} carte su Firestore...', null);
+    await _uploadCatalogChunks(
+      catalogCollection: 'magic_catalog',
+      cards: processedCards,
+      adminUid: adminUid,
+      isIncremental: false,
+      onProgress: (cur, tot) => onProgress('Chunk $cur/$tot caricato', tot > 0 ? cur / tot : null),
+    );
+
+    return {
+      'totalCards': processedCards.length,
+      'imagesOk': done,
+      'imagesFailed': failed,
+    };
+  }
+
+  /// Scarica solo le carte nuove (non già presenti) e le aggiunge al catalogo Magic.
+  Future<Map<String, dynamic>> downloadIncrementalMagicCatalog({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    onProgress('Scaricando lista carte da Scryfall...', null);
+    final allCards = await _fetchAllMagicCards(onProgress);
+
+    onProgress('Verificando carte esistenti su Firestore...', null);
+    final existingIds = await _getExistingStringIds('magic_catalog', 'api_id');
+    final newCards = allCards
+        .where((c) => !existingIds.contains(c['api_id'] as String? ?? ''))
+        .toList();
+
+    if (newCards.isEmpty) return {'newCards': 0, 'imagesOk': 0, 'imagesFailed': 0};
+
+    final total = newCards.length;
+    onProgress('$total carte nuove. Caricando immagini...', 0);
+
+    int done = 0, failed = 0;
+    final processedCards = <Map<String, dynamic>>[];
+
+    for (int i = 0; i < total; i++) {
+      final card = Map<String, dynamic>.from(newCards[i]);
+      final apiId = card['api_id'] as String?;
+      final sourceUrl = card['image_url'] as String?;
+      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
+        final storageUrl = await _uploadCardImageIfNeeded('magic', apiId, sourceUrl);
+        if (storageUrl != null) { done++; card['imageUrl'] = storageUrl; } else { failed++; }
+      }
+      processedCards.add(card);
+      if (i % 100 == 0 || i == total - 1) {
+        onProgress('Immagini: ${i + 1}/$total — ok: $done, fallite: $failed', (i + 1) / total);
+      }
+    }
+
+    onProgress('Salvando ${processedCards.length} carte su Firestore...', null);
+    await _uploadCatalogChunks(
+      catalogCollection: 'magic_catalog',
+      cards: processedCards,
+      adminUid: adminUid,
+      isIncremental: true,
+      onProgress: (cur, tot) => onProgress('Chunk $cur/$tot caricato', tot > 0 ? cur / tot : null),
+    );
+
+    return {'newCards': processedCards.length, 'imagesOk': done, 'imagesFailed': failed};
+  }
+
+  /// Scarica le carte Oracle da Scryfall bulk data e le trasforma nel formato Firestore.
+  Future<List<Map<String, dynamic>>> _fetchAllMagicCards(
+    Function(String, double?) onProgress,
+  ) async {
+    const scryfallHeaders = {
+      'Accept': 'application/json',
+      'User-Agent': 'DeckMaster/1.0 (g.favara.dev@gmail.com)',
+    };
+
+    // 1. Recupera la lista di bulk data disponibili
+    onProgress('Recupero indice bulk data Scryfall...', null);
+    final bulkResponse = await http
+        .get(Uri.parse('https://api.scryfall.com/bulk-data'), headers: scryfallHeaders)
+        .timeout(const Duration(seconds: 30));
+    if (bulkResponse.statusCode != 200) {
+      throw Exception('Scryfall bulk-data HTTP ${bulkResponse.statusCode}');
+    }
+    final bulkData = jsonDecode(bulkResponse.body) as Map<String, dynamic>;
+    final entries = (bulkData['data'] as List<dynamic>)
+        .cast<Map<String, dynamic>>();
+    final oracleEntry = entries.firstWhere(
+      (e) => e['type'] == 'oracle_cards',
+      orElse: () => throw Exception('Bulk data oracle_cards non trovato'),
+    );
+    final downloadUri = oracleEntry['download_uri'] as String;
+
+    // 2. Scarica il file JSON bulk
+    onProgress('Scaricando bulk data (~100 MB)...', null);
+    final dataResponse = await http
+        .get(Uri.parse(downloadUri), headers: scryfallHeaders)
+        .timeout(const Duration(minutes: 10));
+    if (dataResponse.statusCode != 200) {
+      throw Exception('Download bulk data HTTP ${dataResponse.statusCode}');
+    }
+
+    // 3. Decodifica e trasforma
+    onProgress('Elaborando carte...', null);
+    final rawList = jsonDecode(dataResponse.body) as List<dynamic>;
+    final cards = <Map<String, dynamic>>[];
+
+    for (int i = 0; i < rawList.length; i++) {
+      final raw = rawList[i] as Map<String, dynamic>;
+
+      // Salta carte non in inglese o token/memorabilia
+      final layout = raw['layout'] as String? ?? '';
+      if (layout == 'token' || layout == 'emblem' || layout == 'art_series') continue;
+      if ((raw['lang'] as String? ?? 'en') != 'en') continue;
+
+      // Immagine (gestisce anche double-faced cards)
+      String? imageUrl;
+      final imageUris = raw['image_uris'] as Map<String, dynamic>?;
+      if (imageUris != null) {
+        imageUrl = imageUris['normal'] as String?;
+      } else {
+        final faces = raw['card_faces'] as List<dynamic>?;
+        if (faces != null && faces.isNotEmpty) {
+          imageUrl = ((faces[0] as Map<String, dynamic>)['image_uris']
+              as Map<String, dynamic>?)?['normal'] as String?;
+        }
+      }
+
+      // Colori come stringa CSV
+      final colorsRaw = raw['colors'] as List<dynamic>? ?? raw['color_identity'] as List<dynamic>? ?? [];
+      final colors = colorsRaw.join(',');
+
+      // Prezzo EUR
+      final prices = raw['prices'] as Map<String, dynamic>?;
+      final priceEur = double.tryParse(prices?['eur']?.toString() ?? '');
+
+      cards.add({
+        'id': raw['id'],
+        'api_id': raw['id'],
+        'name': raw['name'],
+        'type': raw['type_line'],
+        'mana_cost': raw['mana_cost'],
+        'cmc': (raw['cmc'] as num?)?.toDouble(),
+        'oracle_text': raw['oracle_text'],
+        'power': raw['power'],
+        'toughness': raw['toughness'],
+        'colors': colors.isEmpty ? null : colors,
+        'rarity': raw['rarity'],
+        'set_code': raw['set'],
+        'set_name': raw['set_name'],
+        'collector_number': raw['collector_number'],
+        'image_url': imageUrl,
+        'price_eur': priceEur,
+        'catalog': 'magic',
+      });
+
+      if (i % 5000 == 0) {
+        onProgress('Elaborando carta ${i + 1}/${rawList.length}...', (i + 1) / rawList.length);
+      }
+    }
+
+    return cards;
+  }
+
   /// Returns the list of all available catalogs
   static List<Map<String, String>> getCollectionList() {
     return const [

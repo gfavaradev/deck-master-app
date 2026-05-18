@@ -321,6 +321,38 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         _migrationResultMessage,
       );
 
+  // ─── Magic: The Gathering action handlers ─────────────────────────────────
+
+  Future<void> _downloadFullMagic() => _confirmAndRun(
+        'magic',
+        'Download Completo Magic',
+        'Download Catalogo Magic: The Gathering',
+        'Scarica l\'intero catalogo Magic: The Gathering da Scryfall (oracle_cards bulk) '
+            'e sostituisce tutti i chunk su Firestore.\n\n'
+            'Il download è ~100 MB e può richiedere diversi minuti. Continuare?',
+        (uid) => _service.downloadMagicCatalogFromAPI(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => 'Completato! ${r['totalCards']} carte caricate.',
+      );
+
+  Future<void> _downloadIncrementalMagic() => _confirmAndRun(
+        'magic',
+        'Aggiornamento Incrementale Magic',
+        'Aggiorna Nuove Carte Magic',
+        'Aggiunge solo le carte Magic nuove o modificate rispetto all\'ultimo '
+            'download da Scryfall.\n\n'
+            'Le carte esistenti non vengono modificate. Continuare?',
+        (uid) => _service.downloadIncrementalMagicCatalog(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => (r['newCards'] as int? ?? 0) == 0
+            ? 'Nessuna carta Magic nuova trovata.'
+            : '${r['newCards']} carte nuove aggiunte.',
+      );
+
   // ─── Pokémon action handlers ──────────────────────────────────────────────
 
   Future<void> _downloadIncrementalPokemon() => _confirmAndRun(
@@ -446,6 +478,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'yugioh' => 'Yu-Gi-Oh!',
         'pokemon' => 'Pokémon',
         'onepiece' => 'One Piece',
+        'magic' => 'Magic: The Gathering',
         _ => catalog,
       };
 
@@ -473,6 +506,10 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     _CatalogDef(
       key: 'pokemon', name: 'Pokémon TCG',
       icon: Icons.catching_pokemon, color: Color(0xFFF57C00),
+    ),
+    _CatalogDef(
+      key: 'magic', name: 'Magic: The Gathering',
+      icon: Icons.diamond_outlined, color: Color(0xFF7B5EA7),
     ),
   ];
 
@@ -741,6 +778,11 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini CT su Firebase Storage', _migratePokemonImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsPokemon),
         ];
+      case 'magic':
+        return [
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da Scryfall (oracle_cards ~100 MB)', _downloadFullMagic),
+          _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove o modificate (incrementale)', _downloadIncrementalMagic),
+        ];
       default:
         return [];
     }
@@ -943,6 +985,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
       'yugioh':   (label: 'Yu-Gi-Oh!',  color: const Color(0xFF7B1FA2)),
       'pokemon':  (label: 'Pokémon',    color: const Color(0xFFF57C00)),
       'onepiece': (label: 'One Piece',  color: const Color(0xFFD32F2F)),
+      'magic':    (label: 'Magic',      color: const Color(0xFF7B5EA7)),
     };
 
     return FutureBuilder<List<Map<String, dynamic>>>(

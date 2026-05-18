@@ -143,6 +143,9 @@ class CardListItem extends StatelessWidget {
   final Function(CardModel) onDelete;
   final Function(CardModel) onTap;
   final VoidCallback? onImageTap;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
 
   const CardListItem({
     super.key,
@@ -154,36 +157,39 @@ class CardListItem extends StatelessWidget {
     required this.onDelete,
     required this.onTap,
     this.onImageTap,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Dismissible(
-      key: Key('card_${card.id}'),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (direction) async {
-        // Mostra conferma prima di eliminare
-        onDelete(card);
-        return false; // Non dismissare automaticamente
-      },
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        color: Colors.red,
-        child: const Icon(Icons.delete, color: Colors.white, size: 32),
-      ),
-      child: InkWell(
-        onTap: () => onTap(card),
+    final content = InkWell(
+      onTap: () => onTap(card),
+      onLongPress: onLongPress,
+      child: ColoredBox(
+        color: isSelected ? AppColors.blue.withValues(alpha: 0.12) : Colors.transparent,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
+              if (isSelectionMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Icon(
+                    isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                    color: isSelected ? AppColors.blue : AppColors.textHint,
+                    size: 22,
+                  ),
+                ),
               // Immagine / icona
               GestureDetector(
-                onTap: onImageTap ??
-                    (card.imageUrl != null && card.imageUrl!.isNotEmpty
-                        ? () => _showFullScreenImage(context, card.imageUrl!)
-                        : null),
+                onTap: isSelectionMode
+                    ? () => onTap(card)
+                    : (onImageTap ??
+                        (card.imageUrl != null && card.imageUrl!.isNotEmpty
+                            ? () => _showFullScreenImage(context, card.imageUrl!)
+                            : null)),
                 child: Stack(
                   children: [
                     ClipRRect(
@@ -247,37 +253,57 @@ class CardListItem extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // Controlli quantità
-              if (showControls) ...[
-                IconButton(
-                  icon: const Icon(Icons.remove_circle_outline, size: 20),
-                  onPressed: () => onUpdateQuantity(card, -1),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-                SizedBox(
-                  width: 12,
-                  child: Text(
-                    totalQuantity.toString(),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
+              // Controlli quantità (nascosti in modalità selezione)
+              if (!isSelectionMode) ...[
+                if (showControls) ...[
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline, size: 20),
+                    onPressed: () => onUpdateQuantity(card, -1),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline, size: 20),
-                  onPressed: () => onUpdateQuantity(card, 1),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ] else
-                Text(
-                  'x$totalQuantity',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                  SizedBox(
+                    width: 12,
+                    child: Text(
+                      totalQuantity.toString(),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline, size: 20),
+                    onPressed: () => onUpdateQuantity(card, 1),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ] else
+                  Text(
+                    'x$totalQuantity',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+              ],
             ],
           ),
         ),
       ),
+    );
+
+    if (isSelectionMode) return content;
+
+    return Dismissible(
+      key: Key('card_${card.id}'),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (direction) async {
+        onDelete(card);
+        return false;
+      },
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white, size: 32),
+      ),
+      child: content,
     );
   }
 }
@@ -290,6 +316,9 @@ class CardGridItem extends StatelessWidget {
   final Function(CardModel, int) onUpdateQuantity;
   final Function(CardModel) onTap;
   final VoidCallback? onImageTap;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
 
   const CardGridItem({
     super.key,
@@ -300,156 +329,191 @@ class CardGridItem extends StatelessWidget {
     required this.onUpdateQuantity,
     required this.onTap,
     this.onImageTap,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 1,
+      elevation: isSelected ? 3 : 1,
       clipBehavior: Clip.antiAlias,
+      shape: isSelected
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: AppColors.blue, width: 2),
+            )
+          : null,
       child: InkWell(
         onTap: () => onTap(card),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        onLongPress: onLongPress,
+        child: Stack(
           children: [
-            // Card image with quantity badge overlay
-            Expanded(
-              child: GestureDetector(
-                onTap: onImageTap ??
-                    (card.imageUrl != null && card.imageUrl!.isNotEmpty
-                        ? () => _showFullScreenImage(context, card.imageUrl!)
-                        : null),
-                child: card.imageUrl != null && card.imageUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: card.imageUrl!,
-                        fit: BoxFit.cover,
-                        memCacheWidth: 300,
-                        memCacheHeight: 420,
-                        placeholder: (c, u) => Container(
-                          color: AppColors.bgMedium,
-                          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                        ),
-                        errorWidget: (c, u, e) => Container(
-                          color: AppColors.bgMedium,
-                          child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
-                        ),
-                      )
-                    : Container(
-                        color: AppColors.bgMedium,
-                        child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
-                      ),
-              ),
-            ),
-            // Card info (similar to catalog)
-            Padding(
-              padding: const EdgeInsets.all(4.0),
-              child: Column(
-                children: [
-                  // Serial + Rarity
-                  if (card.serialNumber.isNotEmpty || card.rarity.isNotEmpty)
-                    RichText(
-                      text: TextSpan(
-                        children: [
-                          if (card.serialNumber.isNotEmpty)
-                            TextSpan(
-                              text: card.serialNumber,
-                              style: const TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.blue,
-                              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Card image
+                Expanded(
+                  child: GestureDetector(
+                    onTap: isSelectionMode
+                        ? () => onTap(card)
+                        : (onImageTap ??
+                            (card.imageUrl != null && card.imageUrl!.isNotEmpty
+                                ? () => _showFullScreenImage(context, card.imageUrl!)
+                                : null)),
+                    child: card.imageUrl != null && card.imageUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: card.imageUrl!,
+                            fit: BoxFit.cover,
+                            memCacheWidth: 300,
+                            memCacheHeight: 420,
+                            placeholder: (c, u) => Container(
+                              color: AppColors.bgMedium,
+                              child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                             ),
-                          if (card.serialNumber.isNotEmpty && card.rarity.isNotEmpty)
+                            errorWidget: (c, u, e) => Container(
+                              color: AppColors.bgMedium,
+                              child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
+                            ),
+                          )
+                        : Container(
+                            color: AppColors.bgMedium,
+                            child: Center(child: Icon(Icons.style, size: 48, color: AppColors.blue)),
+                          ),
+                  ),
+                ),
+                // Card info
+                Padding(
+                  padding: const EdgeInsets.all(4.0),
+                  child: Column(
+                    children: [
+                      if (card.serialNumber.isNotEmpty || card.rarity.isNotEmpty)
+                        RichText(
+                          text: TextSpan(
+                            children: [
+                              if (card.serialNumber.isNotEmpty)
+                                TextSpan(
+                                  text: card.serialNumber,
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.blue,
+                                  ),
+                                ),
+                              if (card.serialNumber.isNotEmpty && card.rarity.isNotEmpty)
+                                const TextSpan(
+                                  text: ' • ',
+                                  style: TextStyle(fontSize: 9, color: AppColors.textHint),
+                                ),
+                              if (card.rarity.isNotEmpty)
+                                TextSpan(
+                                  text: card.rarity,
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: _getRarityColor(card.rarity),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      SizedBox(
+                        height: 16,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            card.name,
+                            maxLines: 1,
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      RichText(
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: albumName,
+                              style: const TextStyle(fontSize: 8, color: AppColors.textHint),
+                            ),
                             const TextSpan(
                               text: ' • ',
-                              style: TextStyle(fontSize: 9, color: AppColors.textHint),
+                              style: TextStyle(fontSize: 8, color: AppColors.textHint),
                             ),
-                          if (card.rarity.isNotEmpty)
-                            TextSpan(
-                              text: card.rarity,
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                color: _getRarityColor(card.rarity),
-                              ),
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: _LivePriceText(card: card, fontSize: 8),
                             ),
-                        ],
-                      ),
-                    ),
-                  // Card name
-                  SizedBox(
-                    height: 16,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        card.name,
+                          ],
+                        ),
                         maxLines: 1,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  // Album + Value
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: albumName,
-                          style: const TextStyle(fontSize: 8, color: AppColors.textHint),
-                        ),
-                        const TextSpan(
-                          text: ' • ',
-                          style: TextStyle(fontSize: 8, color: AppColors.textHint),
-                        ),
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: _LivePriceText(card: card, fontSize: 8),
-                        ),
-                      ],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                ),
+                // Quantity controls
+                Container(
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.bgMedium.withValues(alpha: 0.5),
+                    border: Border(top: BorderSide(color: AppColors.textHint.withValues(alpha: 0.2))),
                   ),
-                ],
-              ),
+                  child: showControls && !isSelectionMode
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove, size: 18),
+                              onPressed: () => onUpdateQuantity(card, -1),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                            Text(
+                              totalQuantity.toString(),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add, size: 18),
+                              onPressed: () => onUpdateQuantity(card, 1),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                          ],
+                        )
+                      : Center(
+                          child: Text(
+                            'x$totalQuantity',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
+                ),
+              ],
             ),
-            // Quantity controls
-            Container(
-              height: 36,
-              decoration: BoxDecoration(
-                color: AppColors.bgMedium.withValues(alpha: 0.5),
-                border: Border(top: BorderSide(color: AppColors.textHint.withValues(alpha: 0.2))),
+            // Dim overlay for non-selected cards in selection mode
+            if (isSelectionMode && !isSelected)
+              Positioned.fill(
+                child: ColoredBox(color: Colors.black.withValues(alpha: 0.3)),
               ),
-              child: showControls
-                  ? Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.remove, size: 18),
-                          onPressed: () => onUpdateQuantity(card, -1),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                        Text(
-                          totalQuantity.toString(),
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add, size: 18),
-                          onPressed: () => onUpdateQuantity(card, 1),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    )
-                  : Center(
-                      child: Text(
-                        'x$totalQuantity',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                    ),
-            ),
+            // Checkbox overlay
+            if (isSelectionMode)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                    color: isSelected ? AppColors.blue : Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

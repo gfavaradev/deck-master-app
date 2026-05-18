@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/card_scanner_service.dart';
 import '../services/data_repository.dart';
+import '../services/subscription_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/card_dialogs.dart';
+import 'pro_page.dart';
 
 class CardScannerPage extends StatefulWidget {
   /// If set, limits scanning to this specific collection.
@@ -28,6 +32,25 @@ class _CardScannerPageState extends State<CardScannerPage> {
   CardScanResult? _result;
   String? _errorMessage;
 
+  // ── Scanner limit ─────────────────────────────────────────────────────────
+  static const int _kFreeLimit = 25;
+  static const String _kScanCountKey = 'scanner_monthly_count';
+  static const String _kScanMonthKey = 'scanner_month';
+
+  int _scansUsed = 0;
+  bool _isPro = false;
+  bool _limitLoaded = false;
+
+  bool get _canScan => _isPro || _scansUsed < _kFreeLimit;
+  int get _scansRemaining => (_kFreeLimit - _scansUsed).clamp(0, _kFreeLimit);
+
+  static String _currentMonth() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}';
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   static const _collectionLabels = {
     'yugioh': 'Yu-Gi-Oh!',
     'pokemon': 'Pokémon',
@@ -43,11 +66,125 @@ class _CardScannerPageState extends State<CardScannerPage> {
   @override
   void initState() {
     super.initState();
-    // Auto-open camera on first load
+    _loadScanLimit();
+  }
+
+  Future<void> _loadScanLimit() async {
+    final results = await Future.wait([
+      SharedPreferences.getInstance(),
+      SubscriptionService().currentUserHasPro(),
+    ]);
+    final prefs = results[0] as SharedPreferences;
+    final isPro = results[1] as bool;
+
+    final storedMonth = prefs.getString(_kScanMonthKey) ?? '';
+    final currentMonth = _currentMonth();
+    int count = prefs.getInt(_kScanCountKey) ?? 0;
+
+    if (storedMonth != currentMonth) {
+      count = 0;
+      await prefs.setInt(_kScanCountKey, 0);
+      await prefs.setString(_kScanMonthKey, currentMonth);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _scansUsed = count;
+      _isPro = isPro;
+      _limitLoaded = true;
+    });
+
+    // Auto-open camera after limit is loaded
     WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
   }
 
+  Future<void> _incrementScanCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final newCount = _scansUsed + 1;
+    await prefs.setInt(_kScanCountKey, newCount);
+    await prefs.setString(_kScanMonthKey, _currentMonth());
+    if (mounted) setState(() => _scansUsed = newCount);
+  }
+
+  void _showLimitDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AppDialog(
+        title: 'Limite scansioni raggiunto',
+        icon: Icons.document_scanner_outlined,
+        iconColor: AppColors.gold,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Hai utilizzato tutte le 25 scansioni gratuite di questo mese.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.glowGold,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.workspace_premium, color: AppColors.gold, size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Con il piano Pro hai scansioni illimitate ogni mese.',
+                      style: TextStyle(color: AppColors.gold, fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Il contatore si azzera il 1° di ogni mese.',
+              style: TextStyle(color: AppColors.textHint, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            style: appDialogCancelStyle(),
+            child: const Text('Chiudi'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProPage()),
+              );
+            },
+            icon: const Icon(Icons.workspace_premium, size: 16),
+            label: const Text('Passa a Pro'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.gold,
+              foregroundColor: Colors.black87,
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _scan() async {
+    if (!_limitLoaded) return;
+
+    if (!_canScan) {
+      _showLimitDialog();
+      return;
+    }
+
     setState(() {
       _state = _ScanState.scanning;
       _result = null;
@@ -59,6 +196,9 @@ class _CardScannerPageState extends State<CardScannerPage> {
         collectionHint: widget.collectionKey,
       );
       if (!mounted) return;
+
+      // Count every API call (found or not)
+      await _incrementScanCount();
 
       if (result == null) {
         setState(() {
@@ -125,25 +265,75 @@ class _CardScannerPageState extends State<CardScannerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final showCounter = _limitLoaded && !_isPro;
+    final isNearLimit = _scansRemaining <= 5;
+
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         title: const Text('Scansiona Carta'),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
+        actions: [
+          if (showCounter)
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: Center(
+                child: GestureDetector(
+                  onTap: isNearLimit || _scansRemaining == 0
+                      ? _showLimitDialog
+                      : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isNearLimit
+                          ? AppColors.error.withValues(alpha: 0.15)
+                          : AppColors.blue.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isNearLimit ? AppColors.error : AppColors.blue,
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.document_scanner_outlined,
+                          size: 12,
+                          color: isNearLimit ? AppColors.error : AppColors.blue,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$_scansUsed / $_kFreeLimit',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isNearLimit ? AppColors.error : AppColors.blue,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: SafeArea(
         top: false,
         bottom: true,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: switch (_state) {
-            _ScanState.idle => _buildIdle(),
-            _ScanState.scanning => _buildScanning(),
-            _ScanState.found => _buildFound(),
-          _ScanState.notFound => _buildNotFound(),
-        },
-      ),
+        child: !_limitLoaded
+            ? const Center(child: CircularProgressIndicator())
+            : AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: switch (_state) {
+                  _ScanState.idle     => _buildIdle(),
+                  _ScanState.scanning => _buildScanning(),
+                  _ScanState.found    => _buildFound(),
+                  _ScanState.notFound => _buildNotFound(),
+                },
+              ),
       ),
     );
   }
@@ -151,20 +341,29 @@ class _CardScannerPageState extends State<CardScannerPage> {
   Widget _buildIdle() {
     return Center(
       key: const ValueKey('idle'),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.document_scanner_outlined,
-              size: 80, color: AppColors.textHint),
-          const SizedBox(height: 24),
-          const Text(
-            'Punta la fotocamera su una carta\nper identificarla automaticamente',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
-          ),
-          const SizedBox(height: 32),
-          _scanButton(),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.document_scanner_outlined,
+                size: 80, color: AppColors.textHint),
+            const SizedBox(height: 24),
+            const Text(
+              'Punta la fotocamera su una carta\nper identificarla automaticamente',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+            ),
+            const SizedBox(height: 32),
+            _scanButton(),
+            if (!_isPro && _scansRemaining <= 5 && _scansRemaining > 0) ...[
+              const SizedBox(height: 16),
+              _ScanLimitWarning(remaining: _scansRemaining, onUpgrade: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
+              }),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -394,6 +593,54 @@ class _CardPlaceholder extends StatelessWidget {
     );
   }
 }
+
+// ─── Scan limit warning banner ────────────────────────────────────────────────
+
+class _ScanLimitWarning extends StatelessWidget {
+  final int remaining;
+  final VoidCallback onUpgrade;
+  const _ScanLimitWarning({required this.remaining, required this.onUpgrade});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Ti restano solo $remaining scansioni gratuite questo mese.',
+              style: const TextStyle(color: AppColors.warning, fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onUpgrade,
+            child: const Text(
+              'Vai Pro',
+              style: TextStyle(
+                color: AppColors.gold,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.gold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _Badge extends StatelessWidget {
   final String label;

@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 32,
+      version: 35,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -77,6 +77,11 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_prints_card_id ON pokemon_prints(card_id)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_prints_set_code ON pokemon_prints(set_code)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_pokemon_prices_print_id ON pokemon_prices(print_id)');
+
+    // Magic indices
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_magic_cards_name ON magic_cards(name)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_magic_cards_api_id ON magic_cards(api_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_magic_cards_set_code ON magic_cards(set_code)');
 
     // cards table indices — critical for getCardsByCollection and getAlbumsByCollection
     await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_collection ON cards(collection)');
@@ -402,6 +407,27 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 33) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS wishlist (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          catalogId    TEXT    NOT NULL,
+          name         TEXT    NOT NULL,
+          collection   TEXT    NOT NULL,
+          imageUrl     TEXT,
+          serialNumber TEXT,
+          rarity       TEXT,
+          target_price REAL,
+          added_at     TEXT    NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 34) {
+      await _addColumnIfMissing(db, 'cards', 'purchase_price', 'REAL');
+    }
+    if (oldVersion < 35) {
+      await _createMagicTables(db);
+    }
   }
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
@@ -723,6 +749,123 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> _createMagicTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS magic_cards(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        api_id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        mana_cost TEXT,
+        cmc REAL,
+        type_line TEXT,
+        oracle_text TEXT,
+        power TEXT,
+        toughness TEXT,
+        colors TEXT,
+        rarity TEXT,
+        set_code TEXT,
+        set_name TEXT,
+        collector_number TEXT,
+        image_url TEXT,
+        price_eur REAL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  /// Inserisce o aggiorna una carta Magic per api_id.
+  Future<int> upsertMagicCard(Map<String, dynamic> card) async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    final existing = await db.query('magic_cards', where: 'api_id = ?', whereArgs: [card['api_id']], limit: 1);
+    if (existing.isNotEmpty) {
+      await db.update('magic_cards', {...card, 'updated_at': now}, where: 'api_id = ?', whereArgs: [card['api_id']]);
+      return existing.first['id'] as int;
+    } else {
+      return db.insert('magic_cards', {...card, 'created_at': now, 'updated_at': now});
+    }
+  }
+
+  /// Bulk-insert carte Magic da Firestore. Usa INSERT OR REPLACE per aggiornare esistenti.
+  Future<void> insertMagicCards(
+    List<Map<String, dynamic>> cards, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      for (int i = 0; i < cards.length; i++) {
+        final card = cards[i];
+        await txn.insert('magic_cards', {
+          'api_id':           card['api_id'] ?? card['id'],
+          'name':             card['name'] ?? '',
+          'mana_cost':        card['mana_cost'],
+          'cmc':              card['cmc'],
+          'type_line':        card['type'] ?? card['type_line'],
+          'oracle_text':      card['oracle_text'],
+          'power':            card['power'],
+          'toughness':        card['toughness'],
+          'colors':           card['colors'],
+          'rarity':           card['rarity'],
+          'set_code':         card['set_code'],
+          'set_name':         card['set_name'],
+          'collector_number': card['collector_number'],
+          'image_url':        card['imageUrl'] ?? card['image_url'],
+          'price_eur':        card['price_eur'],
+          'created_at':       now,
+          'updated_at':       now,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        if (onProgress != null && i % 100 == 0) {
+          onProgress(i / cards.length);
+        }
+      }
+    });
+    onProgress?.call(1.0);
+  }
+
+  Future<void> clearMagicCatalog() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('magic_cards');
+      await txn.delete('catalog_metadata', where: 'catalog_name = ?', whereArgs: ['magic']);
+    });
+  }
+
+  Future<void> deleteMagicCardsByApiIds(List<String> apiIds) async {
+    if (apiIds.isEmpty) return;
+    final db = await database;
+    for (int i = 0; i < apiIds.length; i += 500) {
+      final batch = apiIds.sublist(i, (i + 500 < apiIds.length) ? i + 500 : apiIds.length);
+      final placeholders = batch.map((_) => '?').join(',');
+      await db.delete('magic_cards', where: 'api_id IN ($placeholders)', whereArgs: batch);
+    }
+  }
+
+  Future<Map<String, dynamic>?> getMagicCardById(int id) async {
+    final db = await database;
+    final rows = await db.query('magic_cards', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isNotEmpty ? rows.first : null;
+  }
+
+  /// Restituisce i "prints" di una carta Magic come lista singola (Scryfall card = print unico).
+  Future<List<Map<String, dynamic>>> getMagicCardPrints(int cardId) async {
+    final db = await database;
+    final rows = await db.query('magic_cards', where: 'id = ?', whereArgs: [cardId], limit: 1);
+    if (rows.isEmpty) return [];
+    final c = rows.first;
+    final setCode = c['set_code'] as String? ?? '';
+    final collector = c['collector_number'] as String? ?? '';
+    return [{
+      'setCode': '$setCode-$collector',
+      'setName': c['set_name'] ?? '',
+      'setRarity': c['rarity'] ?? '',
+      'rarity': c['rarity'] ?? '',
+      'marketPrice': (c['price_eur'] as num?)?.toDouble() ?? 0.0,
+      'artwork': c['image_url'],
+    }];
+  }
+
   Future _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE albums(
@@ -750,6 +893,7 @@ class DatabaseHelper {
         value REAL,
         previous_value REAL,
         cardtrader_value REAL,
+        purchase_price REAL,
         firestoreId TEXT,
         added_at TEXT,
         FOREIGN KEY (albumId) REFERENCES albums (id)
@@ -852,6 +996,9 @@ class DatabaseHelper {
     // Create Pokémon-specific tables
     await _createPokemonTables(db);
 
+    // Create Magic: The Gathering tables
+    await _createMagicTables(db);
+
     // Create pending_sync table
     await db.execute('''
       CREATE TABLE IF NOT EXISTS pending_sync(
@@ -911,6 +1058,20 @@ class DatabaseHelper {
         total_cents   INTEGER NOT NULL,
         recorded_date TEXT    NOT NULL,
         PRIMARY KEY (collection, recorded_date)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS wishlist (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        catalogId    TEXT    NOT NULL,
+        name         TEXT    NOT NULL,
+        collection   TEXT    NOT NULL,
+        imageUrl     TEXT,
+        serialNumber TEXT,
+        rarity       TEXT,
+        target_price REAL,
+        added_at     TEXT    NOT NULL
       )
     ''');
 
@@ -2013,6 +2174,83 @@ class DatabaseHelper {
       GROUP BY recorded_date
       ORDER BY recorded_date ASC
     ''', [from]);
+  }
+
+  /// Returns ROI summary: total invested, current CT value, gain, ROI%.
+  /// Only cards with purchase_price > 0 are included in invested/ROI figures.
+  Future<Map<String, dynamic>> getRoiSummary() async {
+    final db = await database;
+
+    // Current portfolio value (CT price or catalog price for all cards)
+    final valueRows = await db.rawQuery('''
+      ${_cardEffectiveValueCTE()}
+      SELECT SUM(effective_price * quantity) AS total_value FROM card_values
+    ''');
+    final currentValue = (valueRows.first['total_value'] as num?)?.toDouble() ?? 0.0;
+
+    // Invested cost (only cards with purchase_price set)
+    final investedRows = await db.rawQuery('''
+      SELECT COALESCE(SUM(purchase_price * quantity), 0) AS total_invested
+      FROM cards WHERE purchase_price > 0
+    ''');
+    final totalInvested = (investedRows.first['total_invested'] as num?)?.toDouble() ?? 0.0;
+
+    // Current CT value only for cards with purchase_price set (fair comparison for ROI)
+    final ownedValueRows = await db.rawQuery('''
+      SELECT
+        SUM(COALESCE(c.cardtrader_value, c.value, 0) * c.quantity) AS owned_value,
+        COUNT(*) AS card_count
+      FROM cards c WHERE c.purchase_price > 0
+    ''');
+
+    final ownedValue = (ownedValueRows.first['owned_value'] as num?)?.toDouble() ?? 0.0;
+    final cardCount = (ownedValueRows.first['card_count'] as num?)?.toInt() ?? 0;
+
+    final gain = ownedValue - totalInvested;
+    final roiPct = totalInvested > 0 ? (gain / totalInvested) * 100 : 0.0;
+
+    return {
+      'currentValue': currentValue,
+      'totalInvested': totalInvested,
+      'ownedValue': ownedValue,
+      'gain': gain,
+      'roiPct': roiPct,
+      'cardCount': cardCount,
+    };
+  }
+
+  /// Returns top cards by ROI% (only where purchase_price > 0).
+  Future<List<Map<String, dynamic>>> getRoiCardList({
+    String? collection,
+    int limit = 50,
+  }) async {
+    final db = await database;
+    final collectionFilter = collection != null ? "AND c.collection = '$collection'" : '';
+    return db.rawQuery('''
+      SELECT
+        c.id, c.name, c.serialNumber, c.rarity, c.collection, c.imageUrl,
+        c.quantity, c.purchase_price,
+        COALESCE(c.cardtrader_value, c.value, 0) AS current_price,
+        (COALESCE(c.cardtrader_value, c.value, 0) - c.purchase_price) * c.quantity AS gain_euros,
+        CASE WHEN c.purchase_price > 0
+          THEN ((COALESCE(c.cardtrader_value, c.value, 0) - c.purchase_price) / c.purchase_price) * 100
+          ELSE 0
+        END AS roi_pct
+      FROM cards c
+      WHERE c.purchase_price > 0 $collectionFilter
+      ORDER BY gain_euros DESC
+      LIMIT ?
+    ''', [limit]);
+  }
+
+  Future<int> updateCardPurchasePrice(int cardId, double? price) async {
+    final db = await database;
+    return db.update(
+      'cards',
+      {'purchase_price': price},
+      where: 'id = ?',
+      whereArgs: [cardId],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getAllCardsForExport() async {
@@ -4638,4 +4876,94 @@ class DatabaseHelper {
       "CASE WHEN SUBSTR(TRIM($col),-1)=')' AND INSTR($col,' (')>0"
       " THEN SUBSTR($col,1,INSTR($col,' (')-1)"
       " ELSE $col END");
+
+  // ── AI Deck Builder ───────────────────────────────────────────────────────
+
+  /// Restituisce le carte YGO possedute con info catalogo per l'AI Deck Builder.
+  Future<List<Map<String, dynamic>>> getOwnedYugiohCardsForAi() async {
+    final db = await database;
+    return db.rawQuery('''
+      SELECT
+        yc.name, yc.type, yc.attribute, yc.level, yc.atk, yc.def,
+        yc.race, yc.frame_type AS frameType,
+        c.id AS owned_id, c.quantity, c.serialNumber,
+        c.imageUrl
+      FROM cards c
+      JOIN yugioh_cards yc ON yc.id = CAST(c.catalogId AS INTEGER)
+      WHERE c.collection = 'yugioh'
+      ORDER BY yc.name
+    ''');
+  }
+
+  // ── Wishlist ──────────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getWishlistItemsEnriched() async {
+    final db = await database;
+    return db.rawQuery('''
+      SELECT w.*,
+        CASE w.collection
+          WHEN 'yugioh' THEN (
+            SELECT COALESCE(yp.set_price_it, yp.set_price)
+            FROM yugioh_prints yp
+            WHERE yp.card_id = CAST(w.catalogId AS INTEGER)
+              AND (yp.set_code = w.serialNumber OR yp.set_code_it = w.serialNumber
+                OR yp.set_code_fr = w.serialNumber OR yp.set_code_de = w.serialNumber
+                OR yp.set_code_pt = w.serialNumber OR yp.set_code_sp = w.serialNumber)
+            LIMIT 1
+          )
+          WHEN 'pokemon' THEN (
+            SELECT COALESCE(pp.set_price_it, pp.set_price)
+            FROM pokemon_prints pp
+            WHERE pp.card_id = CAST(w.catalogId AS INTEGER)
+              AND (pp.set_code = w.serialNumber OR pp.set_code_it = w.serialNumber)
+            LIMIT 1
+          )
+          WHEN 'onepiece' THEN (
+            SELECT COALESCE(op.market_price_en, op.market_price)
+            FROM onepiece_prints op
+            WHERE op.card_id = CAST(w.catalogId AS INTEGER)
+            LIMIT 1
+          )
+          ELSE NULL
+        END AS cardtrader_value
+      FROM wishlist w
+      ORDER BY w.added_at DESC
+    ''');
+  }
+
+  Future<int> insertWishlistItem(Map<String, dynamic> item) async {
+    final db = await database;
+    return db.insert('wishlist', item, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<bool> isInWishlist(String catalogId) async {
+    final db = await database;
+    final rows = await db.query('wishlist', where: 'catalogId = ?', whereArgs: [catalogId], limit: 1);
+    return rows.isNotEmpty;
+  }
+
+  Future<List<Map<String, dynamic>>> getWishlistItems() async {
+    final db = await database;
+    return db.query('wishlist', orderBy: 'added_at DESC');
+  }
+
+  Future<int> deleteWishlistItem(int id) async {
+    final db = await database;
+    return db.delete('wishlist', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> deleteWishlistItemByCatalogId(String catalogId) async {
+    final db = await database;
+    return db.delete('wishlist', where: 'catalogId = ?', whereArgs: [catalogId]);
+  }
+
+  Future<int> updateWishlistTargetPrice(int id, double? targetPrice) async {
+    final db = await database;
+    return db.update(
+      'wishlist',
+      {'target_price': targetPrice},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
 }

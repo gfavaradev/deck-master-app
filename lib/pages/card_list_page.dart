@@ -50,6 +50,8 @@ class _CardListPageState extends State<CardListPage> {
   bool _catalogSearching = false;
   int? _lastUsedAlbumId;
   String _preferredLanguage = 'EN';
+  final Set<int> _selectedIds = {};
+  bool _isSelectionMode = false;
   @override
   void initState() {
     super.initState();
@@ -273,6 +275,240 @@ class _CardListPageState extends State<CardListPage> {
   Future<int> _getOrCreateDuplicatesAlbum() =>
       _repo.getOrCreateDoppioniAlbum(widget.collectionKey);
 
+  // ─── Multi-select ─────────────────────────────────────────────────────────────
+
+  void _enterSelectionMode(CardModel card) {
+    if (card.id == null) return;
+    setState(() {
+      _isSelectionMode = true;
+      _selectedIds.add(card.id!);
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleCardSelection(CardModel card) {
+    if (card.id == null) return;
+    setState(() {
+      if (_selectedIds.contains(card.id)) {
+        _selectedIds.remove(card.id);
+        if (_selectedIds.isEmpty) _isSelectionMode = false;
+      } else {
+        _selectedIds.add(card.id!);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedIds.addAll(
+        _filteredCards.where((c) => c.id != null).map((c) => c.id!),
+      );
+    });
+  }
+
+  void _deselectAll() {
+    setState(() => _selectedIds.clear());
+  }
+
+  Future<void> _batchDelete() async {
+    final selected = _filteredCards
+        .where((c) => c.id != null && _selectedIds.contains(c.id))
+        .toList();
+    final count = selected.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AppConfirmDialog(
+        title: 'Elimina $count carte',
+        icon: Icons.delete_outline,
+        iconColor: AppColors.error,
+        message: 'Vuoi eliminare le $count carte selezionate?',
+        confirmLabel: 'Elimina',
+        confirmColor: AppColors.error,
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    for (final card in selected) {
+      await _repo.deleteCardWithRelated(
+        card, widget.collectionKey,
+        allRelated: widget.albumId == null,
+      );
+    }
+    _exitSelectionMode();
+    _refreshCards();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$count carte eliminate'), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _batchChangeAlbum() async {
+    final albumId = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AppDialog(
+        title: 'Sposta in Album',
+        icon: Icons.drive_file_move_outlined,
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: _availableAlbums.map((album) => ListTile(
+            title: Text(album.name, style: const TextStyle(color: AppColors.textPrimary)),
+            subtitle: Text(
+              '${album.currentCount}/${album.maxCapacity} carte',
+              style: const TextStyle(color: AppColors.textHint, fontSize: 12),
+            ),
+            onTap: () => Navigator.pop(ctx, album.id),
+          )).toList(),
+        ),
+      ),
+    );
+    if (!mounted || albumId == null) return;
+    final selected = _filteredCards
+        .where((c) => c.id != null && _selectedIds.contains(c.id))
+        .toList();
+    for (final card in selected) {
+      await _repo.updateCard(card.copyWith(albumId: albumId));
+    }
+    _exitSelectionMode();
+    _refreshCards();
+  }
+
+  Future<void> _batchAddToDeck() async {
+    final decks = await _repo.getDecksByCollection(widget.collectionKey);
+    if (!mounted) return;
+    if (decks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nessun deck disponibile. Crea prima un deck.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    final deckId = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AppDialog(
+        title: 'Aggiungi a Deck',
+        icon: Icons.layers_outlined,
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: decks.map((deck) => ListTile(
+            title: Text(
+              deck['name'] as String? ?? '',
+              style: const TextStyle(color: AppColors.textPrimary),
+            ),
+            onTap: () => Navigator.pop(ctx, deck['id'] as int?),
+          )).toList(),
+        ),
+      ),
+    );
+    if (!mounted || deckId == null) return;
+    final selected = _filteredCards
+        .where((c) => c.id != null && _selectedIds.contains(c.id))
+        .toList();
+    for (final card in selected) {
+      await _repo.addCardToDeck(deckId, card.id!, 1);
+    }
+    _exitSelectionMode();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${selected.length} carte aggiunte al deck'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildSelectionHeader() {
+    final count = _selectedIds.length;
+    final total = _filteredCards.length;
+    final allSelected = count == total && total > 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.close, color: AppColors.textPrimary),
+            onPressed: _exitSelectionMode,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              count == 0 ? 'Seleziona carte' : '$count selezionate',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            icon: Icon(allSelected ? Icons.deselect : Icons.select_all, size: 18),
+            label: Text(allSelected ? 'Deseleziona tutto' : 'Seleziona tutto'),
+            style: TextButton.styleFrom(foregroundColor: AppColors.blue),
+            onPressed: allSelected ? _deselectAll : _selectAll,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectionBar() {
+    final count = _selectedIds.length;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+      decoration: const BoxDecoration(
+        color: AppColors.bgLight,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              icon: const Icon(Icons.drive_file_move_outlined, size: 18),
+              label: const Text('Album'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.blue,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: count > 0 ? _batchChangeAlbum : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FilledButton.icon(
+              icon: const Icon(Icons.layers_outlined, size: 18),
+              label: const Text('Deck'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.purple,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: count > 0 ? _batchAddToDeck : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FilledButton.icon(
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text('Elimina'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.error,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: count > 0 ? _batchDelete : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showDetails(CardModel card) async {
     final index = _filteredCards.indexOf(card);
     final safeIndex = index < 0 ? 0 : index;
@@ -396,46 +632,49 @@ class _CardListPageState extends State<CardListPage> {
     return Column(
       children: [
         if (widget.albumId != null) _buildAlbumBanner(),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Cerca per nome, seriale o rarità...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        if (_isSelectionMode)
+          _buildSelectionHeader()
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Cerca per nome, seriale o rarità...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onChanged: _filterCards,
                   ),
-                  onChanged: _filterCards,
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.textHint.withValues(alpha: 0.3)),
-                  borderRadius: BorderRadius.circular(10),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.textHint.withValues(alpha: 0.3)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.list, color: !_isGridView ? AppColors.purple : AppColors.textHint),
+                        onPressed: () => setState(() => _isGridView = false),
+                        tooltip: 'Vista Lista',
+                      ),
+                      Container(width: 1, height: 24, color: AppColors.textHint.withValues(alpha: 0.3)),
+                      IconButton(
+                        icon: Icon(Icons.grid_view, color: _isGridView ? AppColors.purple : AppColors.textHint),
+                        onPressed: () => setState(() => _isGridView = true),
+                        tooltip: 'Vista Griglia',
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.list, color: !_isGridView ? AppColors.purple : AppColors.textHint),
-                      onPressed: () => setState(() => _isGridView = false),
-                      tooltip: 'Vista Lista',
-                    ),
-                    Container(width: 1, height: 24, color: AppColors.textHint.withValues(alpha: 0.3)),
-                    IconButton(
-                      icon: Icon(Icons.grid_view, color: _isGridView ? AppColors.purple : AppColors.textHint),
-                      onPressed: () => setState(() => _isGridView = true),
-                      tooltip: 'Vista Griglia',
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
         CollectionSummary(uniqueCards: uniqueCards, duplicates: duplicates, totalCards: totalCards, totalValue: totalValue),
         Expanded(
           child: RefreshIndicator(
@@ -457,6 +696,7 @@ class _CardListPageState extends State<CardListPage> {
                         : _buildList(),
           ),
         ),
+        if (_isSelectionMode) _buildSelectionBar(),
       ],
     );
   }
@@ -475,8 +715,11 @@ class _CardListPageState extends State<CardListPage> {
           showControls: !inAlbum,
           onUpdateQuantity: _updateQuantity,
           onDelete: _confirmDelete,
-          onTap: _showDetails,
-          onImageTap: () => _showGallery(_filteredCards, index),
+          onTap: _isSelectionMode ? _toggleCardSelection : _showDetails,
+          onImageTap: _isSelectionMode ? null : () => _showGallery(_filteredCards, index),
+          isSelectionMode: _isSelectionMode,
+          isSelected: _selectedIds.contains(card.id),
+          onLongPress: _isSelectionMode ? null : () => _enterSelectionMode(card),
         );
       },
     );
@@ -620,8 +863,11 @@ class _CardListPageState extends State<CardListPage> {
           totalQuantity: inAlbum ? card.quantity : _getTotalQuantity(card),
           showControls: !inAlbum,
           onUpdateQuantity: _updateQuantity,
-          onTap: _showDetails,
-          onImageTap: () => _showGallery(_filteredCards, index),
+          onTap: _isSelectionMode ? _toggleCardSelection : _showDetails,
+          onImageTap: _isSelectionMode ? null : () => _showGallery(_filteredCards, index),
+          isSelectionMode: _isSelectionMode,
+          isSelected: _selectedIds.contains(card.id),
+          onLongPress: _isSelectionMode ? null : () => _enterSelectionMode(card),
         );
       },
     );

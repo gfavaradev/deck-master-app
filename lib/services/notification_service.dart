@@ -363,6 +363,52 @@ class NotificationService {
     );
   }
 
+  // ── Price Alert (Wishlist) ────────────────────────────────────────────────
+
+  static const String _priceAlertChannel = 'price_alerts';
+  static const int _priceAlertBaseId = 3000;
+
+  Future<void> _ensurePriceAlertChannel() async {
+    if (kIsWeb) return;
+    const channel = AndroidNotificationChannel(
+      _priceAlertChannel,
+      'Price Alert',
+      description: 'Notifiche quando una carta scende sotto il prezzo obiettivo',
+      importance: Importance.high,
+    );
+    await _local
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+  }
+
+  Future<void> showPriceAlertNotification({
+    required int id,
+    required String cardName,
+    required double currentPrice,
+    required double targetPrice,
+  }) async {
+    if (kIsWeb) return;
+    await _ensurePriceAlertChannel();
+    await _local.show(
+      id: _priceAlertBaseId + id,
+      title: '🎯 Prezzo obiettivo raggiunto!',
+      body: '$cardName è a €${currentPrice.toStringAsFixed(2)} — sotto il tuo obiettivo di €${targetPrice.toStringAsFixed(2)}',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _priceAlertChannel,
+          'Price Alert',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentSound: true,
+        ),
+      ),
+    );
+  }
+
   Future<void> _updateFirestorePreferences() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;

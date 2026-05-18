@@ -328,8 +328,15 @@ class _CardHeader extends StatelessWidget {
                               child: AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 200),
                                 transitionBuilder: (child, anim) {
+                                  // Incoming card (key matches current slideKey) slides in from
+                                  // the opposite side; outgoing card slides out in the same
+                                  // direction the finger moved — opposite offset.
+                                  final isIncoming = child.key == ValueKey(slideKey);
+                                  final begin = isIncoming
+                                      ? Offset(-slideDir.toDouble() * 0.25, 0)
+                                      : Offset(slideDir.toDouble() * 0.25, 0);
                                   final slide = Tween<Offset>(
-                                    begin: Offset(-slideDir.toDouble() * 0.25, 0),
+                                    begin: begin,
                                     end: Offset.zero,
                                   ).animate(CurvedAnimation(
                                     parent: anim,
@@ -510,7 +517,10 @@ class _CardHeader extends StatelessWidget {
                               info: extraInfo!),
                         ],
                         const SizedBox(height: 10),
-                        _CardtraderLinkButton(card: card),
+                        _CardtraderLinkButton(
+                          key: ValueKey('ct_${card.serialNumber}_${card.catalogId}'),
+                          card: card,
+                        ),
                       ],
                     ),
                   ),
@@ -1005,7 +1015,7 @@ class _DescriptionPanel extends StatelessWidget {
 
 class _CardtraderLinkButton extends StatefulWidget {
   final CardModel card;
-  const _CardtraderLinkButton({required this.card});
+  const _CardtraderLinkButton({super.key, required this.card});
 
   @override
   State<_CardtraderLinkButton> createState() => _CardtraderLinkButtonState();

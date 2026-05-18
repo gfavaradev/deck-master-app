@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'pages/splash_page.dart';
 import 'theme/app_colors.dart';
@@ -8,6 +9,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
+import 'services/app_preferences.dart';
 import 'services/background_download_service.dart';
 import 'services/notification_service.dart';
 import 'services/ad_service.dart';
@@ -50,6 +52,8 @@ void main() async {
     persistenceEnabled: false,
   );
 
+  await AppPreferences.init();
+
   // Avvia in background — non bloccano runApp, errori non critici ignorati
   BackgroundDownloadService.initialize().catchError((_) {});
   NotificationService().initialize().catchError((_) {});
@@ -60,14 +64,46 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  Locale _locale = AppPreferences.instance.languageCode == 'en'
+      ? const Locale('en')
+      : const Locale('it');
+
+  @override
+  void initState() {
+    super.initState();
+    AppPreferences.localeNotifier.addListener(_onLocaleChange);
+  }
+
+  @override
+  void dispose() {
+    AppPreferences.localeNotifier.removeListener(_onLocaleChange);
+    super.dispose();
+  }
+
+  void _onLocaleChange() {
+    setState(() => _locale = AppPreferences.localeNotifier.value);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Deck Master',
       debugShowCheckedModeBanner: false,
+      locale: _locale,
+      supportedLocales: const [Locale('it'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: const ColorScheme.dark(
