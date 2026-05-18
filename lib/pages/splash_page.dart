@@ -170,15 +170,33 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
 
   void _navigateToOnboarding({required bool isLoggedIn}) {
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
+    // Catturiamo il NavigatorState prima del pushReplacement: dopo la sostituzione
+    // SplashPage viene smontata (mounted=false), quindi _navigateToMain/_navigateToLogin
+    // non funzionerebbero. Il NavigatorState rimane valido per tutta la durata dell'app.
+    final nav = Navigator.of(context);
+    nav.pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 400),
         pageBuilder: (_, _, _) => OnboardingPage(
           onComplete: () {
             if (isLoggedIn) {
-              _navigateToMain();
+              nav.pushReplacement(PageRouteBuilder(
+                transitionDuration: const Duration(milliseconds: 500),
+                pageBuilder: (_, _, _) => MainLayout(updateNotification: _updatedVersion),
+                transitionsBuilder: (_, anim, _, child) => FadeTransition(
+                  opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+                  child: child,
+                ),
+              ));
             } else {
-              _navigateToLogin();
+              nav.pushReplacement(PageRouteBuilder(
+                transitionDuration: const Duration(milliseconds: 400),
+                pageBuilder: (_, _, _) => const LoginPage(),
+                transitionsBuilder: (_, anim, _, child) => FadeTransition(
+                  opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+                  child: child,
+                ),
+              ));
             }
           },
         ),

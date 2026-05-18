@@ -4357,7 +4357,7 @@ class DatabaseHelper {
     if (rows.isEmpty && (cnRaw != null || cnNorm != null)) {
       final digits = RegExp(r'\d+$').firstMatch(cnNorm ?? cnRaw ?? '')?.group(0) ?? '';
       final candidates = <String>{
-        if (cnRaw  != null) cnRaw,
+        if (cnRaw != null) cnRaw,
         if (cnNorm != null) cnNorm,
         if (digits.isNotEmpty) digits,
       };

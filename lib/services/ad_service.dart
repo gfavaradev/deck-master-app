@@ -29,6 +29,9 @@ class AdService {
 
   static bool get _isIos => defaultTargetPlatform == TargetPlatform.iOS;
 
+  // iOS non ha ancora App ID/unit ID di produzione configurati.
+  static bool get _iosReady => !_iosBannerProdId.contains('XXXX');
+
   /// Ad unit ID banner: test in debug, produzione in release.
   static String get bannerAdUnitId {
     if (kDebugMode) return _isIos ? _iosBannerTestId : _androidBannerTestId;
@@ -43,6 +46,7 @@ class AdService {
 
   /// Inizializza AdMob. Chiamare una sola volta in main() prima di runApp.
   static Future<void> initialize() async {
+    if (_isIos && !kDebugMode && !_iosReady) return;
     await MobileAds.instance.initialize();
     MobileAds.instance.updateRequestConfiguration(
       RequestConfiguration(
