@@ -13,8 +13,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:deck_master/services/firestore_service.dart';
-import 'package:deck_master/utils/firestore_paths.dart';
-import 'package:deck_master/constants/app_constants.dart';
 import '../helpers/test_data_factory.dart';
 
 const int kMaxConcurrentChunks = 10;

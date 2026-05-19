@@ -104,7 +104,7 @@ void main() {
         void simulateSaveCard() {
           saveWasAborted = true;
           return; // guard
-                  // ignore: unnecessary_non_null_assertion
+          // ignore: dead_code, unnecessary_non_null_assertion
           final _ = selectedAlbumId!; // would crash without the guard
         }
 

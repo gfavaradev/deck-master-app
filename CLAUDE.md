@@ -8,6 +8,11 @@
 - NuGet packages are subject to the same SSL/permission issues as the Firebase SDK - download manually to a project-local path if the automatic fetch fails
 - Inno Setup (or equivalent installer tooling) must be installed before the Windows packaging step - verify it exists before starting a Windows build
 
+## Environment & Dependencies
+- Use `load_dotenv(override=True)` to ensure .env values take precedence over system env vars
+- For PDF support in Python, use `pymupdf` package (imported as `fitz`), not a package literally named `fitz`
+- Before starting servers, check if the target port is free; fallback to next available port
+
 ## Crash Investigation
 - **Before suggesting any code change:** use a task agent to trace the full data flow — identify every call site, data sizes involved, and the concurrency model. Report findings first, then propose fixes.
 
@@ -24,8 +29,21 @@
 ## Python Backend
 - Use absolute imports from the project root, not relative imports — relative imports break when the backend is run from a different working directory
 
+## Debugging Workflow
+- When a fix doesn't resolve the issue after 2 attempts, STOP and add diagnostic logging/counters before trying more fixes
+- Don't assume root cause — verify with logs (the 33% download freeze and Cloudinary 'nothing to migrate' both needed diagnostics first)
+
 ## Dependency Updates
 - **Before making any changes:** produce a risk assessment — list every breaking change between current and target versions, identify which app modules use each changed API, and propose a verification checklist. Do NOT make changes until the user approves the plan.
 - After bumping dependencies, always verify app_secrets.dart, .env, and other gitignored config files still exist
 - Run a full build + launch verification before declaring updates done
 - Check Flutter API deprecations (e.g., DropdownButtonFormField initialValue vs value) against the target SDK version before editing
+
+## Project Conventions & Known Gotchas
+
+## Flutter/TCG Project Conventions
+- Always run `flutter analyze` and existing tests after multi-file refactors before declaring done
+- When fixing bugs, check for regressions in related code paths (catalog download, image migration, price sync are tightly coupled)
+- Cloudinary uploads: pass `folder` as a separate parameter, never embed slashes in `public_id`
+- Scryfall API requests must include a User-Agent header
+- For SQL queries involving set_id, use COALESCE fallback for surrogate ID safety
