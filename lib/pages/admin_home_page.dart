@@ -171,10 +171,17 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => (r['newCards'] as int? ?? 0) == 0
-            ? 'Nessuna carta nuova trovata.'
-            : '${r['newCards']} carte nuove aggiunte.',
+        _incrementalResultMessage,
       );
+
+  String _incrementalResultMessage(Map<String, dynamic> r) {
+    final n = r['newCards'] as int? ?? 0;
+    if (n == 0) return 'Nessuna carta nuova trovata.';
+    final ok = r['imagesOk'] as int? ?? 0;
+    final fail = r['imagesFail'] as int? ?? 0;
+    final imgNote = ok > 0 ? ' — immagini: $ok ok${fail > 0 ? ", $fail fallite" : ""}' : '';
+    return '$n carte nuove aggiunte$imgNote.';
+  }
 
   String _migrationResultMessage(Map<String, dynamic> r) {
     final migrated = r['migrated'] as int? ?? 0;
@@ -282,9 +289,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => (r['newCards'] as int? ?? 0) == 0
-            ? 'Nessuna carta One Piece nuova trovata.'
-            : '${r['newCards']} carte nuove aggiunte.',
+        _incrementalResultMessage,
       );
 
   Future<void> _downloadFullOnePiece() => _confirmAndRun(
@@ -345,9 +350,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => (r['newCards'] as int? ?? 0) == 0
-            ? 'Nessuna carta Magic nuova trovata.'
-            : '${r['newCards']} carte nuove aggiunte.',
+        _incrementalResultMessage,
       );
 
   Future<void> _migrateMagicImages() => _confirmAndRun(
@@ -395,9 +398,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => (r['newCards'] as int? ?? 0) == 0
-            ? 'Nessuna carta Pokémon nuova trovata.'
-            : '${r['newCards']} carte nuove aggiunte.',
+        _incrementalResultMessage,
       );
 
   Future<void> _downloadFullPokemon() => _confirmAndRun(

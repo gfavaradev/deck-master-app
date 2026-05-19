@@ -967,7 +967,36 @@ class AdminCatalogService {
     if (newRaw.isEmpty) return {'newCards': 0};
 
     onProgress('${newRaw.length} carte nuove. Elaborando...', null);
-    final newCards = _transformYGOProDeckCards(newRaw);
+    final rawCards = _transformYGOProDeckCards(newRaw);
+
+    // Upload images in parallel for new cards only.
+    onProgress('Caricando immagini per ${rawCards.length} carte nuove...', 0);
+    final sem = _Semaphore(_uploadConcurrency);
+    int imagesOk = 0, imagesFail = 0;
+    final newCards = await Future.wait(rawCards.asMap().entries.map((e) async {
+      final card = Map<String, dynamic>.from(e.value);
+      final sourceUrl = card['image_url'] as String?;
+      final cardId = card['id'];
+      if (sourceUrl != null && sourceUrl.isNotEmpty && cardId != null) {
+        await sem.acquire();
+        try {
+          final url = await _uploadCardImageIfNeeded('yugioh', cardId, sourceUrl);
+          if (url != null) {
+            card.remove('image_url');
+            card['imageUrl'] = url;
+            imagesOk++;
+          } else {
+            imagesFail++;
+          }
+        } finally {
+          sem.release();
+        }
+      }
+      if (e.key % 50 == 0) {
+        onProgress('Immagini: ${e.key + 1}/${rawCards.length}...', (e.key + 1) / rawCards.length);
+      }
+      return card;
+    }));
 
     await _uploadCatalogChunks(
       catalogCollection: 'yugioh_catalog',
@@ -978,7 +1007,7 @@ class AdminCatalogService {
           onProgress('Caricando chunk $cur di $tot...', cur / tot),
     );
 
-    return {'newCards': newCards.length};
+    return {'newCards': newCards.length, 'imagesOk': imagesOk, 'imagesFail': imagesFail};
   }
 
   /// Fills missing localized sets for all cards in the given catalog,
@@ -1825,7 +1854,47 @@ class AdminCatalogService {
 
     final newCards = cardMap.values.toList();
 
-    onProgress('${newCards.length} carte nuove. Salvando su Firestore...', null);
+    // Upload images for new cards in parallel (per-print, OPTCG CDN requires byte download).
+    onProgress('Caricando immagini per ${newCards.length} carte nuove...', 0);
+    final sem = _Semaphore(_uploadConcurrency);
+    int imagesOk = 0, imagesFail = 0;
+    await Future.wait(newCards.asMap().entries.map((cardEntry) async {
+      final card = cardEntry.value;
+      final prints = card['prints'] as List<Map<String, dynamic>>;
+      bool cardUrlSet = card['imageUrl'] != null;
+      for (int j = 0; j < prints.length; j++) {
+        final print = prints[j];
+        final cardSetId = print['card_set_id'] as String? ?? '';
+        final rawArtwork = print['artwork'] as String?;
+        if (rawArtwork == null || rawArtwork.isEmpty || rawArtwork.contains('cloudinary.com')) {
+          if (!cardUrlSet && rawArtwork != null && rawArtwork.contains('cloudinary.com')) {
+            card['imageUrl'] = rawArtwork;
+            card.remove('image_url');
+            cardUrlSet = true;
+          }
+          continue;
+        }
+        await sem.acquire();
+        try {
+          final url = await _uploadCardImageIfNeeded('onepiece', cardSetId, rawArtwork);
+          if (url != null) {
+            prints[j] = {...print, 'artwork': url};
+            if (!cardUrlSet) {
+              card['imageUrl'] = url;
+              card.remove('image_url');
+              cardUrlSet = true;
+            }
+            imagesOk++;
+          } else {
+            imagesFail++;
+          }
+        } finally {
+          sem.release();
+        }
+      }
+    }));
+
+    onProgress('Salvando ${newCards.length} carte nuove su Firestore...', null);
     await _uploadCatalogChunks(
       catalogCollection: 'onepiece_catalog',
       cards: newCards,
@@ -1834,7 +1903,7 @@ class AdminCatalogService {
       onProgress: (cur, tot) => onProgress('Caricando chunk $cur di $tot...', cur / tot),
     );
 
-    return {'newCards': newCards.length};
+    return {'newCards': newCards.length, 'imagesOk': imagesOk, 'imagesFail': imagesFail};
   }
 
   /// Migra le immagini One Piece su Firebase Storage aggiornando il campo `artwork` nei prints.
@@ -2480,16 +2549,49 @@ class AdminCatalogService {
 
     if (newCards.isEmpty) return {'newCards': 0};
 
-    onProgress('${newCards.length} carte nuove. Salvando su Firestore...', null);
+    onProgress('Caricando immagini per ${newCards.length} carte nuove...', 0);
+    final sem = _Semaphore(_uploadConcurrency);
+    int imagesOk = 0, imagesFail = 0;
+    final processedCards = await Future.wait(newCards.asMap().entries.map((e) async {
+      final card = Map<String, dynamic>.from(e.value);
+      final apiId = card['api_id'] as String?;
+      final sourceUrl = card['image_url'] as String?;
+      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
+        await sem.acquire();
+        try {
+          final url = await _uploadCardImageIfNeeded('pokemon', apiId, sourceUrl);
+          if (url != null) {
+            card.remove('image_url');
+            card['imageUrl'] = url;
+            final rawSets = card['sets'] as Map<String, dynamic>?;
+            if (rawSets != null) {
+              final enList = rawSets['en'] as List?;
+              if (enList != null && enList.isNotEmpty) {
+                final enEntry = Map<String, dynamic>.from(enList[0] as Map)..['image_url'] = url;
+                card['sets'] = {...rawSets, 'en': [enEntry]};
+              }
+            }
+            imagesOk++;
+          } else {
+            imagesFail++;
+          }
+        } finally {
+          sem.release();
+        }
+      }
+      return card;
+    }));
+
+    onProgress('Salvando ${processedCards.length} carte nuove su Firestore...', null);
     await _uploadCatalogChunks(
       catalogCollection: 'pokemon_catalog',
-      cards: newCards,
+      cards: processedCards,
       adminUid: adminUid,
       isIncremental: true,
       onProgress: (cur, tot) => onProgress('Caricando chunk $cur di $tot...', cur / tot),
     );
 
-    return {'newCards': newCards.length};
+    return {'newCards': processedCards.length, 'imagesOk': imagesOk, 'imagesFail': imagesFail};
   }
 
   /// Migrates Pokémon card images to Firebase Storage,
@@ -3418,16 +3520,49 @@ class AdminCatalogService {
 
     if (newCards.isEmpty) return {'newCards': 0};
 
-    onProgress('${newCards.length} carte nuove. Salvando su Firestore...', null);
+    onProgress('Caricando immagini per ${newCards.length} carte nuove...', 0);
+    final sem = _Semaphore(_uploadConcurrency);
+    int imagesOk = 0, imagesFail = 0;
+    final processedCards = await Future.wait(newCards.asMap().entries.map((e) async {
+      final card = Map<String, dynamic>.from(e.value);
+      final apiId = card['api_id'] as String?;
+      final sourceUrl = card['image_url'] as String?;
+      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
+        await sem.acquire();
+        try {
+          final url = await _uploadCardImageIfNeeded('magic', apiId, sourceUrl);
+          if (url != null) {
+            card.remove('image_url');
+            card['imageUrl'] = url;
+            final rawSets = card['sets'] as Map<String, dynamic>?;
+            if (rawSets != null) {
+              final enList = rawSets['en'] as List?;
+              if (enList != null && enList.isNotEmpty) {
+                final enEntry = Map<String, dynamic>.from(enList[0] as Map)..['image_url'] = url;
+                card['sets'] = {...rawSets, 'en': [enEntry]};
+              }
+            }
+            imagesOk++;
+          } else {
+            imagesFail++;
+          }
+        } finally {
+          sem.release();
+        }
+      }
+      return card;
+    }));
+
+    onProgress('Salvando ${processedCards.length} carte nuove su Firestore...', null);
     await _uploadCatalogChunks(
       catalogCollection: 'magic_catalog',
-      cards: newCards,
+      cards: processedCards,
       adminUid: adminUid,
       isIncremental: true,
       onProgress: (cur, tot) => onProgress('Chunk $cur/$tot caricato', tot > 0 ? cur / tot : null),
     );
 
-    return {'newCards': newCards.length};
+    return {'newCards': processedCards.length, 'imagesOk': imagesOk, 'imagesFail': imagesFail};
   }
 
   /// Migrates Magic card images to Cloudinary,
