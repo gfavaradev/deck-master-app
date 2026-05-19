@@ -284,8 +284,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         ),
         (r) => (r['newCards'] as int? ?? 0) == 0
             ? 'Nessuna carta One Piece nuova trovata.'
-            : '${r['newCards']} carte nuove aggiunte'
-                '${(r['imagesOk'] as int? ?? 0) > 0 ? " (${r['imagesOk']} immagini ok)" : ""}.',
+            : '${r['newCards']} carte nuove aggiunte.',
       );
 
   Future<void> _downloadFullOnePiece() => _confirmAndRun(
@@ -300,9 +299,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => 'Completato! ${r['totalCards']} carte, ${r['totalPrints']} print.'
-            ' Immagini: ${r['imagesOk']} ok'
-            '${(r['imagesFailed'] as int? ?? 0) > 0 ? ", ${r['imagesFailed']} fallite" : ""}.',
+        (r) => 'Completato! ${r['totalCards']} carte, ${r['totalPrints']} stampe.',
       );
 
   Future<void> _migrateOnePieceImages() => _confirmAndRun(
@@ -353,6 +350,38 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             : '${r['newCards']} carte nuove aggiunte.',
       );
 
+  Future<void> _migrateMagicImages() => _confirmAndRun(
+        'magic',
+        'Migrazione Immagini Magic',
+        'Migrazione Immagini Magic: The Gathering',
+        'Carica le immagini Magic da Scryfall su Cloudinary.\n\n'
+            'Solo le immagini non ancora migrate vengono caricate. '
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.migrateMagicImagesToStorage(
+          adminUid: uid,
+          onProgress: (cur, tot) =>
+              _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
+        ),
+        _migrationResultMessage,
+      );
+
+  Future<void> _fillMissingSetsMagic() => _confirmAndRun(
+        'magic',
+        'Genera Set Mancanti Magic',
+        'Genera Set Localizzati Magic',
+        'Genera automaticamente i set nelle lingue mancanti per tutte le carte '
+            'Magic che hanno solo i set base.\n\n'
+            'I set già presenti non vengono sovrascritti. Continuare?',
+        (uid) => _service.fillMissingLocalizedSets(
+          catalog: 'magic',
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => (r['modifiedCards'] as int? ?? 0) == 0
+            ? 'Nessun set mancante trovato.'
+            : '${r['modifiedCards']} carte aggiornate in ${r['modifiedChunks']} chunk.',
+      );
+
   // ─── Pokémon action handlers ──────────────────────────────────────────────
 
   Future<void> _downloadIncrementalPokemon() => _confirmAndRun(
@@ -368,8 +397,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         ),
         (r) => (r['newCards'] as int? ?? 0) == 0
             ? 'Nessuna carta Pokémon nuova trovata.'
-            : '${r['newCards']} carte nuove aggiunte'
-                '${(r['imagesOk'] as int? ?? 0) > 0 ? " (${r['imagesOk']} immagini ok)" : ""}.',
+            : '${r['newCards']} carte nuove aggiunte.',
       );
 
   Future<void> _downloadFullPokemon() => _confirmAndRun(
@@ -384,9 +412,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => 'Completato! ${r['totalCards']} carte caricate — '
-            'immagini su Storage: ${r['imagesOk']}'
-            '${(r['imagesFailed'] as int? ?? 0) > 0 ? ", fallite: ${r['imagesFailed']}" : ""}.',
+        (r) => 'Completato! ${r['totalCards']} carte caricate.',
       );
 
   Future<void> _migratePokemonImages() => _confirmAndRun(
@@ -782,6 +808,8 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         return [
           _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da Scryfall (oracle_cards ~100 MB)', _downloadFullMagic),
           _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove o modificate (incrementale)', _downloadIncrementalMagic),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Cloudinary', _migrateMagicImages),
+          _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsMagic),
         ];
       default:
         return [];

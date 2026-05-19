@@ -6,7 +6,30 @@ import 'cardtrader_service.dart' show CardtraderService;
 import 'package:http/http.dart' as http;
 import 'package:deck_master/models/pending_catalog_change.dart';
 import 'package:deck_master/services/database_helper.dart';
+import 'dart:async';
 import 'cloudinary_service.dart';
+
+/// Bounded semaphore for limiting parallel async operations.
+class _Semaphore {
+  int _count;
+  final _waiters = <Completer<void>>[];
+  _Semaphore(this._count);
+
+  Future<void> acquire() async {
+    if (_count > 0) { _count--; return; }
+    final c = Completer<void>();
+    _waiters.add(c);
+    await c.future;
+  }
+
+  void release() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete();
+    } else {
+      _count++;
+    }
+  }
+}
 
 /// Service for managing admin catalog operations
 class AdminCatalogService {
@@ -15,6 +38,7 @@ class AdminCatalogService {
 
   static const String _pendingChangesKey = 'admin_pending_catalog_changes';
   static const int _chunkSize = 100;
+  static const int _uploadConcurrency = 8;
 
   // ============================================================
   // Image Storage
@@ -28,17 +52,28 @@ class AdminCatalogService {
     if (sourceUrl == null || sourceUrl.isEmpty) return null;
     final safeId = cardId.toString().replaceAll(RegExp(r'[/\s]'), '_');
     try {
-      // User-Agent obbligatorio per molti CDN (OPTCG, CT) che bloccano
-      // richieste senza browser header (403/404 silente).
+      // Fast path: let Cloudinary fetch the URL directly — no local download needed.
+      // Skipped for onepiece: OPTCG CDN blocks non-browser User-Agents and needs
+      // a .webp → .png fallback that only works when we control the HTTP request.
+      if (catalog != 'onepiece') {
+        final url = await CloudinaryService.uploadFromRemoteUrl(
+          imageUrl: sourceUrl,
+          catalog: catalog,
+          cardId: cardId,
+        );
+        if (url != null) return url;
+        debugPrint('[ImageUpload] Remote URL fallback per $sourceUrl (id=$safeId)');
+      }
+
+      // Byte-download path (onepiece CDN + fallback for unreachable URLs).
       final headers = {
         'User-Agent': 'Mozilla/5.0 (compatible; DeckMasterBot/1.0)',
         'Accept': 'image/webp,image/png,image/*,*/*;q=0.8',
       };
-
       String fetchUrl = sourceUrl;
       var response = await http.get(Uri.parse(fetchUrl), headers: headers);
 
-      // Alcuni CDN OPTCG servono .webp → fallback .png
+      // OPTCG CDN may serve .webp → fallback .png
       if (response.statusCode == 404 && fetchUrl.endsWith('/high.webp')) {
         fetchUrl = fetchUrl.replaceFirst('/high.webp', '/high.png');
         response = await http.get(Uri.parse(fetchUrl), headers: headers);
@@ -52,7 +87,6 @@ class AdminCatalogService {
         debugPrint('[ImageUpload] Body vuoto per $fetchUrl (id=$safeId)');
         return null;
       }
-
       return await CloudinaryService.uploadBytes(
         bytes: response.bodyBytes,
         catalog: catalog,
@@ -123,6 +157,29 @@ class AdminCatalogService {
     }
 
     return updatedCard;
+  }
+
+  /// Runs _processCardForStorage for all add/edit changes in parallel
+  /// (up to [_uploadConcurrency] concurrent uploads).
+  /// Returns a map from changeId → processed card data.
+  Future<Map<String, Map<String, dynamic>>> _preprocessChanges(
+    List<PendingCatalogChange> changes,
+  ) async {
+    final sem = _Semaphore(_uploadConcurrency);
+    final results = <String, Map<String, dynamic>>{};
+    await Future.wait(
+      changes
+          .where((c) => c.type == ChangeType.add || c.type == ChangeType.edit)
+          .map((change) async {
+        await sem.acquire();
+        try {
+          results[change.changeId] = await _processCardForStorage(change.cardData);
+        } finally {
+          sem.release();
+        }
+      }),
+    );
+    return results;
   }
 
   // ============================================================
@@ -309,7 +366,10 @@ class AdminCatalogService {
       onProgress(++step, totalSteps);
     }
 
-    // 5. Apply changes, track affected chunks and index mutations
+    // 5. Apply changes, track affected chunks and index mutations.
+    // Pre-process all images in parallel before the sequential chunk-assignment loop.
+    final preprocessed = await _preprocessChanges(sortedChanges);
+
     final affectedChunkIds = <String>{};
     final deletedCardIds = <dynamic>[];
     final updatedCardIndex = Map<String, String>.from(cardIndex);
@@ -329,7 +389,7 @@ class AdminCatalogService {
           final idx = cards.indexWhere((c) => c['id'] == targetId);
           if (idx == -1) break;
           if (change.type == ChangeType.edit) {
-            cards[idx] = await _processCardForStorage(change.cardData);
+            cards[idx] = preprocessed[change.changeId] ?? await _processCardForStorage(change.cardData);
           } else {
             cards.removeAt(idx);
             deletedCardIds.add(targetId);
@@ -341,7 +401,7 @@ class AdminCatalogService {
           break;
 
         case ChangeType.add:
-          final processedCard = await _processCardForStorage(change.cardData);
+          final processedCard = preprocessed[change.changeId] ?? await _processCardForStorage(change.cardData);
           final cardId = processedCard['id'];
           lastChunkId ??= totalChunks > 0
               ? 'chunk_${totalChunks.toString().padLeft(3, '0')}'
@@ -430,6 +490,9 @@ class AdminCatalogService {
     final affectedChunkIds = <String>{};
     final deletedCardIds = <dynamic>[];
 
+    // Pre-process all images in parallel before the sequential chunk-assignment loop.
+    final preprocessed = await _preprocessChanges(sortedChanges);
+
     for (final change in sortedChanges) {
       switch (change.type) {
         case ChangeType.edit:
@@ -440,7 +503,7 @@ class AdminCatalogService {
             final idx = cards.indexWhere((c) => c['id'] == targetId);
             if (idx != -1) {
               if (change.type == ChangeType.edit) {
-                cards[idx] = await _processCardForStorage(change.cardData);
+                cards[idx] = preprocessed[change.changeId] ?? await _processCardForStorage(change.cardData);
               } else {
                 cards.removeAt(idx);
                 deletedCardIds.add(targetId);
@@ -452,7 +515,7 @@ class AdminCatalogService {
           break;
 
         case ChangeType.add:
-          final processedCard = await _processCardForStorage(change.cardData);
+          final processedCard = preprocessed[change.changeId] ?? await _processCardForStorage(change.cardData);
           if (sortedChunkIds.isEmpty) {
             const newChunkId = 'chunk_001';
             chunkMap[newChunkId] = [processedCard];
@@ -1660,62 +1723,21 @@ class AdminCatalogService {
       );
     }
 
-    // ── Passaggio 2: carica immagini su Firebase Storage ─────────────────────
-    // Allineato al comportamento di downloadPokemonCatalogFromAPI e
-    // _buildOnepieceCatalogFromCT: tutte le immagini devono essere su Storage
-    // prima di finire su Firestore, così gli utenti non dipendono mai dall'API
-    // esterna e la migrazione separata (migrateOnepieceImagesToStorage) diventa
-    // superflua per i download freschi.
-    int imagesOk = 0, imagesFailed = 0;
-    onProgress('${mergedCards.length} carte. Caricando immagini su Firebase Storage (0/${mergedCards.length})...', 0);
-
-    for (int i = 0; i < mergedCards.length; i++) {
-      final card = mergedCards[i];
-      final prints = card['prints'] as List<Map<String, dynamic>>;
-      bool cardStorageUrlSet = false;
-
-      for (int j = 0; j < prints.length; j++) {
-        final print = prints[j];
-        final cardSetId = print['card_set_id'] as String? ?? '';
-        final rawArtwork = print['artwork'] as String?;
-
-        if (rawArtwork == null || rawArtwork.isEmpty) continue;
-
-        // Già su Firebase Storage: preserva e usa come imageUrl della card
-        if (rawArtwork.contains('cloudinary.com')) {
-          if (!cardStorageUrlSet) {
-            card['imageUrl'] = rawArtwork;
-            card.remove('image_url');
-            cardStorageUrlSet = true;
-          }
-          continue;
+    // Preserve existing Cloudinary URLs at card level from existing prints.
+    // New prints keep their raw artwork URL for the separate "Migra Immagini" step.
+    for (final card in mergedCards) {
+      final prints = card['prints'] as List<Map<String, dynamic>>? ?? [];
+      for (final print in prints) {
+        final artwork = print['artwork'] as String?;
+        if (artwork != null && artwork.contains('cloudinary.com')) {
+          card['imageUrl'] = artwork;
+          card.remove('image_url');
+          break;
         }
-
-        // URL esterno: carica su Firebase Storage
-        final storageUrl = await _uploadCardImageIfNeeded('onepiece', cardSetId, rawArtwork);
-        if (storageUrl != null) {
-          prints[j] = {...print, 'artwork': storageUrl};
-          if (!cardStorageUrlSet) {
-            card['imageUrl'] = storageUrl;
-            card.remove('image_url');
-            cardStorageUrlSet = true;
-          }
-          imagesOk++;
-        } else {
-          imagesFailed++;
-        }
-      }
-
-      if (i % 50 == 0 || i == mergedCards.length - 1) {
-        onProgress(
-          'Immagini: ${i + 1}/${mergedCards.length} — ok: $imagesOk, fallite: $imagesFailed',
-          (i + 1) / mergedCards.length,
-        );
       }
     }
 
-    onProgress('Immagini completate. Caricando catalogo su Firestore...', null);
-
+    onProgress('${mergedCards.length} carte pronte. Caricando su Firestore...', null);
     await _uploadCatalogChunks(
       catalogCollection: 'onepiece_catalog',
       cards: mergedCards,
@@ -1728,8 +1750,6 @@ class AdminCatalogService {
     return {
       'totalCards': mergedCards.length,
       'totalPrints': allRaw.length,
-      'imagesOk': imagesOk,
-      'imagesFailed': imagesFailed,
     };
   }
 
@@ -1801,57 +1821,11 @@ class AdminCatalogService {
       });
     }
 
-    if (cardMap.isEmpty) return {'newCards': 0, 'imagesOk': 0, 'imagesFailed': 0};
+    if (cardMap.isEmpty) return {'newCards': 0};
 
     final newCards = cardMap.values.toList();
-    int imagesOk = 0, imagesFailed = 0;
-    final total = newCards.length;
 
-    onProgress('$total carte nuove. Caricando immagini su Firebase Storage...', 0);
-
-    for (int i = 0; i < total; i++) {
-      final card = newCards[i];
-      final prints = card['prints'] as List<Map<String, dynamic>>;
-      bool cardStorageUrlSet = false;
-
-      for (int j = 0; j < prints.length; j++) {
-        final print = prints[j];
-        final cardSetId = print['card_set_id'] as String? ?? '';
-        final rawArtwork = print['artwork'] as String?;
-
-        if (rawArtwork == null || rawArtwork.isEmpty) continue;
-        if (rawArtwork.contains('cloudinary.com')) {
-          if (!cardStorageUrlSet) {
-            card['imageUrl'] = rawArtwork;
-            card.remove('image_url');
-            cardStorageUrlSet = true;
-          }
-          continue;
-        }
-
-        final storageUrl = await _uploadCardImageIfNeeded('onepiece', cardSetId, rawArtwork);
-        if (storageUrl != null) {
-          prints[j] = {...print, 'artwork': storageUrl};
-          if (!cardStorageUrlSet) {
-            card['imageUrl'] = storageUrl;
-            card.remove('image_url');
-            cardStorageUrlSet = true;
-          }
-          imagesOk++;
-        } else {
-          imagesFailed++;
-        }
-      }
-
-      if (i % 50 == 0 || i == total - 1) {
-        onProgress(
-          'Immagini: ${i + 1}/$total — ok: $imagesOk, fallite: $imagesFailed',
-          (i + 1) / total,
-        );
-      }
-    }
-
-    onProgress('Salvando $total carte nuove su Firestore...', null);
+    onProgress('${newCards.length} carte nuove. Salvando su Firestore...', null);
     await _uploadCatalogChunks(
       catalogCollection: 'onepiece_catalog',
       cards: newCards,
@@ -1860,11 +1834,7 @@ class AdminCatalogService {
       onProgress: (cur, tot) => onProgress('Caricando chunk $cur di $tot...', cur / tot),
     );
 
-    return {
-      'newCards': total,
-      'imagesOk': imagesOk,
-      'imagesFailed': imagesFailed,
-    };
+    return {'newCards': newCards.length};
   }
 
   /// Migra le immagini One Piece su Firebase Storage aggiornando il campo `artwork` nei prints.
@@ -2418,55 +2388,45 @@ class AdminCatalogService {
 
     if (cards.isEmpty) throw Exception('Nessuna carta ricevuta da TCGDex');
 
-    final total = cards.length;
-    onProgress('$total carte ricevute. Caricando immagini su Firebase Storage (0/$total)...', 0);
+    onProgress('${cards.length} carte ricevute. Preservando URL esistenti...', null);
 
-    // 2. Upload each image to Firebase Storage (skip if already there)
-    int done = 0, failed = 0;
-    final processedCards = <Map<String, dynamic>>[];
-
-    for (int i = 0; i < total; i++) {
-      final card = Map<String, dynamic>.from(cards[i]);
-      final apiId = card['api_id'] as String?;
-      final sourceUrl = card['image_url'] as String?;
-
-      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
-        final storageUrl = await _uploadCardImageIfNeeded('pokemon', apiId, sourceUrl);
-        if (storageUrl != null) {
-          done++;
-          card.remove('image_url');
-          card['imageUrl'] = storageUrl;
-          // Update image_url in the 'en' set entry (new sets-map format)
-          final rawSets = card['sets'] as Map<String, dynamic>?;
-          if (rawSets != null) {
-            final enList = rawSets['en'] as List?;
-            if (enList != null && enList.isNotEmpty) {
-              final enEntry = Map<String, dynamic>.from(enList[0] as Map)..['image_url'] = storageUrl;
-              card['sets'] = {...rawSets, 'en': [enEntry]};
-            }
-          } else {
-            // Backward compat: old flat prints format
-            final prints = (card['prints'] as List<dynamic>?)
-                ?.map((p) => Map<String, dynamic>.from(p as Map)..['artwork'] = storageUrl)
-                .toList();
-            if (prints != null) card['prints'] = prints;
+    // Preserve existing Cloudinary URLs for cards already migrated.
+    // New cards keep their raw image_url for the separate "Migrate Images" step.
+    final existingImageUrls = <String, String>{};
+    if (!effectiveResuming) {
+      try {
+        final existingMap = await _getExistingCardsMap('pokemon_catalog')
+            .timeout(const Duration(seconds: 60));
+        for (final entry in existingMap.entries) {
+          final url = entry.value['imageUrl'] as String?;
+          if (url != null && url.contains('cloudinary.com')) {
+            existingImageUrls[entry.key.toString()] = url;
           }
-        } else {
-          failed++;
         }
-      }
-
-      processedCards.add(card);
-
-      if (i % 100 == 0 || i == total - 1) {
-        onProgress(
-          'Immagini: ${i + 1}/$total — ok: $done, fallite: $failed',
-          (i + 1) / total,
-        );
-      }
+      } catch (_) {}
     }
 
-    onProgress('Immagini completate. Salvataggio catalogo su Firestore...', null);
+    final processedCards = cards.map((rawCard) {
+      final card = Map<String, dynamic>.from(rawCard);
+      final apiId = card['api_id'] as String?;
+      if (apiId == null) return card;
+      final existing = existingImageUrls[apiId];
+      if (existing != null) {
+        card.remove('image_url');
+        card['imageUrl'] = existing;
+        final rawSets = card['sets'] as Map<String, dynamic>?;
+        if (rawSets != null) {
+          final enList = rawSets['en'] as List?;
+          if (enList != null && enList.isNotEmpty) {
+            final enEntry = Map<String, dynamic>.from(enList[0] as Map)..['image_url'] = existing;
+            card['sets'] = {...rawSets, 'en': [enEntry]};
+          }
+        }
+      }
+      return card;
+    }).toList();
+
+    onProgress('Salvataggio catalogo su Firestore...', null);
 
     // Preserve admin-modified cards from the existing catalog.
     if (!effectiveResuming) {
@@ -2499,11 +2459,7 @@ class AdminCatalogService {
 
     await _clearPokemonProgress();
 
-    return {
-      'totalCards': processedCards.length,
-      'imagesOk': done,
-      'imagesFailed': failed,
-    };
+    return {'totalCards': processedCards.length};
   }
 
   /// Downloads **only new cards** (not already in Firestore) from pokemontcg.io
@@ -2522,62 +2478,18 @@ class AdminCatalogService {
         .where((c) => !existingIds.contains(c['api_id'] as String? ?? ''))
         .toList();
 
-    if (newCards.isEmpty) return {'newCards': 0, 'imagesOk': 0, 'imagesFailed': 0};
+    if (newCards.isEmpty) return {'newCards': 0};
 
-    final total = newCards.length;
-    onProgress('$total carte nuove. Caricando immagini su Firebase Storage...', 0);
-
-    int done = 0, failed = 0;
-    final processedCards = <Map<String, dynamic>>[];
-
-    for (int i = 0; i < total; i++) {
-      final card = Map<String, dynamic>.from(newCards[i]);
-      final apiId = card['api_id'] as String?;
-      final sourceUrl = card['image_url'] as String?;
-
-      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
-        final storageUrl = await _uploadCardImageIfNeeded('pokemon', apiId, sourceUrl);
-        if (storageUrl != null) {
-          done++;
-          card.remove('image_url');
-          card['imageUrl'] = storageUrl;
-          final rawSets = card['sets'] as Map<String, dynamic>?;
-          if (rawSets != null) {
-            final enList = rawSets['en'] as List?;
-            if (enList != null && enList.isNotEmpty) {
-              final enEntry = Map<String, dynamic>.from(enList[0] as Map)
-                ..['image_url'] = storageUrl;
-              card['sets'] = {...rawSets, 'en': [enEntry]};
-            }
-          }
-        } else {
-          failed++;
-        }
-      }
-
-      processedCards.add(card);
-      if (i % 50 == 0 || i == total - 1) {
-        onProgress(
-          'Immagini: ${i + 1}/$total — ok: $done, fallite: $failed',
-          (i + 1) / total,
-        );
-      }
-    }
-
-    onProgress('Salvando ${processedCards.length} carte su Firestore...', null);
+    onProgress('${newCards.length} carte nuove. Salvando su Firestore...', null);
     await _uploadCatalogChunks(
       catalogCollection: 'pokemon_catalog',
-      cards: processedCards,
+      cards: newCards,
       adminUid: adminUid,
       isIncremental: true,
       onProgress: (cur, tot) => onProgress('Caricando chunk $cur di $tot...', cur / tot),
     );
 
-    return {
-      'newCards': processedCards.length,
-      'imagesOk': done,
-      'imagesFailed': failed,
-    };
+    return {'newCards': newCards.length};
   }
 
   /// Migrates Pokémon card images to Firebase Storage,
@@ -3438,35 +3350,32 @@ class AdminCatalogService {
     final cards = await _fetchAllMagicCards(onProgress);
     if (cards.isEmpty) throw Exception('Nessuna carta ricevuta da Scryfall');
 
-    final total = cards.length;
-    onProgress('$total carte ricevute. Caricando immagini su Cloudinary...', 0);
+    onProgress('${cards.length} carte ricevute. Preservando URL esistenti...', null);
 
-    int done = 0, failed = 0;
-    final processedCards = <Map<String, dynamic>>[];
-
-    for (int i = 0; i < total; i++) {
-      final card = Map<String, dynamic>.from(cards[i]);
-      final apiId = card['api_id'] as String?;
-      final sourceUrl = card['image_url'] as String?;
-
-      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
-        final storageUrl = await _uploadCardImageIfNeeded('magic', apiId, sourceUrl);
-        if (storageUrl != null) {
-          done++;
-          card['imageUrl'] = storageUrl;
-        } else {
-          failed++;
+    // Preserve existing Cloudinary URLs; new cards keep image_url for migration step.
+    final existingImageUrls = <String, String>{};
+    try {
+      final existingMap = await _getExistingCardsMap('magic_catalog')
+          .timeout(const Duration(seconds: 60));
+      for (final entry in existingMap.entries) {
+        final url = entry.value['imageUrl'] as String?;
+        if (url != null && url.contains('cloudinary.com')) {
+          existingImageUrls[entry.key.toString()] = url;
         }
       }
-      processedCards.add(card);
+    } catch (_) {}
 
-      if (i % 200 == 0 || i == total - 1) {
-        onProgress(
-          'Immagini: ${i + 1}/$total — ok: $done, fallite: $failed',
-          (i + 1) / total,
-        );
+    var processedCards = cards.map((rawCard) {
+      final card = Map<String, dynamic>.from(rawCard);
+      final apiId = card['api_id'] as String?;
+      if (apiId == null) return card;
+      final existing = existingImageUrls[apiId];
+      if (existing != null) {
+        card.remove('image_url');
+        card['imageUrl'] = existing;
       }
-    }
+      return card;
+    }).toList();
 
     // Preserve admin-modified cards from the existing catalog.
     final adminModifiedList = await _loadAdminModifiedCards('magic_catalog');
@@ -3475,12 +3384,10 @@ class AdminCatalogService {
         for (final c in adminModifiedList)
           if ((c['api_id'] as String?)?.isNotEmpty == true) c['api_id'] as String: c,
       };
-      for (int i = 0; i < processedCards.length; i++) {
-        final apiId = processedCards[i]['api_id'] as String?;
-        if (apiId != null && adminMap.containsKey(apiId)) {
-          processedCards[i] = adminMap[apiId]!;
-        }
-      }
+      processedCards = [
+        for (final card in processedCards)
+          adminMap[card['api_id'] as String? ?? ''] ?? card,
+      ];
     }
 
     onProgress('Salvando ${processedCards.length} carte su Firestore...', null);
@@ -3492,11 +3399,7 @@ class AdminCatalogService {
       onProgress: (cur, tot) => onProgress('Chunk $cur/$tot caricato', tot > 0 ? cur / tot : null),
     );
 
-    return {
-      'totalCards': processedCards.length,
-      'imagesOk': done,
-      'imagesFailed': failed,
-    };
+    return {'totalCards': processedCards.length};
   }
 
   /// Scarica solo le carte nuove (non già presenti) e le aggiunge al catalogo Magic.
@@ -3513,38 +3416,110 @@ class AdminCatalogService {
         .where((c) => !existingIds.contains(c['api_id'] as String? ?? ''))
         .toList();
 
-    if (newCards.isEmpty) return {'newCards': 0, 'imagesOk': 0, 'imagesFailed': 0};
+    if (newCards.isEmpty) return {'newCards': 0};
 
-    final total = newCards.length;
-    onProgress('$total carte nuove. Caricando immagini...', 0);
-
-    int done = 0, failed = 0;
-    final processedCards = <Map<String, dynamic>>[];
-
-    for (int i = 0; i < total; i++) {
-      final card = Map<String, dynamic>.from(newCards[i]);
-      final apiId = card['api_id'] as String?;
-      final sourceUrl = card['image_url'] as String?;
-      if (apiId != null && sourceUrl != null && sourceUrl.isNotEmpty) {
-        final storageUrl = await _uploadCardImageIfNeeded('magic', apiId, sourceUrl);
-        if (storageUrl != null) { done++; card['imageUrl'] = storageUrl; } else { failed++; }
-      }
-      processedCards.add(card);
-      if (i % 100 == 0 || i == total - 1) {
-        onProgress('Immagini: ${i + 1}/$total — ok: $done, fallite: $failed', (i + 1) / total);
-      }
-    }
-
-    onProgress('Salvando ${processedCards.length} carte su Firestore...', null);
+    onProgress('${newCards.length} carte nuove. Salvando su Firestore...', null);
     await _uploadCatalogChunks(
       catalogCollection: 'magic_catalog',
-      cards: processedCards,
+      cards: newCards,
       adminUid: adminUid,
       isIncremental: true,
       onProgress: (cur, tot) => onProgress('Chunk $cur/$tot caricato', tot > 0 ? cur / tot : null),
     );
 
-    return {'newCards': processedCards.length, 'imagesOk': done, 'imagesFailed': failed};
+    return {'newCards': newCards.length};
+  }
+
+  /// Migrates Magic card images to Cloudinary,
+  /// updating `imageUrl` on the card and `image_url` in the sets['en'] entry.
+  Future<Map<String, dynamic>> migrateMagicImagesToStorage({
+    required String adminUid,
+    required Function(int current, int total) onProgress,
+    bool force = false,
+  }) async {
+    const catalogCollection = 'magic_catalog';
+    final chunkMap = await _downloadChunksMap(catalogCollection, onProgress);
+    if (chunkMap.isEmpty) return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+
+    final sortedChunkIds = chunkMap.keys.toList()..sort();
+    final toMigrate = <({String chunkId, int cardIndex, String apiId, String sourceUrl})>[];
+
+    for (final chunkId in sortedChunkIds) {
+      final cards = chunkMap[chunkId]!;
+      for (int i = 0; i < cards.length; i++) {
+        final card = cards[i];
+        final imageUrl = card['imageUrl'] as String?;
+        final apiId = card['api_id'] as String? ?? '';
+        if (apiId.isEmpty) continue;
+        if (imageUrl != null && imageUrl.contains('cloudinary.com') && !force) continue;
+
+        final rawSource = card['image_url'] as String?;
+        if (rawSource == null || rawSource.isEmpty) continue;
+
+        toMigrate.add((
+          chunkId: chunkId,
+          cardIndex: i,
+          apiId: apiId,
+          sourceUrl: rawSource,
+        ));
+      }
+    }
+
+    if (toMigrate.isEmpty) return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+
+    int migrated = 0, failed = 0;
+    final affectedChunkIds = <String>{};
+
+    for (int i = 0; i < toMigrate.length; i++) {
+      final item = toMigrate[i];
+      onProgress(i + 1, toMigrate.length);
+      try {
+        final storageUrl = await _uploadCardImageIfNeeded('magic', item.apiId, item.sourceUrl);
+        if (storageUrl != null) {
+          final card = Map<String, dynamic>.from(chunkMap[item.chunkId]![item.cardIndex]);
+          card.remove('image_url');
+          card['imageUrl'] = storageUrl;
+          final rawSets = card['sets'] as Map<String, dynamic>?;
+          if (rawSets != null) {
+            final enList = rawSets['en'] as List?;
+            if (enList != null && enList.isNotEmpty) {
+              final enEntry = Map<String, dynamic>.from(enList[0] as Map)..['image_url'] = storageUrl;
+              card['sets'] = {...rawSets, 'en': [enEntry]};
+            }
+          }
+          chunkMap[item.chunkId]![item.cardIndex] = card;
+          affectedChunkIds.add(item.chunkId);
+          migrated++;
+        } else {
+          failed++;
+        }
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    for (final chunkId in affectedChunkIds) {
+      await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .set({'cards': chunkMap[chunkId]!});
+    }
+
+    final metadataDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
+    final currentVersion = metadataDoc.exists ? (metadataDoc.data()?['version'] as int? ?? 0) : 0;
+    await _firestore.collection(catalogCollection).doc('metadata').set({
+      'lastUpdated': FieldValue.serverTimestamp(),
+      'version': currentVersion + 1,
+      'updatedBy': adminUid,
+    }, SetOptions(merge: true));
+
+    return {
+      'migrated': migrated,
+      'failed': failed,
+      'chunksUpdated': affectedChunkIds.length,
+    };
   }
 
   /// Scarica le carte Oracle da Scryfall bulk data e le trasforma nel formato Firestore.

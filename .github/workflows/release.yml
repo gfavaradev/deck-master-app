@@ -7,9 +7,44 @@ on:
   workflow_dispatch: # permette di avviare manualmente dalla UI di GitHub
 
 jobs:
+  # ── Regression tests run first; build is blocked until all green ──────────
+  test:
+    name: Regression Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # app_secrets.dart is required by lib/ even for test compilation.
+      - name: Restore app_secrets.dart
+        run: echo "${{ secrets.APP_SECRETS_DART_BASE64 }}" | base64 --decode > lib/config/app_secrets.dart
+
+      - name: Run unit tests
+        run: flutter test test/ --no-pub --reporter=github
+
+      - name: Run regression integration tests (headless)
+        run: flutter test integration_test/regression_suite.dart --no-pub --reporter=github
+
+  # ── Build only proceeds when tests pass ───────────────────────────────────
   build-and-deploy:
     name: Build & Deploy Android
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
       # 1. Checkout del codice

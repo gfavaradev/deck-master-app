@@ -10,9 +10,12 @@ import '../utils/app_logger.dart';
 class FirestoreService {
   static final FirestoreService _instance = FirestoreService._internal();
   factory FirestoreService() => _instance;
-  FirestoreService._internal();
+  FirestoreService._internal() : _firestore = FirebaseFirestore.instance;
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // Used by integration tests only — never call in production code.
+  FirestoreService.forTesting(this._firestore);
+
+  final FirebaseFirestore _firestore;
 
   // ============================================================
   // Catalog Methods (Generic for all catalogs)

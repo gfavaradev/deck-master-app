@@ -49,6 +49,45 @@ class CloudinaryService {
     }
   }
 
+  /// Tells Cloudinary to fetch [imageUrl] directly (no local download).
+  /// ~2–5× faster than uploadBytes for remote sources Cloudinary can reach.
+  /// Returns null if Cloudinary cannot fetch the URL or the upload fails.
+  static Future<String?> uploadFromRemoteUrl({
+    required String imageUrl,
+    required String catalog,
+    required dynamic cardId,
+    String? setCode,
+  }) async {
+    final folder = buildFolder(catalog);
+    final filename = buildFilename(cardId, setCode: setCode);
+    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+
+    final params = {
+      'folder': folder,
+      'public_id': filename,
+      'timestamp': timestamp,
+    };
+    final signature = _sign(params);
+
+    final response = await http.post(
+      Uri.parse('https://api.cloudinary.com/v1_1/$_cloudName/image/upload'),
+      body: {
+        ...params,
+        'file': imageUrl,
+        'api_key': _apiKey,
+        'signature': signature,
+      },
+    );
+    if (response.statusCode != 200) {
+      debugPrint('[Cloudinary] Remote URL upload failed ${response.statusCode}: ${response.body}');
+      return null;
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    final uploadedPublicId = json['public_id'] as String?;
+    if (uploadedPublicId == null) return null;
+    return buildUrl(uploadedPublicId);
+  }
+
   /// Uploads raw bytes to Cloudinary and returns the secure_url.
   /// Uses explicit [folder] + [public_id] parameters so Cloudinary creates
   /// the proper folder hierarchy in the dashboard (not just root/home).
