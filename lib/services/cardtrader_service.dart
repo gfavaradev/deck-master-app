@@ -305,7 +305,7 @@ class CardtraderService {
       catalogId: catalogId,
     );
     if (row == null) return null;
-    return CardtraderPrice.fromMap(row as Map<String, dynamic>);
+    return CardtraderPrice.fromMap(row);
   }
 
   /// Returns all cached CardTrader prices for a card across every language.

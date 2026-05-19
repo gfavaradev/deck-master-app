@@ -33,6 +33,7 @@ class _WishlistPageState extends State<WishlistPage> {
 
   Future<void> _remove(WishlistModel item) async {
     await _repo.removeFromWishlist(item.id!);
+    if (!mounted) return;
     setState(() => _items.removeWhere((e) => e.id == item.id));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

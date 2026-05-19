@@ -205,8 +205,15 @@ class _PriceRow extends StatelessWidget {
       );
     }
 
-    final isHistorical = price!.listingCount == 0;
+    // blueprintId == 0 → catalog fallback (CT price embedded in catalog, no live data)
+    // blueprintId >  0, listingCount == 0 → real CT price but no active listings (stale)
+    // blueprintId >  0, listingCount >  0 → live CT price
+    final isCatalogFallback = price!.blueprintId == 0;
+    final isHistorical = !isCatalogFallback && price!.listingCount == 0;
     final priceColor = isHistorical ? Colors.orange : AppColors.cardtraderTeal;
+    final borderColor = isHistorical
+        ? Colors.orange.withValues(alpha: 0.5)
+        : AppColors.cardtraderTeal.withValues(alpha: 0.5);
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 3),
@@ -217,7 +224,7 @@ class _PriceRow extends StatelessWidget {
           ? BoxDecoration(
               color: AppColors.cardtraderBorder.withValues(alpha: 0.35),
               borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: AppColors.cardtraderTeal.withValues(alpha: 0.5)),
+              border: Border.all(color: borderColor),
             )
           : null,
       child: Row(
@@ -264,8 +271,8 @@ class _PriceRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          // NM / ANY badge
-          if (!isHistorical)
+          // NM / ANY badge (only for live CT prices)
+          if (!isHistorical && !isCatalogFallback)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
               decoration: BoxDecoration(
@@ -305,16 +312,17 @@ class _PriceRow extends StatelessWidget {
             ),
           ],
           const Spacer(),
-          // Sync date (active) or last-seen date (historical)
-          Text(
-            _formatDate(price!.syncedAtDate),
-            style: TextStyle(
-              fontSize: 9,
-              color: isHistorical
-                  ? Colors.orange.withValues(alpha: 0.8)
-                  : AppColors.textHint,
+          // Sync date — only for real CT prices with a known date
+          if (!isCatalogFallback && price!.syncedAt.isNotEmpty)
+            Text(
+              _formatDate(price!.syncedAtDate),
+              style: TextStyle(
+                fontSize: 9,
+                color: isHistorical
+                    ? Colors.orange.withValues(alpha: 0.8)
+                    : AppColors.textHint,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -416,10 +424,11 @@ class _PriceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (price.bestPriceCents == null) return const SizedBox.shrink();
     final isNm = price.hasNmPrice;
-    final isHistorical = price.listingCount == 0; // no active listings
+    final isCatalogFallback = price.blueprintId == 0;
+    final isHistorical = !isCatalogFallback && price.listingCount == 0;
 
-    // Historical prices use a muted colour so users understand it's stale.
     const activeColor = AppColors.cardtraderTeal;
     const historicalColor = Colors.orange;
     final priceColor = isHistorical ? historicalColor : activeColor;
@@ -461,7 +470,8 @@ class _PriceBadge extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    if (!isHistorical)
+                    // NM/ANY badge only for live CT prices
+                    if (!isHistorical && !isCatalogFallback)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
@@ -499,7 +509,9 @@ class _PriceBadge extends StatelessWidget {
                     ],
                   ],
                 ),
-                if (isHistorical)
+                // Historical: show last-seen date. Live CT: link to CT page.
+                // Catalog fallback (blueprintId==0): no link, no date.
+                if (isHistorical && price.syncedAt.isNotEmpty)
                   Text(
                     'Ultimo: ${_formatDate(price.syncedAtDate)}',
                     style: const TextStyle(
@@ -507,7 +519,7 @@ class _PriceBadge extends StatelessWidget {
                       color: Colors.orange,
                     ),
                   )
-                else
+                else if (!isCatalogFallback && !isHistorical)
                   GestureDetector(
                     onTap: () => launchUrl(
                       Uri.parse(price.cardtraderUrl),

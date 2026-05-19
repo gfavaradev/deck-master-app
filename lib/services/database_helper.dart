@@ -1572,7 +1572,8 @@ class DatabaseHelper {
                   LIMIT 1),
                  u.imageUrl
                ) as imageUrl,
-               (SELECT CASE
+               COALESCE(
+                 (SELECT CASE
                     WHEN set_code_it = u.serialNumber THEN COALESCE(set_price_it, set_price)
                     WHEN set_code_fr = u.serialNumber THEN COALESCE(set_price_fr, set_price)
                     WHEN set_code_de = u.serialNumber THEN COALESCE(set_price_de, set_price)
@@ -1585,7 +1586,9 @@ class DatabaseHelper {
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
                       OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
                       OR set_code_pt = u.serialNumber OR set_code_sp = u.serialNumber)
-                  LIMIT 1) as cardtrader_value,
+                  LIMIT 1),
+                 u.cardtrader_value
+               ) as cardtrader_value,
                (SELECT ct_synced_at FROM yugioh_prints
                   WHERE card_id = CAST(u.catalogId AS INTEGER)
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
@@ -1624,13 +1627,16 @@ class DatabaseHelper {
                  END
                ) as value,
                COALESCE(op.artwork, oc.image_url, u.imageUrl) as imageUrl,
-               CASE '$language'
-                 WHEN 'en' THEN COALESCE(op.market_price_en, op.market_price)
-                 WHEN 'fr' THEN COALESCE(op.market_price_fr, op.market_price)
-                 WHEN 'ko' THEN COALESCE(op.market_price_ko, op.market_price)
-                 WHEN 'zh' THEN COALESCE(op.market_price_zh, op.market_price)
-                 ELSE op.market_price
-               END as cardtrader_value,
+               COALESCE(
+                 CASE '$language'
+                   WHEN 'en' THEN COALESCE(op.market_price_en, op.market_price)
+                   WHEN 'fr' THEN COALESCE(op.market_price_fr, op.market_price)
+                   WHEN 'ko' THEN COALESCE(op.market_price_ko, op.market_price)
+                   WHEN 'zh' THEN COALESCE(op.market_price_zh, op.market_price)
+                   ELSE op.market_price
+                 END,
+                 u.cardtrader_value
+               ) as cardtrader_value,
                op.ct_synced_at,
                op.ct_listing_count
         FROM cards u
@@ -1662,7 +1668,7 @@ class DatabaseHelper {
                   WHERE card_id = pc.id
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
                       OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
-                      OR set_code_pt = u.serialNumber)
+                      OR set_code_es = u.serialNumber OR set_code_pt = u.serialNumber)
                   LIMIT 1)
                ) as value,
                COALESCE(
@@ -1670,36 +1676,39 @@ class DatabaseHelper {
                   WHERE card_id = pc.id
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
                       OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
-                      OR set_code_pt = u.serialNumber)
+                      OR set_code_es = u.serialNumber OR set_code_pt = u.serialNumber)
                   LIMIT 1),
                  pc.image_url,
                  u.imageUrl
                ) as imageUrl,
-               (SELECT CASE '$language'
-                    WHEN 'it' THEN COALESCE(set_price_it, set_price)
-                    WHEN 'fr' THEN COALESCE(set_price_fr, set_price)
-                    WHEN 'de' THEN COALESCE(set_price_de, set_price)
-                    WHEN 'es' THEN COALESCE(set_price_es, set_price)
-                    WHEN 'pt' THEN COALESCE(set_price_pt, set_price)
-                    ELSE set_price
-                  END
-                  FROM pokemon_prints
-                  WHERE card_id = pc.id
-                    AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
-                      OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
-                      OR set_code_pt = u.serialNumber)
-                  LIMIT 1) as cardtrader_value,
+               COALESCE(
+                 (SELECT CASE '$language'
+                      WHEN 'it' THEN COALESCE(set_price_it, set_price)
+                      WHEN 'fr' THEN COALESCE(set_price_fr, set_price)
+                      WHEN 'de' THEN COALESCE(set_price_de, set_price)
+                      WHEN 'es' THEN COALESCE(set_price_es, set_price)
+                      WHEN 'pt' THEN COALESCE(set_price_pt, set_price)
+                      ELSE set_price
+                    END
+                    FROM pokemon_prints
+                    WHERE card_id = pc.id
+                      AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
+                        OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
+                        OR set_code_es = u.serialNumber OR set_code_pt = u.serialNumber)
+                    LIMIT 1),
+                 u.cardtrader_value
+               ) as cardtrader_value,
                (SELECT ct_synced_at FROM pokemon_prints
                   WHERE card_id = pc.id
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
                       OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
-                      OR set_code_pt = u.serialNumber)
+                      OR set_code_es = u.serialNumber OR set_code_pt = u.serialNumber)
                   LIMIT 1) as ct_synced_at,
                (SELECT ct_listing_count FROM pokemon_prints
                   WHERE card_id = pc.id
                     AND (set_code = u.serialNumber OR set_code_it = u.serialNumber
                       OR set_code_fr = u.serialNumber OR set_code_de = u.serialNumber
-                      OR set_code_pt = u.serialNumber)
+                      OR set_code_es = u.serialNumber OR set_code_pt = u.serialNumber)
                   LIMIT 1) as ct_listing_count
         FROM cards u
         LEFT JOIN pokemon_cards pc ON (pc.id = CAST(u.catalogId AS INTEGER) OR pc.api_id = u.catalogId)
@@ -4206,7 +4215,7 @@ class DatabaseHelper {
   /// case-insensitive [cardName]. If [firstEdition] is null the row with
   /// the lowest [min_price_any_cents] is returned regardless of edition.
   /// If [rarity] is provided, filters to that rarity (case-insensitive).
-  Future<dynamic> getCardtraderPrice({
+  Future<Map<String, dynamic>?> getCardtraderPrice({
     required String catalog,
     required String expansionCode,
     required String cardName,
@@ -4387,10 +4396,9 @@ class DatabaseHelper {
     String? serialNumber,
   }) async {
     final db = await database;
-    final now = DateTime.now().toIso8601String();
 
     Map<String, dynamic> makeRow(String lang, dynamic price, String expCode,
-        String nameEn, String rarity) {
+        String nameEn, String rarity, String? ctSyncedAt) {
       final cents = price != null ? ((price as num).toDouble() * 100).round() : 0;
       if (cents <= 0) return {};
       return {
@@ -4405,7 +4413,8 @@ class DatabaseHelper {
         'min_price_nm_cents': cents,
         'min_price_any_cents': cents,
         'listing_count': 0,
-        'synced_at': now,
+        // Use real CT sync date when available; empty string hides stale "today" date in UI
+        'synced_at': ctSyncedAt ?? '',
       };
     }
 
@@ -4419,7 +4428,7 @@ class DatabaseHelper {
       if (cardDbId == null) return [];
       final rows = await db.rawQuery('''
         SELECT pp.set_price, pp.set_price_it, pp.set_price_fr, pp.set_price_de,
-               pp.set_price_es, pp.set_price_pt, pp.rarity, pp.set_code, pc.name
+               pp.set_price_es, pp.set_price_pt, pp.rarity, pp.set_code, pp.ct_synced_at, pc.name
         FROM pokemon_prints pp
         JOIN pokemon_cards pc ON pc.id = pp.card_id
         WHERE pp.card_id = ?
@@ -4431,13 +4440,14 @@ class DatabaseHelper {
       final n = row['name'] as String? ?? cardName;
       final r = row['rarity'] as String? ?? '';
       final exp = ((row['set_code'] as String?) ?? '').split('-').first.toLowerCase();
+      final ctDate = row['ct_synced_at'] as String?;
       final langMap = <String, dynamic>{
         'en': row['set_price'], 'it': row['set_price_it'],
         'fr': row['set_price_fr'], 'de': row['set_price_de'],
         'es': row['set_price_es'], 'pt': row['set_price_pt'],
       };
       return langMap.entries
-          .map((e) => makeRow(e.key, e.value, exp, n, r))
+          .map((e) => makeRow(e.key, e.value, exp, n, r, ctDate))
           .where((m) => m.isNotEmpty)
           .toList();
     }
@@ -4447,7 +4457,7 @@ class DatabaseHelper {
       if (cardDbId == null) return [];
       final rows = await db.rawQuery('''
         SELECT yp.set_price, yp.set_price_it, yp.set_price_fr, yp.set_price_de,
-               yp.set_price_pt, yp.set_price_sp, yp.rarity, yp.set_code, yc.name
+               yp.set_price_pt, yp.set_price_sp, yp.rarity, yp.set_code, yp.ct_synced_at, yc.name
         FROM yugioh_prints yp
         JOIN yugioh_cards yc ON yc.id = yp.card_id
         WHERE yp.card_id = ?
@@ -4459,13 +4469,14 @@ class DatabaseHelper {
       final n = row['name'] as String? ?? cardName;
       final r = row['rarity'] as String? ?? '';
       final exp = ((row['set_code'] as String?) ?? '').split('-').first.toLowerCase();
+      final ctDate = row['ct_synced_at'] as String?;
       final langMap = <String, dynamic>{
         'en': row['set_price'], 'it': row['set_price_it'],
         'fr': row['set_price_fr'], 'de': row['set_price_de'],
         'pt': row['set_price_pt'], 'es': row['set_price_sp'],
       };
       return langMap.entries
-          .map((e) => makeRow(e.key, e.value, exp, n, r))
+          .map((e) => makeRow(e.key, e.value, exp, n, r, ctDate))
           .where((m) => m.isNotEmpty)
           .toList();
     }
@@ -4476,7 +4487,7 @@ class DatabaseHelper {
       final rows = await db.rawQuery('''
         SELECT op.market_price, op.market_price_en, op.market_price_fr,
                op.market_price_ko, op.market_price_zh,
-               op.rarity, op.set_id, oc.name
+               op.rarity, op.set_id, op.ct_synced_at, oc.name
         FROM onepiece_prints op
         JOIN onepiece_cards oc ON oc.id = op.card_id
         WHERE op.card_id = ?
@@ -4488,13 +4499,14 @@ class DatabaseHelper {
       final n = row['name'] as String? ?? cardName;
       final r = row['rarity'] as String? ?? '';
       final exp = ((row['set_id'] as String?) ?? '').toLowerCase();
+      final ctDate = row['ct_synced_at'] as String?;
       final langMap = <String, dynamic>{
         'ja': row['market_price'], 'en': row['market_price_en'],
         'fr': row['market_price_fr'], 'ko': row['market_price_ko'],
         'zh': row['market_price_zh'],
       };
       return langMap.entries
-          .map((e) => makeRow(e.key, e.value, exp, n, r))
+          .map((e) => makeRow(e.key, e.value, exp, n, r, ctDate))
           .where((m) => m.isNotEmpty)
           .toList();
     }

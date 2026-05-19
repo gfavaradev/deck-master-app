@@ -60,7 +60,13 @@ class _CardListPageState extends State<CardListPage> {
       if (mounted) _refreshCards();
     });
     LanguageService.getPreferredLanguageForCollection(widget.collectionKey).then((lang) {
-      if (mounted) setState(() => _preferredLanguage = lang);
+      if (!mounted) return;
+      // _preferredLanguage drives catalog search; if it changed re-fetch so
+      // prices are computed with the correct localized columns.
+      if (lang != _preferredLanguage) {
+        _preferredLanguage = lang;
+        _refreshCards();
+      }
     });
   }
 

@@ -56,16 +56,28 @@ class _LivePriceTextState extends State<_LivePriceText> {
         }
         final price = snap.data;
         if (price == null) {
+          // Fallback to catalog price when CT table has no data for this card
+          final v = widget.card.cardtraderValue;
+          if (v != null && v > 0) {
+            return Text('€${v.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: fs, color: AppColors.textHint));
+          }
           return Text('N/D', style: TextStyle(fontSize: fs, color: AppColors.textHint));
         }
         final cents = price.bestPriceCents;
         if (cents == null) {
+          final v = widget.card.cardtraderValue;
+          if (v != null && v > 0) {
+            return Text('€${v.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: fs, color: AppColors.textHint));
+          }
           return Text('N/D', style: TextStyle(fontSize: fs, color: AppColors.textHint));
         }
         final priceStr = '€${(cents / 100).toStringAsFixed(2)}';
-        final isHistorical = price.listingCount == 0;
+        final isCatalogFallback = price.blueprintId == 0;
+        final isHistorical = !isCatalogFallback && price.listingCount == 0;
         final color = isHistorical ? Colors.orange.shade700 : const Color(0xFF1A9B8A);
-        if (isHistorical) {
+        if (isHistorical && price.syncedAt.isNotEmpty) {
           final d = price.syncedAtDate;
           final date =
               '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
@@ -108,6 +120,7 @@ void _showFullScreenImage(BuildContext context, String imageUrl) {
                 borderRadius: BorderRadius.circular(8),
                 child: CachedNetworkImage(
                   imageUrl: imageUrl,
+                  httpHeaders: const {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'},
                   fit: BoxFit.contain,
                   placeholder: (c, u) => const SizedBox(
                     height: 200,
@@ -200,6 +213,7 @@ class CardListItem extends StatelessWidget {
                         child: card.imageUrl != null && card.imageUrl!.isNotEmpty
                             ? CachedNetworkImage(
                                 imageUrl: card.imageUrl!,
+                                httpHeaders: const {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'},
                                 fit: BoxFit.cover,
                                 memCacheWidth: 104,
                                 memCacheHeight: 146,
@@ -365,6 +379,7 @@ class CardGridItem extends StatelessWidget {
                     child: card.imageUrl != null && card.imageUrl!.isNotEmpty
                         ? CachedNetworkImage(
                             imageUrl: card.imageUrl!,
+                            httpHeaders: const {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'},
                             fit: BoxFit.cover,
                             memCacheWidth: 300,
                             memCacheHeight: 420,
