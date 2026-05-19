@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'cardtrader_service.dart' show CardtraderService;
 import 'package:http/http.dart' as http;
 import 'package:deck_master/models/pending_catalog_change.dart';
@@ -44,11 +46,26 @@ class AdminCatalogService {
   // Image Storage
   // ============================================================
 
+  /// Updates both camelCase and snake_case image URL fields on a One Piece card map.
+  /// Both fields are required: insertOnepieceCards reads imageUrl, the SQLite column uses image_url.
+  static void _setOnepieceCardImageUrl(Map<String, dynamic> card, String url) {
+    card['imageUrl'] ??= url;
+    if (card['image_url'] == null ||
+        !(card['image_url'] as String).contains('cloudinary.com')) {
+      card['image_url'] = url;
+    }
+  }
+
   /// Uploads a card image to Cloudinary.
   /// [catalog] determines the public_id prefix (e.g. 'yugioh', 'pokemon', 'onepiece').
   /// [cardId] can be an int (YuGiOh) or String (Pokémon api_id).
   /// Returns the Cloudinary secure URL, or null on failure.
-  Future<String?> _uploadCardImageIfNeeded(String catalog, dynamic cardId, String? sourceUrl) async {
+  Future<String?> _uploadCardImageIfNeeded(
+    String catalog,
+    dynamic cardId,
+    String? sourceUrl, {
+    String? setCode,
+  }) async {
     if (sourceUrl == null || sourceUrl.isEmpty) return null;
     final safeId = cardId.toString().replaceAll(RegExp(r'[/\s]'), '_');
     try {
@@ -60,6 +77,7 @@ class AdminCatalogService {
           imageUrl: sourceUrl,
           catalog: catalog,
           cardId: cardId,
+          setCode: setCode,
         );
         if (url != null) return url;
         debugPrint('[ImageUpload] Remote URL fallback per $sourceUrl (id=$safeId)');
@@ -87,10 +105,29 @@ class AdminCatalogService {
         debugPrint('[ImageUpload] Body vuoto per $fetchUrl (id=$safeId)');
         return null;
       }
+
+      // Compress before upload (same params as YuGiOh/Pokémon).
+      // Guard: flutter_image_compress only works on Android/iOS.
+      var uploadBytes = response.bodyBytes;
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        try {
+          final compressed = await FlutterImageCompress.compressWithList(
+            uploadBytes,
+            minWidth: 400,
+            quality: 78,
+            format: CompressFormat.jpeg,
+          );
+          if (compressed.isNotEmpty) uploadBytes = compressed;
+        } catch (_) {
+          // Compression failed; upload original bytes.
+        }
+      }
+
       return await CloudinaryService.uploadBytes(
-        bytes: response.bodyBytes,
+        bytes: uploadBytes,
         catalog: catalog,
         cardId: cardId,
+        setCode: setCode,
       );
     } catch (e) {
       debugPrint('[ImageUpload] Errore per $sourceUrl (id=$safeId): $e');
@@ -1924,6 +1961,7 @@ class AdminCatalogService {
       String chunkId,
       int cardIndex,
       int printIndex,
+      int cardId,
       String cardSetId,
       String sourceUrl,
       String? fallbackUrl,
@@ -1948,9 +1986,9 @@ class AdminCatalogService {
           final cardSetId = (p['card_set_id'] as String?)?.trim() ?? '';
           if (cardSetId.isEmpty) { diagNoCardSetId++; continue; }
 
-          // Skip surrogate IDs (CT blueprint ID as fallback — invalid OPTCG paths)
-          final numPart = cardSetId.split('-').last;
-          if (numPart.length > 4 && RegExp(r'^\d+$').hasMatch(numPart)) {
+          // Skip surrogate IDs (CT blueprint IDs, pure numeric strings, or anything
+          // that doesn't match the OPTCG format: e.g. OP01-001, OP01-EN001, ST01-JP001a).
+          if (!RegExp(r'^[A-Z]{2,5}\d{1,2}-([A-Z]{2})?\d{3,4}[a-z]?$').hasMatch(cardSetId)) {
             diagSurrogate++;
             continue;
           }
@@ -1967,6 +2005,7 @@ class AdminCatalogService {
             chunkId: chunkId,
             cardIndex: i,
             printIndex: j,
+            cardId: (card['id'] as num).toInt(),
             cardSetId: cardSetId,
             sourceUrl: sourceUrl,
             fallbackUrl: null,
@@ -2004,7 +2043,7 @@ class AdminCatalogService {
         String? storageUrl;
         final candidates = [item.sourceUrl, if (item.fallbackUrl != null) item.fallbackUrl!];
         for (final url in candidates) {
-          storageUrl = await _uploadCardImageIfNeeded('onepiece', item.cardSetId, url);
+          storageUrl = await _uploadCardImageIfNeeded('onepiece', item.cardId, url, setCode: item.cardSetId);
           if (storageUrl != null) break;
         }
 
@@ -2015,13 +2054,7 @@ class AdminCatalogService {
           print['artwork'] = storageUrl;
           prints[item.printIndex] = print;
           card['prints'] = prints;
-          // Fix 3: aggiorna sia imageUrl (camelCase per insertOnepieceCards)
-          // sia image_url (snake_case per onepiece_cards.image_url in SQLite)
-          card['imageUrl'] ??= storageUrl;
-          if (card['image_url'] == null ||
-              !(card['image_url'] as String).contains('cloudinary.com')) {
-            card['image_url'] = storageUrl;
-          }
+          _setOnepieceCardImageUrl(card, storageUrl);
           chunkMap[item.chunkId]![item.cardIndex] = card;
           affectedChunkIds.add(item.chunkId);
           migrated++;
@@ -2048,9 +2081,7 @@ class AdminCatalogService {
       'lastUpdated': FieldValue.serverTimestamp(),
       'version': currentVersion + 1,
       'updatedBy': adminUid,
-      // Svuota i modifiedChunks per forzare un re-download completo sul client
-      // (la migrazione tocca tutti i chunk, non un sottoinsieme)
-      'modifiedChunks': [],
+      'modifiedChunks': affectedChunkIds.toList(),
     }, SetOptions(merge: true));
 
     // Verify a sample of uploaded URLs to confirm they're actually on Cloudinary.
