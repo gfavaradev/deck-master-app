@@ -75,19 +75,23 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _loadCollections() async {
-    final all = await _repo.getCollections();
-    if (mounted) {
-      setState(() {
-        _unlockedCollections = all.where((c) => c.isUnlocked).toList();
-        final locked = all.where((c) => !c.isUnlocked).toList();
-        locked.sort((a, b) {
-          final aHas = _catalogAvailable.contains(a.key) ? 0 : 1;
-          final bHas = _catalogAvailable.contains(b.key) ? 0 : 1;
-          return aHas.compareTo(bHas);
+    try {
+      final all = await _repo.getCollections();
+      if (mounted) {
+        setState(() {
+          _unlockedCollections = all.where((c) => c.isUnlocked).toList();
+          final locked = all.where((c) => !c.isUnlocked).toList();
+          locked.sort((a, b) {
+            final aHas = _catalogAvailable.contains(a.key) ? 0 : 1;
+            final bHas = _catalogAvailable.contains(b.key) ? 0 : 1;
+            return aHas.compareTo(bHas);
+          });
+          _availableCollections = locked;
+          _isLoading = false;
         });
-        _availableCollections = locked;
-        _isLoading = false;
-      });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

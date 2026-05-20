@@ -129,7 +129,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
         const Duration(seconds: 2),
         onTimeout: () {},
       );
-      _navigateToMain();
+      _navigateToMain(showTutorial: _isFirstLogin);
     } else {
       // Aspetta il primo frame prima di navigare — evita di chiamare
       // Navigator.of(context) dentro initState prima del primo build
@@ -139,13 +139,16 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
     }
   }
 
-  void _navigateToMain() {
+  void _navigateToMain({bool showTutorial = false}) {
     if (_navigating || !mounted) return;
     _navigating = true;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 500),
-        pageBuilder: (_, _, _) => MainLayout(updateNotification: _updatedVersion),
+        pageBuilder: (_, _, _) => MainLayout(
+          updateNotification: _updatedVersion,
+          showTutorial: showTutorial,
+        ),
         transitionsBuilder: (_, anim, _, child) => FadeTransition(
           opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
           child: child,
@@ -182,7 +185,10 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
             if (isLoggedIn) {
               nav.pushReplacement(PageRouteBuilder(
                 transitionDuration: const Duration(milliseconds: 500),
-                pageBuilder: (_, _, _) => MainLayout(updateNotification: _updatedVersion),
+                pageBuilder: (_, _, _) => MainLayout(
+                  updateNotification: _updatedVersion,
+                  showTutorial: true,
+                ),
                 transitionsBuilder: (_, anim, _, child) => FadeTransition(
                   opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
                   child: child,

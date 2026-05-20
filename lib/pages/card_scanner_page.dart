@@ -199,6 +199,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
 
       // Count every API call (found or not)
       await _incrementScanCount();
+      if (!mounted) return;
 
       if (result == null) {
         setState(() {

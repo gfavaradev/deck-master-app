@@ -11,6 +11,7 @@ import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/user_avatar_widget.dart';
 import 'main_layout.dart';
+import 'tutorial_page.dart';
 import 'login_page.dart';
 import 'profile_page.dart';
 import 'admin_users_page.dart';
@@ -1133,9 +1134,24 @@ class _SettingsPageState extends State<SettingsPage> {
           title: 'Valuta',
           subtitle: '${currEntry.symbol}  ${currEntry.code} — ${currEntry.name}',
           iconColor: AppColors.purple,
-          isLast: true,
           trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
           onTap: _showCurrencyPicker,
+        ),
+        _tileDivider(),
+        _buildTile(
+          icon: Icons.help_outline,
+          title: 'Guida all\'App',
+          subtitle: 'Rivedi il tutorial introduttivo',
+          iconColor: AppColors.purple,
+          isLast: true,
+          trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              fullscreenDialog: true,
+              builder: (_) => const TutorialPage(),
+            ),
+          ),
         ),
       ],
     );

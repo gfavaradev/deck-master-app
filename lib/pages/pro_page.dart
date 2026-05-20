@@ -46,7 +46,9 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
       final current = offerings.current;
       if (current != null) {
         final packages = current.availablePackages;
-        if (_annual) {
+        if (packages.isEmpty) {
+          // RevenueCat offering exists but no packages configured yet
+        } else if (_annual) {
           package = packages.firstWhere(
             (p) => p.storeProduct.identifier == kProductAnnual,
             orElse: () => packages.first,

@@ -1222,6 +1222,7 @@ class _AdminProPageState extends State<AdminProPage> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
       final all = await _service.getAllUsers();

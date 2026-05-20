@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'dart:io' show Platform;
@@ -9,6 +10,7 @@ import '../models/album_model.dart';
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
   static Database? _database;
+  static Completer<Database>? _initCompleter;
 
   factory DatabaseHelper() => _instance;
 
@@ -18,7 +20,16 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDatabase();
+    if (_initCompleter != null) return _initCompleter!.future;
+    _initCompleter = Completer<Database>();
+    try {
+      _database = await _initDatabase();
+      _initCompleter!.complete(_database!);
+    } catch (e) {
+      _initCompleter!.completeError(e);
+      _initCompleter = null;
+      rethrow;
+    }
     return _database!;
   }
 
@@ -45,6 +56,9 @@ class DatabaseHelper {
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
+
+    // WAL mode: allows concurrent reads while catalog writes are in progress
+    await db.rawQuery('PRAGMA journal_mode=WAL');
 
     // Ensure essential indices exist (for development/existing dbs)
     await db.execute('CREATE INDEX IF NOT EXISTS idx_catalog_card_sets_cardId ON catalog_card_sets (cardId)');
@@ -2539,7 +2553,7 @@ class DatabaseHelper {
         await batch.commit(noResult: true);
       });
 
-      await Future.delayed(Duration.zero); // yield UI frame between batches
+      await Future.delayed(const Duration(milliseconds: 20)); // yield between batches
       onProgress?.call(end / total);
     }
   }
@@ -2876,7 +2890,7 @@ class DatabaseHelper {
         await batch.commit(noResult: true);
       });
 
-      await Future.delayed(Duration.zero); // yield UI frame between batches
+      await Future.delayed(const Duration(milliseconds: 20)); // yield between batches
       onProgress?.call(end / total);
     }
   }
@@ -3932,7 +3946,7 @@ class DatabaseHelper {
         }
       });
 
-      await Future.delayed(Duration.zero); // yield UI frame between batches
+      await Future.delayed(const Duration(milliseconds: 20)); // yield between batches
       processed += batch.length;
       onProgress?.call(processed / cards.length);
     }

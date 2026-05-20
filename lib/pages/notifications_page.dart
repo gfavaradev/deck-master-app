@@ -350,8 +350,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _loadAndMarkRead() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Rileva nuove notifiche e aggiunge allo storico
-    final history = await _detectAndPersistNewNotifs(prefs);
+    // Rileva nuove notifiche. Se SQLite è occupato da un download in corso,
+    // il timeout evita lo spinner infinito e mostra la storia già salvata.
+    List<_NotifEntry> history;
+    try {
+      history = await _detectAndPersistNewNotifs(prefs)
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      history = await _loadHistory(prefs);
+    }
 
     // Cancella il contatore pending (l'utente sta guardando la pagina)
     await prefs.setInt(_kPendingUpdatesCount, 0);

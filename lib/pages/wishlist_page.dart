@@ -117,9 +117,11 @@ class _WishlistPageState extends State<WishlistPage> {
         ],
       ),
     );
+    ctrl.dispose();
     if (result == null) return;
     final price = result < 0 ? null : result;
     await _repo.updateWishlistTargetPrice(item.id!, price);
+    if (!mounted) return;
     _load();
   }
 

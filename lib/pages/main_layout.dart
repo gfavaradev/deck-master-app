@@ -31,6 +31,7 @@ import 'notifications_page.dart';
 import 'card_scanner_page.dart';
 import 'wishlist_page.dart';
 import 'roi_page.dart';
+import 'tutorial_page.dart';
 import '../services/price_alert_service.dart';
 
 /// Layout principale con barra di navigazione persistente
@@ -39,6 +40,7 @@ class MainLayout extends StatefulWidget {
   final String? collectionKey;
   final String? collectionName;
   final String? updateNotification;
+  final bool showTutorial;
 
   const MainLayout({
     super.key,
@@ -46,6 +48,7 @@ class MainLayout extends StatefulWidget {
     this.collectionKey,
     this.collectionName,
     this.updateNotification,
+    this.showTutorial = false,
   });
 
   @override
@@ -120,7 +123,23 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         }
       });
     }
+
+    if (widget.showTutorial) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => const TutorialPage(),
+          ),
+        );
+      });
+    }
   }
+
 
   @override
   void dispose() {

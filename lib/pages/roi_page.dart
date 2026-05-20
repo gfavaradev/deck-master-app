@@ -26,6 +26,7 @@ class _RoiPageState extends State<RoiPage> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     final results = await Future.wait([
       _repo.getRoiSummary(),
@@ -99,6 +100,7 @@ class _RoiPageState extends State<RoiPage> {
       ),
     );
 
+    ctrl.dispose();
     if (result == null) return;
     final price = result < 0 ? null : result;
     await _repo.updateCardPurchasePrice(card['id'] as int, price);
@@ -153,11 +155,13 @@ class _RoiPageState extends State<RoiPage> {
           const SizedBox(height: 8),
           Row(
             children: [
-              _KpiCard(
-                label: 'Valore totale',
-                value: '€${currentValue.toStringAsFixed(2)}',
-                color: AppColors.gold,
-                icon: Icons.account_balance_wallet_outlined,
+              Expanded(
+                child: _KpiCard(
+                  label: 'Valore totale',
+                  value: '€${currentValue.toStringAsFixed(2)}',
+                  color: AppColors.gold,
+                  icon: Icons.account_balance_wallet_outlined,
+                ),
               ),
             ],
           ),
