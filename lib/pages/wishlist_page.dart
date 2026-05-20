@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../models/wishlist_model.dart';
 import '../services/data_repository.dart';
 import '../services/price_alert_service.dart';
+import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/tutorial_content_widget.dart';
 import 'wishlist_catalog_picker.dart';
 
 class WishlistPage extends StatefulWidget {
@@ -18,10 +21,52 @@ class _WishlistPageState extends State<WishlistPage> {
   List<WishlistModel> _items = [];
   bool _loading = true;
 
+  final _fabKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _load();
+    if (TutorialService.instance.isActive && TutorialService.instance.phase == 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future.delayed(const Duration(milliseconds: 450));
+        if (mounted) _startPhase2Tutorial();
+      });
+    }
+  }
+
+  void _startPhase2Tutorial() {
+    TutorialCoachMark(
+      targets: [
+        TargetFocus(
+          identify: 'wishlist_fab',
+          keyTarget: _fabKey,
+          shape: ShapeLightFocus.RRect,
+          radius: 28,
+          contents: [
+            TargetContent(
+              align: ContentAlign.top,
+              child: const TutorialContentWidget(
+                title: 'Aggiungi alla Wishlist',
+                description: 'Tocca qui per aggiungere le carte che vuoi acquistare. Puoi impostare un prezzo obiettivo e ricevere un avviso quando viene raggiunto.',
+              ),
+            ),
+          ],
+        ),
+      ],
+      colorShadow: Colors.black,
+      opacityShadow: 0.85,
+      textSkip: 'SALTA',
+      onFinish: _onPhase2Done,
+      onSkip: () { _onPhase2Done(); return true; },
+    ).show(context: context);
+  }
+
+  void _onPhase2Done() {
+    TutorialService.instance.advanceTo(3);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.pop(context);
+    });
   }
 
   Future<void> _load() async {
@@ -135,6 +180,7 @@ class _WishlistPageState extends State<WishlistPage> {
         foregroundColor: AppColors.textPrimary,
       ),
       floatingActionButton: FloatingActionButton.extended(
+        key: _fabKey,
         onPressed: _openAdd,
         backgroundColor: AppColors.gold,
         foregroundColor: Colors.black,

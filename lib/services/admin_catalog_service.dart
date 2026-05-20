@@ -782,6 +782,10 @@ class AdminCatalogService {
         final card = cards[i];
         final cardId = card['id'] ?? card['api_id'];
 
+        // Salta se l'immagine è già su Cloudinary
+        final existingUrl = card['imageUrl'] as String?;
+        if (existingUrl != null && existingUrl.contains('cloudinary.com')) continue;
+
         // 1. URL originale API ancora presente (non ancora migrata)
         String? sourceUrl = card['image_url'] as String?;
 
@@ -1891,45 +1895,8 @@ class AdminCatalogService {
 
     final newCards = cardMap.values.toList();
 
-    // Upload images for new cards in parallel (per-print, OPTCG CDN requires byte download).
-    onProgress('Caricando immagini per ${newCards.length} carte nuove...', 0);
-    final sem = _Semaphore(_uploadConcurrency);
-    int imagesOk = 0, imagesFail = 0;
-    await Future.wait(newCards.asMap().entries.map((cardEntry) async {
-      final card = cardEntry.value;
-      final prints = card['prints'] as List<Map<String, dynamic>>;
-      bool cardUrlSet = card['imageUrl'] != null;
-      for (int j = 0; j < prints.length; j++) {
-        final print = prints[j];
-        final cardSetId = print['card_set_id'] as String? ?? '';
-        final rawArtwork = print['artwork'] as String?;
-        if (rawArtwork == null || rawArtwork.isEmpty || rawArtwork.contains('cloudinary.com')) {
-          if (!cardUrlSet && rawArtwork != null && rawArtwork.contains('cloudinary.com')) {
-            card['imageUrl'] = rawArtwork;
-            card.remove('image_url');
-            cardUrlSet = true;
-          }
-          continue;
-        }
-        await sem.acquire();
-        try {
-          final url = await _uploadCardImageIfNeeded('onepiece', cardSetId, rawArtwork);
-          if (url != null) {
-            prints[j] = {...print, 'artwork': url};
-            if (!cardUrlSet) {
-              card['imageUrl'] = url;
-              card.remove('image_url');
-              cardUrlSet = true;
-            }
-            imagesOk++;
-          } else {
-            imagesFail++;
-          }
-        } finally {
-          sem.release();
-        }
-      }
-    }));
+    // Le immagini NON vengono caricate qui — restano come URL raw dell'OPTCG API.
+    // Usare il passo "Migra Immagini" separato per caricarle su Firebase Storage.
 
     onProgress('Salvando ${newCards.length} carte nuove su Firestore...', null);
     await _uploadCatalogChunks(
@@ -1940,7 +1907,7 @@ class AdminCatalogService {
       onProgress: (cur, tot) => onProgress('Caricando chunk $cur di $tot...', cur / tot),
     );
 
-    return {'newCards': newCards.length, 'imagesOk': imagesOk, 'imagesFail': imagesFail};
+    return {'newCards': newCards.length};
   }
 
   /// Migra le immagini One Piece su Firebase Storage aggiornando il campo `artwork` nei prints.

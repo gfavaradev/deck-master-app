@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../services/data_repository.dart';
+import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/collection_value_chart.dart';
+import '../widgets/tutorial_content_widget.dart';
 
 class RoiPage extends StatefulWidget {
   const RoiPage({super.key});
@@ -19,10 +22,69 @@ class _RoiPageState extends State<RoiPage> {
   bool _loading = true;
   String? _filterCollection;
 
+  final _kpiKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _load();
+    if (TutorialService.instance.isActive && TutorialService.instance.phase == 3) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future.delayed(const Duration(milliseconds: 450));
+        if (mounted) _startPhase3Tutorial();
+      });
+    }
+  }
+
+  void _startPhase3Tutorial() {
+    TutorialCoachMark(
+      targets: [
+        TargetFocus(
+          identify: 'roi_kpi',
+          keyTarget: _kpiKey,
+          shape: ShapeLightFocus.RRect,
+          radius: 10,
+          contents: [
+            TargetContent(
+              align: ContentAlign.bottom,
+              child: const TutorialContentWidget(
+                title: 'Valore Portfolio',
+                description: 'Qui vedi il valore totale delle carte che possiedi. Inserisci il prezzo d\'acquisto di ogni carta per calcolare il tuo ROI e scoprire quanto è cresciuto il tuo investimento.',
+              ),
+            ),
+          ],
+        ),
+      ],
+      colorShadow: Colors.black,
+      opacityShadow: 0.85,
+      textSkip: 'SALTA',
+      onFinish: _onPhase3Done,
+      onSkip: () { _onPhase3Done(); return true; },
+    ).show(context: context);
+  }
+
+  void _onPhase3Done() {
+    TutorialService.instance.complete();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.emoji_events, color: Colors.black),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Tutorial completato! Buona fortuna con la tua collezione!',
+                  style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Color(0xFFF9A825),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   Future<void> _load() async {
@@ -154,6 +216,7 @@ class _RoiPageState extends State<RoiPage> {
               style: TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 1.2)),
           const SizedBox(height: 8),
           Row(
+            key: _kpiKey,
             children: [
               Expanded(
                 child: _KpiCard(

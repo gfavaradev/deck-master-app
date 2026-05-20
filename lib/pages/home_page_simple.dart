@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../models/collection_model.dart';
 import '../services/ad_service.dart';
 import '../services/data_repository.dart';
 import '../services/subscription_service.dart';
+import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/tutorial_content_widget.dart';
 import 'pro_page.dart';
 
 /// Home page semplificata - mostra solo la griglia delle collezioni
@@ -34,6 +37,9 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   List<CollectionModel> _availableCollections = [];
   bool _isLoading = true;
 
+  // Tutorial
+  final _firstTileKey = GlobalKey();
+
   // ── Rewarded ad & Pro ────────────────────────────────────────────────────
   bool _isPro = false;
   RewardedAd? _rewardedAd;
@@ -42,14 +48,72 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   @override
   void initState() {
     super.initState();
+    TutorialService.instance.startSignal.addListener(_onTutorialStart);
     _loadCollections();
     _loadProAndAd();
   }
 
   @override
   void dispose() {
+    TutorialService.instance.startSignal.removeListener(_onTutorialStart);
     _rewardedAd?.dispose();
     super.dispose();
+  }
+
+  void _onTutorialStart() {
+    if (!mounted) return;
+    if (!TutorialService.instance.isActive || TutorialService.instance.phase != 0) return;
+    if (_isLoading) return; // _loadCollections will call _maybeStartPhase0 after loading
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _startPhase0Tutorial();
+    });
+  }
+
+  void _maybeStartPhase0() {
+    if (TutorialService.instance.isActive && TutorialService.instance.phase == 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startPhase0Tutorial();
+      });
+    }
+  }
+
+  void _startPhase0Tutorial() {
+    if (!TutorialService.instance.isActive || TutorialService.instance.phase != 0) return;
+    final allEmpty = _unlockedCollections.isEmpty && _availableCollections.isEmpty;
+    if (allEmpty) return;
+
+    final hasUnlocked = _unlockedCollections.isNotEmpty;
+    final title = hasUnlocked ? 'La tua Collezione' : 'Sblocca una Collezione';
+    final desc = hasUnlocked
+        ? 'Tocca questa card per aprire la tua collezione e iniziare ad aggiungere le tue carte!'
+        : 'Tocca questa card per sbloccare la tua prima collezione. È completamente gratuita!';
+
+    TutorialCoachMark(
+      targets: [
+        TargetFocus(
+          identify: 'first_collection',
+          keyTarget: _firstTileKey,
+          shape: ShapeLightFocus.RRect,
+          radius: 16,
+          contents: [
+            TargetContent(
+              align: ContentAlign.bottom,
+              child: TutorialContentWidget(title: title, description: desc),
+            ),
+          ],
+        ),
+      ],
+      colorShadow: Colors.black,
+      opacityShadow: 0.85,
+      textSkip: 'SALTA',
+      onFinish: _onPhase0Done,
+      onSkip: () { _onPhase0Done(); return true; },
+    ).show(context: context);
+  }
+
+  void _onPhase0Done() {
+    TutorialService.instance.advanceTo(1);
+    // Phase 1 starts automatically when the user enters a collection
   }
 
   Future<void> _loadProAndAd() async {
@@ -93,6 +157,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
+    _maybeStartPhase0();
   }
 
   Future<void> _unlock(CollectionModel collection) async {
@@ -284,8 +349,10 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                 childAspectRatio: 1.1,
               ),
               itemCount: _unlockedCollections.length,
-              itemBuilder: (context, index) =>
-                  _buildCollectionTile(_unlockedCollections[index], true),
+              itemBuilder: (context, index) => _buildCollectionTile(
+                _unlockedCollections[index], true,
+                tileKey: index == 0 ? _firstTileKey : null,
+              ),
             ),
             const SizedBox(height: 32),
           ],
@@ -301,8 +368,10 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                 childAspectRatio: 1.1,
               ),
               itemCount: _availableCollections.length,
-              itemBuilder: (context, index) =>
-                  _buildCollectionTile(_availableCollections[index], false),
+              itemBuilder: (context, index) => _buildCollectionTile(
+                _availableCollections[index], false,
+                tileKey: index == 0 && _unlockedCollections.isEmpty ? _firstTileKey : null,
+              ),
             ),
           ],
         ],
@@ -342,7 +411,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     );
   }
 
-  Widget _buildCollectionTile(CollectionModel collection, bool isUnlocked) {
+  Widget _buildCollectionTile(CollectionModel collection, bool isUnlocked, {Key? tileKey}) {
     final bool hasCatalog = _catalogAvailable.contains(collection.key);
     final Color color = AppColors.forCollection(collection.key);
     final String logoUrl = _getCollectionLogoUrl(collection.key);
@@ -351,6 +420,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     const Color cardBg = Color(0xFFE8DFCC);
 
     return Material(
+      key: tileKey,
       color: Colors.transparent,
       child: InkWell(
         onTap: () {

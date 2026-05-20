@@ -31,7 +31,9 @@ import 'notifications_page.dart';
 import 'card_scanner_page.dart';
 import 'wishlist_page.dart';
 import 'roi_page.dart';
-import 'tutorial_page.dart';
+import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
+import '../services/tutorial_service.dart';
+import '../widgets/tutorial_content_widget.dart';
 import '../services/price_alert_service.dart';
 
 /// Layout principale con barra di navigazione persistente
@@ -79,6 +81,11 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   _DownloadPhase _downloadPhase = _DownloadPhase.connecting;
   OverlayEntry? _popoverEntry;
 
+  // Tutorial GlobalKeys — assigned to AppBar buttons
+  final _scannerBtnKey  = GlobalKey();
+  final _wishlistBtnKey = GlobalKey();
+  final _roiBtnKey      = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -124,18 +131,13 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       });
     }
 
+    TutorialService.instance.startSignal.addListener(_onTutorialStartSignal);
+
     if (widget.showTutorial) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted) return;
-        await Future.delayed(const Duration(milliseconds: 400));
-        if (!mounted) return;
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            fullscreenDialog: true,
-            builder: (_) => const TutorialPage(),
-          ),
-        );
+        await Future.delayed(const Duration(milliseconds: 800));
+        if (!mounted || _isAdmin) return;
+        TutorialService.instance.start(); // triggers HomePageSimple listener
       });
     }
   }
@@ -143,6 +145,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    TutorialService.instance.startSignal.removeListener(_onTutorialStartSignal);
     _popoverEntry?.remove();
     _popoverEntry = null;
     _levelUpSub?.cancel();
@@ -150,6 +153,100 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     SyncService().stopListening();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  // ── Tutorial ──────────────────────────────────────────────────────────────
+
+  void _onTutorialStartSignal() {
+    if (!mounted) return;
+    // Exit collection so HomePageSimple (phase 0) is visible
+    if (_currentCollectionKey != null) {
+      setState(() {
+        _currentCollectionKey = null;
+        _currentCollectionName = null;
+        _currentIndex = 0;
+      });
+    }
+  }
+
+  void _startPhase1Tutorial() {
+    if (!TutorialService.instance.isActive || TutorialService.instance.phase != 1) return;
+
+    TutorialCoachMark(
+      targets: [
+        TargetFocus(
+          identify: 'scanner_btn',
+          keyTarget: _scannerBtnKey,
+          shape: ShapeLightFocus.Circle,
+          contents: [
+            TargetContent(
+              align: ContentAlign.bottom,
+              child: const TutorialContentWidget(
+                title: 'Scanner Carta',
+                description: 'Scansiona le tue carte fisiche con la fotocamera per aggiungerle automaticamente alla collezione.',
+              ),
+            ),
+          ],
+        ),
+        TargetFocus(
+          identify: 'wishlist_btn',
+          keyTarget: _wishlistBtnKey,
+          shape: ShapeLightFocus.Circle,
+          contents: [
+            TargetContent(
+              align: ContentAlign.bottom,
+              child: const TutorialContentWidget(
+                title: 'Wishlist',
+                description: 'Aggiungi le carte che vuoi acquistare e imposta un prezzo obiettivo. Riceverai un avviso quando il prezzo scende.',
+              ),
+            ),
+          ],
+        ),
+        TargetFocus(
+          identify: 'roi_btn',
+          keyTarget: _roiBtnKey,
+          shape: ShapeLightFocus.Circle,
+          contents: [
+            TargetContent(
+              align: ContentAlign.bottom,
+              child: const TutorialContentWidget(
+                title: 'Analisi ROI',
+                description: 'Inserisci il prezzo pagato per ogni carta e scopri quanto vale il tuo investimento nel tempo.',
+              ),
+            ),
+          ],
+        ),
+      ],
+      colorShadow: Colors.black,
+      opacityShadow: 0.85,
+      textSkip: 'SALTA',
+      onFinish: _onPhase1Done,
+      onSkip: () { _onPhase1Done(); return true; },
+    ).show(context: context);
+  }
+
+  void _onPhase1Done() {
+    TutorialService.instance.advanceTo(2);
+    _navigateForTutorialPhase2();
+  }
+
+  Future<void> _navigateForTutorialPhase2() async {
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const WishlistPage()),
+    );
+    // WishlistPage popped — check if it finished phase 2
+    if (!mounted) return;
+    if (TutorialService.instance.phase == 3) {
+      await Future.delayed(const Duration(milliseconds: 350));
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const RoiPage()),
+      );
+    }
   }
 
   void _onLevelUp(int newLevel) {
@@ -225,8 +322,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     setState(() {
       _currentCollectionKey = key;
       _currentCollectionName = name;
-      _currentIndex = 1; // Vai alle carte della collezione
+      _currentIndex = 1;
     });
+    if (TutorialService.instance.isActive && TutorialService.instance.phase == 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (mounted) _startPhase1Tutorial();
+      });
+    }
   }
 
   void _exitCollection() {
@@ -736,6 +839,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         actions: [
           if (inCollection)
             IconButton(
+              key: _scannerBtnKey,
               icon: const Icon(Icons.document_scanner_outlined),
               tooltip: 'Scansiona carta',
               onPressed: () => Navigator.push(
@@ -749,6 +853,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               ),
             ),
           IconButton(
+            key: _wishlistBtnKey,
             icon: const Icon(Icons.favorite_border),
             tooltip: 'Wishlist',
             onPressed: () => Navigator.push(
@@ -757,6 +862,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             ),
           ),
           IconButton(
+            key: _roiBtnKey,
             icon: const Icon(Icons.trending_up),
             tooltip: 'Analisi ROI',
             onPressed: () => Navigator.push(
