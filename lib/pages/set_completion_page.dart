@@ -55,12 +55,15 @@ class _SetCompletionPageState extends State<SetCompletionPage>
   }
 
   Future<void> _loadSets() async {
-    final data = await _repo.getSetStats(widget.collectionKey, lang: _lang);
-    if (!mounted) return;
-    setState(() {
-      _allSets = data;
-      _isLoading = false;
-    });
+    if (mounted) setState(() => _isLoading = true);
+    try {
+      final data = await _repo.getSetStats(widget.collectionKey, lang: _lang);
+      if (!mounted) return;
+      setState(() { _allSets = data; _isLoading = false; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    }
   }
 
   double _pct(Map<String, dynamic> set) {

@@ -52,7 +52,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 35,
+      version: 36,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -442,6 +442,14 @@ class DatabaseHelper {
     if (oldVersion < 35) {
       await _createMagicTables(db);
     }
+    if (oldVersion < 36) {
+      await _createNewCollectionTables(db);
+      // dragon-ball-super, flesh-and-blood, star-wars were added to _onCreate but
+      // missed the v21 migration — add them for existing users upgrading.
+      await db.execute("INSERT OR IGNORE INTO collections(id,name,isUnlocked) VALUES('dragon-ball-super','Dragon Ball Super',0)");
+      await db.execute("INSERT OR IGNORE INTO collections(id,name,isUnlocked) VALUES('flesh-and-blood','Flesh and Blood',0)");
+      await db.execute("INSERT OR IGNORE INTO collections(id,name,isUnlocked) VALUES('star-wars','Star Wars: Unlimited',0)");
+    }
   }
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
@@ -788,6 +796,81 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> _createNewCollectionTables(DatabaseExecutor db) async {
+    // Helper: creates a generic cards+prints pair for a collection.
+    // tableName: e.g. 'digimon'  → creates digimon_cards + digimon_prints
+    Future<void> createPair(String t) async {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS ${t}_cards(
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          api_id       TEXT    NOT NULL UNIQUE,
+          name         TEXT    NOT NULL,
+          card_type    TEXT,
+          subtype      TEXT,
+          rarity       TEXT,
+          cost         TEXT,
+          power        TEXT,
+          defense      TEXT,
+          effect       TEXT,
+          set_code     TEXT,
+          set_name     TEXT,
+          image_url    TEXT,
+          name_it      TEXT,
+          effect_it    TEXT,
+          name_fr      TEXT,
+          effect_fr    TEXT,
+          name_de      TEXT,
+          effect_de    TEXT,
+          name_pt      TEXT,
+          effect_pt    TEXT,
+          created_at   TEXT NOT NULL,
+          updated_at   TEXT NOT NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS ${t}_prints(
+          id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+          card_id            INTEGER NOT NULL REFERENCES ${t}_cards(id) ON DELETE CASCADE,
+          set_code           TEXT,
+          set_name           TEXT,
+          rarity             TEXT,
+          set_price          REAL,
+          set_name_it        TEXT,
+          set_code_it        TEXT,
+          rarity_it          TEXT,
+          set_price_it       REAL,
+          set_name_fr        TEXT,
+          set_code_fr        TEXT,
+          rarity_fr          TEXT,
+          set_price_fr       REAL,
+          set_name_de        TEXT,
+          set_code_de        TEXT,
+          rarity_de          TEXT,
+          set_price_de       REAL,
+          set_name_pt        TEXT,
+          set_code_pt        TEXT,
+          rarity_pt          TEXT,
+          set_price_pt       REAL,
+          ct_synced_at       TEXT,
+          ct_listing_count   INTEGER,
+          UNIQUE(card_id, set_code, rarity)
+        )
+      ''');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_${t}_cards_api_id ON ${t}_cards(api_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_${t}_prints_card_id ON ${t}_prints(card_id)');
+    }
+
+    await createPair('digimon');
+    await createPair('dragonball');
+    await createPair('lorcana');
+    await createPair('fab');
+    await createPair('vanguard');
+    await createPair('starwars');
+    await createPair('riftbound');
+    await createPair('gundam');
+    await createPair('union_arena');
+  }
+
   /// Inserisce o aggiorna una carta Magic per api_id.
   Future<int> upsertMagicCard(Map<String, dynamic> card) async {
     final db = await database;
@@ -853,6 +936,98 @@ class DatabaseHelper {
       final batch = apiIds.sublist(i, (i + 500 < apiIds.length) ? i + 500 : apiIds.length);
       final placeholders = batch.map((_) => '?').join(',');
       await db.delete('magic_cards', where: 'api_id IN ($placeholders)', whereArgs: batch);
+    }
+  }
+
+  // ============================================================
+  // Generic new-collection catalog methods (v36)
+  // Maps: catalog key → SQL table prefix
+  // ============================================================
+
+  /// catalog key → SQL table name prefix for v36 collections.
+  static String? genericTablePrefix(String catalogKey) => const {
+    'digimon':          'digimon',
+    'lorcana':          'lorcana',
+    'flesh-and-blood':  'fab',
+    'vanguard':         'vanguard',
+    'dragon-ball-super':'dragonball',
+    'star-wars':        'starwars',
+    'riftbound':        'riftbound',
+    'gundam':           'gundam',
+    'union-arena':      'union_arena',
+  }[catalogKey];
+
+  /// Bulk-insert or replace cards into a generic v36 catalog table.
+  /// [tablePrefix] is one of: digimon, lorcana, fab, vanguard, dragonball,
+  /// starwars, riftbound, gundam, union_arena.
+  Future<void> insertGenericCatalogCards(
+    String tablePrefix,
+    List<Map<String, dynamic>> cards, {
+    void Function(double progress)? onProgress,
+  }) async {
+    if (cards.isEmpty) return;
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+
+    await db.transaction((txn) async {
+      for (int i = 0; i < cards.length; i++) {
+        final c = cards[i];
+        await txn.insert(
+          '${tablePrefix}_cards',
+          {
+            'api_id':    c['api_id']?.toString() ?? '',
+            'name':      c['name']?.toString() ?? '',
+            'card_type': c['card_type']?.toString(),
+            'subtype':   c['subtype']?.toString(),
+            'rarity':    c['rarity']?.toString(),
+            'cost':      c['cost']?.toString(),
+            'power':     c['power']?.toString(),
+            'defense':   c['defense']?.toString(),
+            'effect':    c['effect']?.toString(),
+            'set_code':  c['set_code']?.toString(),
+            'set_name':  c['set_name']?.toString(),
+            'name_it':   c['name_it']?.toString(),
+            'effect_it': c['effect_it']?.toString(),
+            'name_fr':   c['name_fr']?.toString(),
+            'effect_fr': c['effect_fr']?.toString(),
+            'name_de':   c['name_de']?.toString(),
+            'effect_de': c['effect_de']?.toString(),
+            'name_pt':   c['name_pt']?.toString(),
+            'effect_pt': c['effect_pt']?.toString(),
+            'created_at': now,
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        if (onProgress != null && i % 200 == 0) {
+          onProgress(i / cards.length);
+        }
+      }
+    });
+    onProgress?.call(1.0);
+  }
+
+  Future<void> clearGenericCatalog(String catalogKey) async {
+    final prefix = genericTablePrefix(catalogKey);
+    if (prefix == null) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('${prefix}_cards');
+      await txn.delete('catalog_metadata',
+          where: 'catalog_name = ?', whereArgs: [catalogKey]);
+    });
+  }
+
+  Future<void> deleteGenericCardsByApiIds(
+      String tablePrefix, List<String> apiIds) async {
+    if (apiIds.isEmpty) return;
+    final db = await database;
+    for (int i = 0; i < apiIds.length; i += 500) {
+      final batch = apiIds.sublist(
+          i, (i + 500 < apiIds.length) ? i + 500 : apiIds.length);
+      final placeholders = batch.map((_) => '?').join(',');
+      await db.delete('${tablePrefix}_cards',
+          where: 'api_id IN ($placeholders)', whereArgs: batch);
     }
   }
 
@@ -1012,6 +1187,9 @@ class DatabaseHelper {
 
     // Create Magic: The Gathering tables
     await _createMagicTables(db);
+
+    // Create new collection tables (v36)
+    await _createNewCollectionTables(db);
 
     // Create pending_sync table
     await db.execute('''
@@ -3838,6 +4016,19 @@ class DatabaseHelper {
           final prints = card['prints'] as List<dynamic>? ?? [];
           final now = DateTime.now().toIso8601String();
 
+          // Resolve image URL: prefer Cloudinary (imageUrl), then raw image_url.
+          // CT download (uploadImages:false) stores no URL → reconstruct OPTCG fallback
+          // from first print's card_set_id so SQLite has something before migration.
+          String? resolvedImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
+          if (resolvedImageUrl == null || resolvedImageUrl.isEmpty) {
+            final firstPrint = prints.isNotEmpty ? prints.first as Map? : null;
+            final cardSetId = firstPrint?['card_set_id'] as String?;
+            if (cardSetId != null && cardSetId.isNotEmpty) {
+              resolvedImageUrl =
+                  'https://en.onepiece-cardgame.com/images/cardlist/card/$cardSetId.png';
+            }
+          }
+
           // Usa ON CONFLICT DO UPDATE invece di REPLACE per evitare che la
           // CASCADE DELETE cancelli i print esistenti (con artwork Firebase).
           int cardId;
@@ -3866,7 +4057,7 @@ class DatabaseHelper {
               card['card_type'], card['color'],
               card['cost'], card['power'], card['life'],
               card['sub_types'], card['counter_amount'],
-              card['attribute'], card['card_text'], card['imageUrl'] ?? card['image_url'],
+              card['attribute'], card['card_text'], resolvedImageUrl,
               now, now,
             ]);
             cardId = card['id'] as int;
@@ -3884,7 +4075,7 @@ class DatabaseHelper {
                 'counter_amount': card['counter_amount'],
                 'attribute': card['attribute'],
                 'card_text': card['card_text'],
-                'image_url': card['imageUrl'] ?? card['image_url'],
+                'image_url': resolvedImageUrl,
                 'created_at': now,
                 'updated_at': now,
               },

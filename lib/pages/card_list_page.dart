@@ -45,6 +45,7 @@ class _CardListPageState extends State<CardListPage> {
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   StreamSubscription<String>? _syncSub;
+  Timer? _searchDebounce;
 
   List<Map<String, dynamic>> _catalogSuggestions = [];
   bool _catalogSearching = false;
@@ -73,6 +74,7 @@ class _CardListPageState extends State<CardListPage> {
   @override
   void dispose() {
     _syncSub?.cancel();
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -140,6 +142,7 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   void _filterCards(String query) {
+    // Immediate local filter (fast, no debounce needed)
     _applyFilter(query);
     final hasQuery = query.trim().isNotEmpty;
     final hasLocalResults = _filteredCards.isNotEmpty;
@@ -147,7 +150,13 @@ class _CardListPageState extends State<CardListPage> {
       _catalogSuggestions = [];
       _catalogSearching = hasQuery && !hasLocalResults;
     });
-    if (hasQuery && !hasLocalResults) _searchCatalog(query.trim());
+    // Debounce only the catalog search (network/SQLite call)
+    if (hasQuery && !hasLocalResults) {
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+        if (mounted) _searchCatalog(query.trim());
+      });
+    }
   }
 
   Future<void> _searchCatalog(String query) async {
@@ -339,12 +348,10 @@ class _CardListPageState extends State<CardListPage> {
       ),
     );
     if (confirm != true || !mounted) return;
-    for (final card in selected) {
-      await _repo.deleteCardWithRelated(
-        card, widget.collectionKey,
-        allRelated: widget.albumId == null,
-      );
-    }
+    await Future.wait(selected.map((card) => _repo.deleteCardWithRelated(
+      card, widget.collectionKey,
+      allRelated: widget.albumId == null,
+    )));
     _exitSelectionMode();
     _refreshCards();
     if (!mounted) return;
@@ -377,9 +384,7 @@ class _CardListPageState extends State<CardListPage> {
     final selected = _filteredCards
         .where((c) => c.id != null && _selectedIds.contains(c.id))
         .toList();
-    for (final card in selected) {
-      await _repo.updateCard(card.copyWith(albumId: albumId));
-    }
+    await Future.wait(selected.map((card) => _repo.updateCard(card.copyWith(albumId: albumId))));
     _exitSelectionMode();
     _refreshCards();
   }
@@ -418,9 +423,7 @@ class _CardListPageState extends State<CardListPage> {
     final selected = _filteredCards
         .where((c) => c.id != null && _selectedIds.contains(c.id))
         .toList();
-    for (final card in selected) {
-      await _repo.addCardToDeck(deckId, card.id!, 1);
-    }
+    await Future.wait(selected.map((card) => _repo.addCardToDeck(deckId, card.id!, 1)));
     _exitSelectionMode();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

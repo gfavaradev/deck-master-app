@@ -17,10 +17,19 @@ class AdminSetsRaritiesPage extends StatefulWidget {
 class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
     with SingleTickerProviderStateMixin {
   static const _collections = [
-    {'key': 'yugioh',   'name': 'Yu-Gi-Oh!',          'langs': ['it','fr','de','pt','sp']},
-    {'key': 'pokemon',  'name': 'Pokémon',             'langs': ['it','fr','de','es','pt']},
-    {'key': 'onepiece', 'name': 'One Piece',           'langs': ['fr', 'ko', 'zh']},
-    {'key': 'magic',    'name': 'Magic: The Gathering', 'langs': ['fr','de','it','pt','es']},
+    {'key': 'yugioh',            'name': 'Yu-Gi-Oh!',              'langs': ['it','fr','de','pt','sp']},
+    {'key': 'pokemon',           'name': 'Pokémon',                'langs': ['it','fr','de','es','pt']},
+    {'key': 'onepiece',          'name': 'One Piece',              'langs': ['fr','ko','zh']},
+    {'key': 'magic',             'name': 'Magic: The Gathering',   'langs': ['fr','de','it','pt','es']},
+    {'key': 'digimon',           'name': 'Digimon',                'langs': <String>[]},
+    {'key': 'lorcana',           'name': 'Disney Lorcana',         'langs': ['it','fr','de']},
+    {'key': 'flesh-and-blood',   'name': 'Flesh and Blood',        'langs': <String>[]},
+    {'key': 'vanguard',          'name': 'Cardfight!! Vanguard',   'langs': <String>[]},
+    {'key': 'dragon-ball-super', 'name': 'Dragon Ball Super',      'langs': <String>[]},
+    {'key': 'star-wars',         'name': 'Star Wars: Unlimited',   'langs': <String>[]},
+    {'key': 'riftbound',         'name': 'Riftbound',              'langs': <String>[]},
+    {'key': 'gundam',            'name': 'Gundam Card Game',       'langs': <String>[]},
+    {'key': 'union-arena',       'name': 'Union Arena',            'langs': <String>[]},
   ];
 
   late final TabController _tabController;

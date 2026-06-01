@@ -12,6 +12,7 @@ import '../models/user_model.dart';
 import '../models/subscription_model.dart';
 import '../theme/app_colors.dart';
 import 'admin_collection_page.dart';
+import 'admin_excel_page.dart';
 import 'admin_sets_rarities_page.dart';
 
 /// Body riutilizzabile con la lista dei cataloghi da gestire
@@ -43,7 +44,18 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     String Function(Map<String, dynamic> result) successMessage,
   ) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sessione scaduta. Fai il logout e accedi di nuovo.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
 
     final token = _CancellationToken();
     setState(() {
@@ -55,9 +67,9 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     });
 
     try {
-      // Avvia il foreground service: mantiene il processo vivo se l'app va in background
+      // Avvia la notifica di progresso: mantiene il processo vivo in background
       await BackgroundDownloadService.startDownload(opLabel);
-      WakelockPlus.enable();
+      await WakelockPlus.enable();
 
       final result = await task(uid);
       if (!mounted) return;
@@ -502,11 +514,20 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   }
 
   static String _catalogDisplayName(String catalog) => switch (catalog) {
-        'yugioh' => 'Yu-Gi-Oh!',
-        'pokemon' => 'Pokémon',
-        'onepiece' => 'One Piece',
-        'magic' => 'Magic: The Gathering',
-        _ => catalog,
+        'yugioh'           => 'Yu-Gi-Oh!',
+        'pokemon'          => 'Pokémon',
+        'onepiece'         => 'One Piece',
+        'magic'            => 'Magic: The Gathering',
+        'digimon'          => 'Digimon',
+        'lorcana'          => 'Disney Lorcana',
+        'flesh-and-blood'  => 'Flesh and Blood',
+        'vanguard'         => 'Cardfight!! Vanguard',
+        'dragon-ball-super'=> 'Dragon Ball Super',
+        'star-wars'        => 'Star Wars: Unlimited',
+        'riftbound'        => 'Riftbound',
+        'gundam'           => 'Gundam Card Game',
+        'union-arena'      => 'Union Arena',
+        _                  => catalog,
       };
 
   Future<void> _syncCardtraderYugioh() =>
@@ -518,26 +539,66 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   Future<void> _syncCardtraderOnePiece() =>
       _syncCardtraderWithLanguagePicker('onepiece');
 
+  // ─── Nuove collezioni ────────────────────────────────────────────────────
+
+  Future<void> _downloadFullDigimon() => _run(
+        'digimon',
+        'Download Digimon Catalog',
+        (uid) => _service.downloadDigimonCatalogFromAPI(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => '${r['totalCards']} carte Digimon caricate su Firestore.',
+      );
+
+  Future<void> _downloadFullLorcana() => _run(
+        'lorcana',
+        'Download Disney Lorcana Catalog',
+        (uid) => _service.downloadLorcanaCatalogFromAPI(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => '${r['totalCards']} carte Lorcana caricate su Firestore.',
+      );
+
+  Future<void> _downloadFullFab() => _run(
+        'flesh-and-blood',
+        'Download Flesh and Blood Catalog',
+        (uid) => _service.downloadFabCatalogFromAPI(
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => '${r['totalCards']} carte FAB caricate su Firestore.',
+      );
+
+  Future<void> _downloadGenericFromCT(String catalogKey) => _run(
+        catalogKey,
+        'Download ${_catalogDisplayName(catalogKey)} (CardTrader)',
+        (uid) => _service.downloadCardtraderGenericCatalog(
+          catalogKey: catalogKey,
+          adminUid: uid,
+          onProgress: _onProgress,
+        ),
+        (r) => '${r['totalCards']} carte caricate su Firestore.',
+      );
+
 
   // ─── UI ───────────────────────────────────────────────────────────────────
 
   static final _catalogs = [
-    _CatalogDef(
-      key: 'yugioh', name: 'Yu-Gi-Oh!',
-      icon: Icons.auto_awesome, color: Color(0xFF7B1FA2),
-    ),
-    _CatalogDef(
-      key: 'onepiece', name: 'One Piece TCG',
-      icon: Icons.sailing, color: Color(0xFFD32F2F),
-    ),
-    _CatalogDef(
-      key: 'pokemon', name: 'Pokémon TCG',
-      icon: Icons.catching_pokemon, color: Color(0xFFF57C00),
-    ),
-    _CatalogDef(
-      key: 'magic', name: 'Magic: The Gathering',
-      icon: Icons.diamond_outlined, color: Color(0xFF7B5EA7),
-    ),
+    _CatalogDef(key: 'yugioh',           name: 'Yu-Gi-Oh!',               icon: Icons.auto_awesome,         color: Color(0xFF7B1FA2)),
+    _CatalogDef(key: 'onepiece',         name: 'One Piece TCG',            icon: Icons.sailing,              color: Color(0xFFD32F2F)),
+    _CatalogDef(key: 'pokemon',          name: 'Pokémon TCG',              icon: Icons.catching_pokemon,     color: Color(0xFFF57C00)),
+    _CatalogDef(key: 'magic',            name: 'Magic: The Gathering',     icon: Icons.diamond_outlined,     color: Color(0xFF7B5EA7)),
+    _CatalogDef(key: 'digimon',          name: 'Digimon',                  icon: Icons.pets,                 color: Color(0xFF0288D1)),
+    _CatalogDef(key: 'lorcana',          name: 'Disney Lorcana',           icon: Icons.auto_stories,         color: Color(0xFF0097A7)),
+    _CatalogDef(key: 'flesh-and-blood',  name: 'Flesh and Blood',          icon: Icons.sports_martial_arts,  color: Color(0xFF880E4F)),
+    _CatalogDef(key: 'vanguard',         name: 'Cardfight!! Vanguard',     icon: Icons.shield,               color: Color(0xFF1565C0)),
+    _CatalogDef(key: 'dragon-ball-super',name: 'Dragon Ball Super',        icon: Icons.bolt,                 color: Color(0xFFFF6F00)),
+    _CatalogDef(key: 'star-wars',        name: 'Star Wars: Unlimited',     icon: Icons.rocket_launch,        color: Color(0xFF212121)),
+    _CatalogDef(key: 'riftbound',        name: 'Riftbound',                icon: Icons.casino,               color: Color(0xFF4A148C)),
+    _CatalogDef(key: 'gundam',           name: 'Gundam Card Game',         icon: Icons.smart_toy,            color: Color(0xFF37474F)),
+    _CatalogDef(key: 'union-arena',      name: 'Union Arena',              icon: Icons.people,               color: Color(0xFF2E7D32)),
   ];
 
   @override
@@ -699,6 +760,18 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
+                // Excel export/import shortcut
+                Tooltip(
+                  message: 'Esporta / Importa Excel',
+                  child: IconButton(
+                    onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => AdminExcelPage(initialCollection: cat.key))),
+                    icon: Icon(Icons.table_chart, size: 17, color: cat.color),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                  ),
+                ),
               ],
             ),
           ),
@@ -811,6 +884,32 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove o modificate (incrementale)', _downloadIncrementalMagic),
           _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Cloudinary', _migrateMagicImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsMagic),
+        ];
+      case 'digimon':
+        return [
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da digimoncard.io (EN)', _downloadFullDigimon),
+        ];
+      case 'lorcana':
+        return [
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da lorcana-api.com (EN/IT/FR/DE)', _downloadFullLorcana),
+        ];
+      case 'flesh-and-blood':
+        return [
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da fabdb.net (EN)', _downloadFullFab),
+        ];
+      case 'vanguard':
+      case 'dragon-ball-super':
+      case 'star-wars':
+      case 'riftbound':
+      case 'gundam':
+      case 'union-arena':
+        return [
+          _StepDef(
+            Icons.cloud_download,
+            'Scarica da CardTrader',
+            'Blueprint e metadati da CardTrader (se disponibile)',
+            () => _downloadGenericFromCT(cat.key),
+          ),
         ];
       default:
         return [];

@@ -19,6 +19,7 @@ import 'admin_home_page.dart';
 import '../services/auth_service.dart';
 import '../services/background_download_service.dart';
 import '../services/data_repository.dart';
+import '../services/database_helper.dart';
 import '../services/notification_service.dart';
 import '../services/review_service.dart';
 import '../services/sync_service.dart';
@@ -629,7 +630,10 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               'yugioh'   => _repo.redownloadYugiohCatalog(onProgress: onProg, onSaveProgress: onSave),
               'pokemon'  => _repo.redownloadPokemonCatalog(onProgress: onProg, onSaveProgress: onSave),
               'onepiece' => _repo.redownloadOnepieceCatalog(onProgress: onProg, onSaveProgress: onSave),
-              _ => Future.value(),
+              'magic'    => _repo.redownloadMagicCatalog(onProgress: onProg, onSaveProgress: onSave),
+              _          => DatabaseHelper.genericTablePrefix(key) != null
+                            ? _repo.redownloadGenericCatalog(key, onProgress: onProg, onSaveProgress: onSave)
+                            : Future<void>.value(),
             };
             successCount++;
           } catch (e) {

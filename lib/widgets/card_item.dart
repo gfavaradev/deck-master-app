@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
 import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/extensions.dart';
 import 'op_lang_badge.dart';
 
 // ─── Live price lookup widget ─────────────────────────────────────────────────
@@ -19,25 +20,17 @@ class _LivePriceText extends StatefulWidget {
 class _LivePriceTextState extends State<_LivePriceText> {
   late final Future<CardtraderPrice?> _future;
 
-  static String _expCode(String sn) =>
-      sn.isEmpty ? '' : sn.split('-').first.toLowerCase();
-
-  static String _collectorNum(String sn) {
-    final idx = sn.indexOf('-');
-    return idx < 0 ? '' : sn.substring(idx + 1);
-  }
-
   @override
   void initState() {
     super.initState();
     final c = widget.card;
     _future = CardtraderService().getPriceForCard(
       catalog: c.collection,
-      expansionCode: _expCode(c.serialNumber),
+      expansionCode: c.serialNumber.serialExpansionCode,
       cardName: c.name,
       language: CardtraderService.languageFromSerial(c.serialNumber, c.collection),
       rarity: c.rarity.isNotEmpty ? c.rarity : null,
-      collectorNumber: _collectorNum(c.serialNumber),
+      collectorNumber: c.serialNumber.serialCollectorNumber,
       catalogId: c.catalogId,
     );
   }
@@ -46,6 +39,7 @@ class _LivePriceTextState extends State<_LivePriceText> {
   Widget build(BuildContext context) {
     final fs = widget.fontSize;
     return FutureBuilder<CardtraderPrice?>(
+      key: ValueKey('price_${widget.card.id}_${widget.card.serialNumber}'),
       future: _future,
       builder: (_, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
@@ -260,7 +254,9 @@ class CardListItem extends StatelessWidget {
                           ),
                         ),
                         const Text(' • ', style: TextStyle(fontSize: 12)),
-                        _LivePriceText(card: card, fontSize: 12),
+                        RepaintBoundary(
+                          child: _LivePriceText(card: card, fontSize: 12),
+                        ),
                       ],
                     ),
                   ],

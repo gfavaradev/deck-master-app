@@ -571,6 +571,35 @@ class CardtraderService {
   Future<List<Map<String, dynamic>>> fetchBlueprintsForExpansion(int expansionId) =>
       _fetchBlueprints(expansionId);
 
+  /// Fetches the full list of games from CardTrader.
+  Future<List<Map<String, dynamic>>> fetchAllGames() async {
+    if (kIsWeb) return [];
+    final response = await http
+        .get(Uri.parse('$_baseUrl/games'), headers: _headers)
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) return [];
+    final raw = json.decode(response.body);
+    return raw is List ? raw.cast<Map<String, dynamic>>() : [];
+  }
+
+  /// Finds the CardTrader game ID by partial name match (case-insensitive).
+  /// Returns null if not found.
+  Future<int?> findGameIdByName(String partialName) async {
+    final games = await fetchAllGames();
+    final lower = partialName.toLowerCase();
+    for (final g in games) {
+      final name = (g['name'] as String? ?? '').toLowerCase();
+      if (name.contains(lower) || lower.contains(name.isNotEmpty ? name : '_')) {
+        return g['id'] as int?;
+      }
+    }
+    return null;
+  }
+
+  /// Fetches all expansions for a specific CT game ID.
+  Future<List<Map<String, dynamic>>> fetchExpansionsForGameId(int gameId) =>
+      _fetchExpansions(gameId);
+
   // ─── HTTP helpers ──────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> _fetchExpansions(int gameId) async {

@@ -338,7 +338,17 @@ class DataRepository {
       };
     }).toList();
 
-    final resolvedImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
+    String? resolvedImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
+    // CT download (uploadImages:false) stores no image URL → reconstruct pokemontcg.io fallback
+    // so SQLite has something even before migration uploads the Cloudinary version.
+    if (resolvedImageUrl == null || resolvedImageUrl.isEmpty) {
+      final apiId = card['api_id'] as String? ?? '';
+      final dash = apiId.lastIndexOf('-');
+      if (dash > 0) {
+        resolvedImageUrl = 'https://images.pokemontcg.io/'
+            '${apiId.substring(0, dash)}/${apiId.substring(dash + 1)}_hires.png';
+      }
+    }
     return Map<String, dynamic>.from(card)
       ..remove('sets')
       ..['prints'] = prints
@@ -1012,16 +1022,75 @@ class DataRepository {
   Future<Map<String, dynamic>> checkCollectionCatalogUpdates(String collectionKey) async {
     switch (collectionKey) {
       case 'onepiece': return checkOnepieceCatalogUpdates();
-      case 'pokemon': return checkPokemonCatalogUpdates();
-      case 'magic': return checkMagicCatalogUpdates();
-      default: return checkCatalogUpdates(); // yugioh
+      case 'pokemon':  return checkPokemonCatalogUpdates();
+      case 'magic':    return checkMagicCatalogUpdates();
+      case 'yugioh':   return checkCatalogUpdates();
+      default:
+        // v36 generic collections
+        if (DatabaseHelper.genericTablePrefix(collectionKey) != null) {
+          return checkGenericCatalogUpdates(collectionKey);
+        }
+        return checkCatalogUpdates();
+    }
+  }
+
+  Future<Map<String, dynamic>> checkGenericCatalogUpdates(String catalogKey) async {
+    if (kIsWeb) return {'needsUpdate': false, 'totalCards': 0};
+    try {
+      final remoteMetadata = await _firestoreService.getCatalogMetadata(catalogKey);
+      if (remoteMetadata == null) {
+        return {'needsUpdate': false, 'error': 'Remote metadata not found'};
+      }
+      final remoteVersion = remoteMetadata['version'] as int? ?? 0;
+      final remoteTotalCards = remoteMetadata['totalCards'] as int? ?? 0;
+      final localMetadata = await _dbHelper.getCatalogMetadata(catalogKey);
+      if (localMetadata == null) {
+        return {
+          'needsUpdate': true,
+          'isFirstDownload': true,
+          'remoteVersion': remoteVersion,
+          'totalCards': remoteTotalCards,
+        };
+      }
+      final localVersion = localMetadata['version'] as int? ?? 0;
+      final localTotalCards = localMetadata['total_cards'] as int? ?? 0;
+      if (remoteVersion > localVersion) {
+        final versionDiff = remoteVersion - localVersion;
+        final modifiedChunks = remoteMetadata['modifiedChunks'] as List<dynamic>? ?? [];
+        final canDoIncremental = versionDiff == 1 && modifiedChunks.isNotEmpty;
+        return {
+          'needsUpdate': true,
+          'isFirstDownload': false,
+          'localVersion': localVersion,
+          'remoteVersion': remoteVersion,
+          'localTotalCards': localTotalCards,
+          'totalCards': remoteTotalCards,
+          'canDoIncremental': canDoIncremental,
+          'modifiedChunks': canDoIncremental ? modifiedChunks : [],
+          'deletedCards': canDoIncremental
+              ? (remoteMetadata['deletedCards'] as List<dynamic>? ?? [])
+              : [],
+        };
+      }
+      return {
+        'needsUpdate': false,
+        'localVersion': localVersion,
+        'totalCards': localTotalCards,
+        'lastUpdated': localMetadata['last_updated'],
+      };
+    } catch (e) {
+      return {'needsUpdate': false, 'error': e.toString()};
     }
   }
 
   /// Checks all unlocked supported collections for catalog updates (in parallel).
   /// Returns a list of update-info maps, each with 'collectionKey' and 'collectionName' added.
   Future<List<Map<String, dynamic>>> checkAllUnlockedCatalogUpdates() async {
-    const supported = {'yugioh', 'pokemon', 'onepiece', 'magic'};
+    const supported = {
+      'yugioh', 'pokemon', 'onepiece', 'magic',
+      'digimon', 'lorcana', 'flesh-and-blood', 'vanguard',
+      'dragon-ball-super', 'star-wars', 'riftbound', 'gundam', 'union-arena',
+    };
     final collections = await getCollections();
     final unlocked = collections.where((c) => c.isUnlocked && supported.contains(c.key)).toList();
     final futures = unlocked.map((col) => checkCollectionCatalogUpdates(col.key)
@@ -1071,11 +1140,21 @@ class DataRepository {
           );
           break;
         default:
-          await downloadYugiohCatalog(
-            updateInfo: updateInfo,
-            onProgress: onProgress,
-            onSaveProgress: onSaveProgress,
-          );
+          // Check for generic v36 collections
+          if (DatabaseHelper.genericTablePrefix(collectionKey) != null) {
+            await downloadGenericCatalog(
+              collectionKey,
+              updateInfo: updateInfo,
+              onProgress: onProgress,
+              onSaveProgress: onSaveProgress,
+            );
+          } else {
+            await downloadYugiohCatalog(
+              updateInfo: updateInfo,
+              onProgress: onProgress,
+              onSaveProgress: onSaveProgress,
+            );
+          }
       }
     } finally {
       _isDownloadingCatalog = false;
@@ -2018,6 +2097,97 @@ class DataRepository {
     if (kIsWeb) return;
     await _dbHelper.clearMagicCatalog();
     await downloadMagicCatalog(onProgress: onProgress, onSaveProgress: onSaveProgress);
+  }
+
+  // ============================================================
+  // Generic v36 catalog download (Digimon, Lorcana, FAB, Vanguard, etc.)
+  // ============================================================
+
+  Future<void> downloadGenericCatalog(
+    String catalogKey, {
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+    Map<String, dynamic>? updateInfo,
+  }) async {
+    if (kIsWeb) return;
+
+    final tablePrefix = DatabaseHelper.genericTablePrefix(catalogKey);
+    if (tablePrefix == null) return;
+
+    // All FirestoreService methods accept the raw catalog key and append _catalog internally.
+    if (updateInfo?['canDoIncremental'] == true) {
+      final modifiedChunks =
+          (updateInfo!['modifiedChunks'] as List<dynamic>).cast<String>();
+      final deletedCards = updateInfo['deletedCards'] as List<dynamic>? ?? [];
+      final remoteMetadata =
+          await _firestoreService.getCatalogMetadata(catalogKey);
+      final modifiedCards = await _firestoreService.fetchCatalogChunks(
+        catalogKey,
+        modifiedChunks,
+        onProgress: onProgress,
+      );
+      final deletedApiIds = deletedCards.whereType<String>().toList();
+      if (deletedApiIds.isNotEmpty) {
+        await _dbHelper.deleteGenericCardsByApiIds(tablePrefix, deletedApiIds);
+      }
+      if (modifiedCards.isNotEmpty) {
+        await _dbHelper.insertGenericCatalogCards(tablePrefix, modifiedCards,
+            onProgress: onSaveProgress);
+      }
+      if (remoteMetadata != null) {
+        await _dbHelper.saveCatalogMetadata(
+          catalogName: catalogKey,
+          version: remoteMetadata['version'] as int? ?? 1,
+          totalCards: remoteMetadata['totalCards'] as int? ?? 0,
+          totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+          lastUpdated: remoteMetadata['lastUpdated']?.toString() ??
+              DateTime.now().toIso8601String(),
+        );
+      }
+      return;
+    }
+
+    final remoteMetadata =
+        await _firestoreService.getCatalogMetadata(catalogKey);
+    int totalDownloaded = 0;
+
+    await _firestoreService.streamCatalog(
+      catalogKey,
+      onBatch: (cards, chunksDone, chunksTotal) async {
+        onProgress?.call(chunksDone, chunksTotal);
+        await Future.delayed(Duration.zero);
+        await _dbHelper.insertGenericCatalogCards(tablePrefix, cards);
+        totalDownloaded += cards.length;
+        onSaveProgress?.call(chunksDone / chunksTotal);
+      },
+    );
+
+    if (totalDownloaded == 0) return;
+
+    if (remoteMetadata != null) {
+      await _dbHelper.saveCatalogMetadata(
+        catalogName: catalogKey,
+        version: remoteMetadata['version'] as int? ?? 1,
+        totalCards: remoteMetadata['totalCards'] as int? ?? totalDownloaded,
+        totalChunks: remoteMetadata['totalChunks'] as int? ?? 0,
+        lastUpdated: remoteMetadata['lastUpdated']?.toString() ??
+            DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  Future<void> redownloadGenericCatalog(
+    String catalogKey, {
+    void Function(int current, int total)? onProgress,
+    void Function(double progress)? onSaveProgress,
+  }) async {
+    if (kIsWeb) return;
+    await _dbHelper.clearGenericCatalog(catalogKey);
+    await downloadGenericCatalog(
+      catalogKey,
+      onProgress: onProgress,
+      onSaveProgress: onSaveProgress,
+    );
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCatalogCards({

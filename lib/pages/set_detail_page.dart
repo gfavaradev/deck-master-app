@@ -38,6 +38,7 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
   List<Map<String, dynamic>> _ownedCards = [];
   List<Map<String, dynamic>> _missingCards = [];
   bool _isLoading = true;
+  String? _loadError;
   String _lang = 'en';
   StreamSubscription<String>? _syncSub;
 
@@ -65,14 +66,20 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
   }
 
   Future<void> _loadCards() async {
-    final data = await _repo.getSetDetail(widget.collectionKey, widget.setIdentifier, lang: _lang);
-    if (!mounted) return;
-    setState(() {
-      _allCards = data;
-      _ownedCards = data.where((c) => (c['isOwned'] as int?) == 1).toList();
-      _missingCards = data.where((c) => (c['isOwned'] as int?) == 0).toList();
-      _isLoading = false;
-    });
+    if (mounted) setState(() { _isLoading = true; _loadError = null; });
+    try {
+      final data = await _repo.getSetDetail(widget.collectionKey, widget.setIdentifier, lang: _lang);
+      if (!mounted) return;
+      setState(() {
+        _allCards = data;
+        _ownedCards = data.where((c) => (c['isOwned'] as int?) == 1).toList();
+        _missingCards = data.where((c) => (c['isOwned'] as int?) == 0).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _isLoading = false; _loadError = e.toString(); });
+    }
   }
 
   @override
@@ -110,8 +117,37 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
         top: false,
         bottom: true,
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : Center(
+            ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+            : _loadError != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Errore nel caricamento',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _loadError!,
+                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 20),
+                          FilledButton.icon(
+                            onPressed: _loadCards,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Riprova'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 900),
                   child: TabBarView(
@@ -140,6 +176,8 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
       final thumbH = isWide ? 90.0 : 60.0;
       return ListView.builder(
       itemCount: cards.length,
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: false,
       itemBuilder: (_, index) {
         final card = cards[index];
         final isOwned = (card['isOwned'] as int?) == 1;
@@ -212,12 +250,14 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
                 ),
                 if (isOwned && serial.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  CardtraderPriceBadge(
-                    collection: widget.collectionKey,
-                    serialNumber: serial,
-                    cardName: name,
-                    rarity: rarity.isNotEmpty ? rarity : null,
-                    catalogId: card['id']?.toString(),
+                  RepaintBoundary(
+                    child: CardtraderPriceBadge(
+                      collection: widget.collectionKey,
+                      serialNumber: serial,
+                      cardName: name,
+                      rarity: rarity.isNotEmpty ? rarity : null,
+                      catalogId: card['id']?.toString(),
+                    ),
                   ),
                 ],
               ],

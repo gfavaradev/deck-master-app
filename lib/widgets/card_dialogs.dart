@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/card_model.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
@@ -82,6 +83,24 @@ class CardDialogs {
                   rarity: card.rarity.isNotEmpty ? card.rarity : null,
                   catalogId: card.catalogId,
                 ),
+                if (_ctSearchUrl(card.collection, card.name) != null) ...[
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: () => launchUrl(
+                      Uri.parse(_ctSearchUrl(card.collection, card.name)!),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: const Text(
+                      'Cerca su CardTrader ↗',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.cardtraderTeal,
+                        decoration: TextDecoration.underline,
+                        decorationColor: AppColors.cardtraderTeal,
+                      ),
+                    ),
+                  ),
+                ],
               ],
               const SizedBox(height: 6),
               _infoRow('Tipo', card.type),
@@ -134,6 +153,18 @@ class CardDialogs {
         Expanded(child: Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13))),
       ],
     );
+  }
+
+  static String? _ctSearchUrl(String collection, String cardName) {
+    final slug = switch (collection) {
+      'yugioh'   => 'yu-gi-oh',
+      'pokemon'  => 'pokemon',
+      'onepiece' => 'one-piece',
+      _          => null,
+    };
+    if (slug == null) return null;
+    return 'https://www.cardtrader.com/en/$slug/singles'
+        '?q=${Uri.encodeQueryComponent(cardName)}';
   }
 
   static void showAddCard({
@@ -434,6 +465,22 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       return;
     }
 
+    // Validate name and quantity before any async operations
+    final String nameCheck = nameController.text.trim();
+    if (nameCheck.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Il nome della carta non può essere vuoto.')),
+      );
+      return;
+    }
+    final int qtyCheck = int.tryParse(quantityController.text.trim()) ?? 1;
+    if (qtyCheck < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La quantità deve essere almeno 1.')),
+      );
+      return;
+    }
+
     // Capacity check: block if the selected album is full (skip Doppioni)
     final targetAlbum = widget.availableAlbums.firstWhere(
       (a) => a.id == selectedAlbumId,
@@ -468,9 +515,9 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       }
     }
 
-    final String name = nameController.text;
-    final String serialNumber = serialController.text;
-    final int quantity = int.tryParse(quantityController.text) ?? 1;
+    final String name = nameCheck;
+    final String serialNumber = serialController.text.trim();
+    final int quantity = qtyCheck;
 
     // Cerchiamo istanze già esistenti nel database invece di usare una lista potenzialmente vecchia
     final existingInstances = await _dbHelper.findOwnedInstances(widget.collectionKey, name, serialNumber, rarityController.text);

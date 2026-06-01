@@ -65,7 +65,11 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _loadUnlockedCatalogKeys() async {
-    const supported = {'yugioh', 'pokemon', 'onepiece'};
+    const supported = {
+      'yugioh', 'pokemon', 'onepiece', 'magic',
+      'digimon', 'lorcana', 'flesh-and-blood', 'vanguard',
+      'dragon-ball-super', 'star-wars', 'riftbound', 'gundam', 'union-arena',
+    };
     final all = await _repo.getCollections();
     if (mounted) {
       setState(() {
@@ -266,9 +270,19 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   static const _catalogMeta = [
-    (key: 'yugioh',   label: 'Yu-Gi-Oh!',  icon: Icons.star_outline,              accent: AppColors.yugiohAccent),
-    (key: 'pokemon',  label: 'Pokémon',     icon: Icons.catching_pokemon,          accent: AppColors.pokemonAccent),
-    (key: 'onepiece', label: 'One Piece',   icon: Icons.directions_boat_outlined,  accent: AppColors.onepieceAccent),
+    (key: 'yugioh',           label: 'Yu-Gi-Oh!',              icon: Icons.star_outline,             accent: AppColors.yugiohAccent),
+    (key: 'pokemon',          label: 'Pokémon',                icon: Icons.catching_pokemon,         accent: AppColors.pokemonAccent),
+    (key: 'onepiece',         label: 'One Piece',              icon: Icons.directions_boat_outlined, accent: AppColors.onepieceAccent),
+    (key: 'magic',            label: 'Magic: The Gathering',   icon: Icons.diamond_outlined,         accent: AppColors.magicAccent),
+    (key: 'digimon',          label: 'Digimon',                icon: Icons.pets,                     accent: Color(0xFF00ACC1)),
+    (key: 'lorcana',          label: 'Disney Lorcana',         icon: Icons.auto_stories,             accent: Color(0xFF7B1FA2)),
+    (key: 'flesh-and-blood',  label: 'Flesh and Blood',        icon: Icons.sports_martial_arts,      accent: Color(0xFFBF360C)),
+    (key: 'vanguard',         label: 'Cardfight!! Vanguard',   icon: Icons.shield,                   accent: Color(0xFF00695C)),
+    (key: 'dragon-ball-super',label: 'Dragon Ball Super',      icon: Icons.bolt,                     accent: Color(0xFFFF6D00)),
+    (key: 'star-wars',        label: 'Star Wars: Unlimited',   icon: Icons.rocket_launch,            accent: Color(0xFFFFD600)),
+    (key: 'riftbound',        label: 'Riftbound',              icon: Icons.casino,                   accent: Color(0xFF1565C0)),
+    (key: 'gundam',           label: 'Gundam Card Game',       icon: Icons.smart_toy,                accent: Color(0xFF546E7A)),
+    (key: 'union-arena',      label: 'Union Arena',            icon: Icons.people,                   accent: Color(0xFF2E7D32)),
   ];
 
   void _showRestoreDialog() {

@@ -9,12 +9,21 @@
 - Inno Setup (or equivalent installer tooling) must be installed before the Windows packaging step - verify it exists before starting a Windows build
 
 ## Environment & Dependencies
+- Always verify package names before installing (e.g., PyMuPDF vs fitz — use `pymupdf`, imported as `fitz`)
 - Use `load_dotenv(override=True)` to ensure .env values take precedence over system env vars
 - For PDF support in Python, use `pymupdf` package (imported as `fitz`), not a package literally named `fitz`
 - Before starting servers, check if the target port is free; fallback to next available port
+- When working with PyTorch/CUDA, explicitly call `.to(device)` and verify GPU usage
+- For Windows: be aware of OneDrive Files-On-Demand virtualization issues with large model files — move models outside OneDrive-synced folders
 
 ## Crash Investigation
 - **Before suggesting any code change:** use a task agent to trace the full data flow — identify every call site, data sizes involved, and the concurrency model. Report findings first, then propose fixes.
+
+## Flutter/Mobile Specifics
+- For sqflite on Android, use `rawQuery()` not `db.execute()` for PRAGMA statements like WAL mode
+- Always add User-Agent headers to Scryfall and similar API requests
+- When debugging Firebase auth, verify SHA-1 fingerprints AND google-services.json is current
+- Default to port 8081 if 8080 is occupied
 
 ## Android/Flutter Conventions
 - Never change signing config from release to debug - Google Sign In requires release signing
@@ -38,6 +47,11 @@
 - After bumping dependencies, always verify app_secrets.dart, .env, and other gitignored config files still exist
 - Run a full build + launch verification before declaring updates done
 - Check Flutter API deprecations (e.g., DropdownButtonFormField initialValue vs value) against the target SDK version before editing
+
+## Refactoring Rules
+- When removing or renaming constants/functions, grep the entire codebase for references BEFORE committing the change
+- After any refactor, run import checks and basic smoke tests
+- Never introduce regressions silently — call out any signatures or symbols that were changed
 
 ## Project Conventions & Known Gotchas
 

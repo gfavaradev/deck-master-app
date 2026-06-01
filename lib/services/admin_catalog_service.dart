@@ -1600,16 +1600,26 @@ class AdminCatalogService {
         if (cardId != null) newIndexEntries[cardId.toString()] = chunkId;
       }
       onProgress(i + 1, chunks.length);
+      // Throttle every 10 chunks to avoid saturating the Firestore write stream
+      // (RESOURCE_EXHAUSTED: "Write stream exhausted maximum allowed queued writes")
+      if ((i + 1) % 10 == 0) {
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
     }
 
-    // Update card index: for incremental, merge with existing; for full replace, overwrite
-    if (isIncremental) {
-      final existingIndex = await _loadCardIndex(catalogCollection);
-      existingIndex.addAll(newIndexEntries);
-      await _saveCardIndex(catalogCollection, existingIndex);
-    } else {
-      await _saveCardIndex(catalogCollection, newIndexEntries);
-    }
+    // Update card index: for incremental, merge with existing; for full replace, overwrite.
+    // Wrapped in try-catch: for large catalogs (e.g. Magic ~30k UUID keys) the index
+    // can exceed Firestore's 1 MB document limit — the catalog works fine without it,
+    // incremental updates fall back to scanning all chunks via _getExistingStringIds.
+    try {
+      if (isIncremental) {
+        final existingIndex = await _loadCardIndex(catalogCollection);
+        existingIndex.addAll(newIndexEntries);
+        await _saveCardIndex(catalogCollection, existingIndex);
+      } else {
+        await _saveCardIndex(catalogCollection, newIndexEntries);
+      }
+    } catch (_) {}
 
     // Update metadata — reuse the snapshot already fetched above (no extra read)
     final currentVersion =
@@ -1629,12 +1639,12 @@ class AdminCatalogService {
     );
   }
 
-  /// Writes [data] to [ref] with up to 3 attempts and exponential back-off.
-  /// Handles transient `deadline-exceeded` errors on slow connections.
+  /// Writes [data] to [ref] with up to 4 attempts and exponential back-off.
+  /// Handles transient deadline-exceeded and resource-exhausted errors.
   Future<void> _writeWithRetry(
     DocumentReference ref,
     Map<String, dynamic> data, {
-    int maxAttempts = 3,
+    int maxAttempts = 4,
   }) async {
     for (int attempt = 0; attempt < maxAttempts; attempt++) {
       try {
@@ -1642,9 +1652,8 @@ class AdminCatalogService {
         return;
       } catch (e) { // ignore: empty_catches
         if (attempt == maxAttempts - 1) rethrow;
-        // Exponential back-off: 2 s, 4 s
-        await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
-
+        // Exponential back-off: 2s, 4s, 8s
+        await Future.delayed(Duration(seconds: 2 << attempt));
       }
     }
   }
@@ -3752,13 +3761,422 @@ class AdminCatalogService {
     return cards;
   }
 
+  // ============================================================
+  // Digimon — digimoncard.io
+  // ============================================================
+
+  static const String _digimonApiUrl = 'https://digimoncard.io/api-public/search.php';
+
+  Future<Map<String, dynamic>> downloadDigimonCatalogFromAPI({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    onProgress('Scaricando catalogo Digimon…', null);
+
+    final response = await http
+        .get(Uri.parse('$_digimonApiUrl?sort=name&series=all'))
+        .timeout(const Duration(minutes: 3));
+
+    if (response.statusCode != 200) {
+      throw Exception('Digimon API error: HTTP ${response.statusCode}');
+    }
+
+    final raw = jsonDecode(response.body);
+    if (raw is! List) throw Exception('Risposta Digimon API non valida');
+
+    onProgress('${raw.length} stampe ricevute. Elaborando…', null);
+
+    final cards = <Map<String, dynamic>>[];
+    int nextId = 1;
+
+    for (final item in raw.cast<Map<String, dynamic>>()) {
+      final apiId = (item['cardnumber'] as String? ?? '').trim();
+      final name = (item['name'] as String? ?? '').trim();
+      if (apiId.isEmpty || name.isEmpty) continue;
+
+      // Deduplicate: skip reprints with the same api_id
+      if (cards.any((c) => c['api_id'] == apiId)) continue;
+
+      final setAbbr = (item['set_abbreviation'] as String? ?? '').trim();
+      cards.add({
+        'id': nextId++,
+        'api_id': apiId,
+        'name': name,
+        'card_type': item['type']?.toString(),
+        'subtype': item['attribute']?.toString(),
+        'rarity': item['rarity']?.toString(),
+        'cost': item['level']?.toString(),
+        'power': item['dp']?.toString(),
+        'defense': item['play_cost']?.toString(),
+        'effect': _combineDigimonEffect(
+          item['effect']?.toString(),
+          item['evolution_effect']?.toString(),
+        ),
+        'set_code': setAbbr.isNotEmpty ? setAbbr : null,
+        'set_name': item['set_name']?.toString(),
+      });
+    }
+
+    if (cards.isEmpty) throw Exception('Nessuna carta Digimon trovata');
+
+    onProgress('${cards.length} carte Digimon. Caricando su Firestore…', null);
+    await _uploadCatalogChunks(
+      catalogCollection: 'digimon_catalog',
+      cards: cards,
+      adminUid: adminUid,
+      isIncremental: false,
+      onProgress: (cur, tot) =>
+          onProgress('Chunk $cur di $tot…', cur / tot),
+    );
+
+    return {'totalCards': cards.length};
+  }
+
+  static String? _combineDigimonEffect(String? effect, String? evoEffect) {
+    final parts = [
+      if (effect != null && effect.isNotEmpty) effect,
+      if (evoEffect != null && evoEffect.isNotEmpty) '[Evo] $evoEffect',
+    ];
+    return parts.isEmpty ? null : parts.join('\n\n');
+  }
+
+  // ============================================================
+  // Disney Lorcana — lorcana-api.com
+  // ============================================================
+
+  static const String _lorcanaApiUrl = 'https://api.lorcana-api.com/cards/all';
+
+  Future<Map<String, dynamic>> downloadLorcanaCatalogFromAPI({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    onProgress('Scaricando carte Lorcana (EN)…', null);
+    final enCards = await _fetchLorcanaCards('');
+    if (enCards.isEmpty) throw Exception('Nessuna carta Lorcana trovata (EN)');
+
+    onProgress('${enCards.length} carte EN. Scaricando IT…', null);
+    final itCards = await _fetchLorcanaCards('Italian');
+    onProgress('Scaricando FR…', null);
+    final frCards = await _fetchLorcanaCards('French');
+    onProgress('Scaricando DE…', null);
+    final deCards = await _fetchLorcanaCards('German');
+
+    // Build lookup maps keyed by Slug (unique per card print)
+    Map<String, Map<String, dynamic>> buildLangMap(List<dynamic> list) {
+      final m = <String, Map<String, dynamic>>{};
+      for (final c in list.cast<Map<String, dynamic>>()) {
+        final slug = c['Slug'] as String? ?? c['Name']?.toString() ?? '';
+        if (slug.isNotEmpty) m[slug] = c;
+      }
+      return m;
+    }
+
+    final itMap = buildLangMap(itCards);
+    final frMap = buildLangMap(frCards);
+    final deMap = buildLangMap(deCards);
+
+    onProgress('Costruendo catalogo…', null);
+    final cards = <Map<String, dynamic>>[];
+    int nextId = 1;
+
+    for (final en in enCards.cast<Map<String, dynamic>>()) {
+      final slug = en['Slug'] as String? ?? '';
+      final name = en['Name'] as String? ?? '';
+      if (name.isEmpty) continue;
+
+      // api_id: "SetNum-CardNum" e.g. "1-001"
+      final setNum = en['Set_Num']?.toString() ?? '';
+      final cardNum = en['Card_Num']?.toString() ?? en['Number']?.toString() ?? '';
+      final apiId = setNum.isNotEmpty && cardNum.isNotEmpty
+          ? '$setNum-$cardNum'
+          : (slug.isNotEmpty ? slug : name);
+
+      final it = itMap[slug] ?? {};
+      final fr = frMap[slug] ?? {};
+      final de = deMap[slug] ?? {};
+
+      cards.add({
+        'id': nextId++,
+        'api_id': apiId,
+        'name': name,
+        'card_type': en['Type']?.toString(),
+        'subtype': en['Classifications']?.toString(),
+        'rarity': en['Rarity']?.toString(),
+        'cost': en['Cost']?.toString(),
+        'power': en['Strength']?.toString(),
+        'defense': en['Willpower']?.toString(),
+        'effect': en['Body_Text']?.toString(),
+        'set_code': setNum.isNotEmpty ? setNum : null,
+        'set_name': en['Set_Name']?.toString(),
+        'name_it': it['Name']?.toString(),
+        'effect_it': it['Body_Text']?.toString(),
+        'name_fr': fr['Name']?.toString(),
+        'effect_fr': fr['Body_Text']?.toString(),
+        'name_de': de['Name']?.toString(),
+        'effect_de': de['Body_Text']?.toString(),
+      });
+    }
+
+    if (cards.isEmpty) throw Exception('Nessuna carta Lorcana processata');
+
+    onProgress('${cards.length} carte Lorcana. Caricando su Firestore…', null);
+    await _uploadCatalogChunks(
+      catalogCollection: 'lorcana_catalog',
+      cards: cards,
+      adminUid: adminUid,
+      isIncremental: false,
+      onProgress: (cur, tot) =>
+          onProgress('Chunk $cur di $tot…', cur / tot),
+    );
+
+    return {'totalCards': cards.length};
+  }
+
+  Future<List<dynamic>> _fetchLorcanaCards(String language) async {
+    final uri = language.isEmpty
+        ? Uri.parse(_lorcanaApiUrl)
+        : Uri.parse('$_lorcanaApiUrl?language=$language');
+    final response = await http
+        .get(uri, headers: {'User-Agent': 'DeckMasterApp/1.0'})
+        .timeout(const Duration(minutes: 2));
+    if (response.statusCode != 200) return [];
+    final raw = jsonDecode(response.body);
+    return raw is List ? raw : [];
+  }
+
+  // ============================================================
+  // Flesh and Blood — fabdb.net
+  // ============================================================
+
+  static const String _fabApiUrl = 'https://api.fabdb.net';
+
+  Future<Map<String, dynamic>> downloadFabCatalogFromAPI({
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    onProgress('Scaricando catalogo Flesh and Blood…', null);
+
+    final allRaw = <Map<String, dynamic>>[];
+    int page = 1;
+    int? lastPage;
+
+    do {
+      final uri = Uri.parse('$_fabApiUrl/cards?per_page=250&page=$page');
+      final response = await http
+          .get(uri, headers: {'Accept': 'application/json', 'User-Agent': 'DeckMasterApp/1.0'})
+          .timeout(const Duration(minutes: 2));
+
+      if (response.statusCode != 200) {
+        throw Exception('FAB API error: HTTP ${response.statusCode} page $page');
+      }
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = body['data'] as List<dynamic>? ?? [];
+      allRaw.addAll(data.cast<Map<String, dynamic>>());
+
+      final meta = body['meta'] as Map<String, dynamic>?;
+      lastPage ??= (meta?['last_page'] as int?) ?? (meta?['total_pages'] as int?) ?? page;
+      onProgress(
+        'FAB: pagina $page/$lastPage (${allRaw.length} carte)…',
+        page / lastPage,
+      );
+      page++;
+    } while (page <= lastPage);
+
+    if (allRaw.isEmpty) throw Exception('Nessuna carta FAB trovata');
+
+    onProgress('${allRaw.length} carte FAB. Elaborando…', null);
+    final cards = <Map<String, dynamic>>[];
+    int nextId = 1;
+
+    for (final raw in allRaw) {
+      final apiId = (raw['identifier'] as String? ?? '').trim();
+      final name = (raw['name'] as String? ?? '').trim();
+      if (apiId.isEmpty || name.isEmpty) continue;
+
+      // Extract set info from printings if available
+      String? setCode, setName;
+      final printings = raw['printings'] as List<dynamic>?;
+      if (printings != null && printings.isNotEmpty) {
+        final firstPrint = printings.first as Map<String, dynamic>;
+        final setMap = firstPrint['set'] as Map<String, dynamic>?;
+        setCode = setMap?['identifier'] as String?;
+        setName = setMap?['name'] as String?;
+      }
+      setCode ??= raw['set_id'] as String?;
+
+      cards.add({
+        'id': nextId++,
+        'api_id': apiId,
+        'name': name,
+        'card_type': raw['type_text']?.toString(),
+        'subtype': raw['classes']?.toString(),
+        'rarity': raw['rarity']?.toString(),
+        'cost': raw['pitch']?.toString(),
+        'power': raw['power']?.toString(),
+        'defense': raw['defense']?.toString(),
+        'effect': raw['body']?.toString(),
+        'set_code': setCode,
+        'set_name': setName ?? raw['set_name']?.toString(),
+      });
+    }
+
+    if (cards.isEmpty) throw Exception('Nessuna carta FAB processata');
+
+    onProgress('${cards.length} carte FAB. Caricando su Firestore…', null);
+    await _uploadCatalogChunks(
+      catalogCollection: 'flesh-and-blood_catalog',
+      cards: cards,
+      adminUid: adminUid,
+      isIncremental: false,
+      onProgress: (cur, tot) =>
+          onProgress('Chunk $cur di $tot…', cur / tot),
+    );
+
+    return {'totalCards': cards.length};
+  }
+
+  // ============================================================
+  // CardTrader generic — per collezioni senza API dedicata
+  // (Vanguard, Dragon Ball Super, Star Wars, Riftbound, Gundam, Union Arena)
+  // ============================================================
+
+  /// Catalog key → CT game name partial match string
+  static const _ctGameNames = <String, String>{
+    'vanguard':          'Cardfight!! Vanguard',
+    'dragon-ball-super': 'Dragon Ball Super',
+    'star-wars':         'Star Wars',
+    'riftbound':         'Riftbound',
+    'gundam':            'Gundam',
+    'union-arena':       'Union Arena',
+  };
+
+  Future<Map<String, dynamic>> downloadCardtraderGenericCatalog({
+    required String catalogKey,
+    required String adminUid,
+    required Function(String status, double? progress) onProgress,
+  }) async {
+    final ctGameName = _ctGameNames[catalogKey];
+    if (ctGameName == null) {
+      throw Exception('Catalogo "$catalogKey" non supportato per CT generic');
+    }
+
+    final ctService = CardtraderService();
+    onProgress('Ricerca "$ctGameName" su CardTrader…', null);
+    final gameId = await ctService.findGameIdByName(ctGameName);
+
+    if (gameId == null) {
+      throw Exception(
+        '"$ctGameName" non trovato su CardTrader.\n'
+        'Il gioco potrebbe non essere ancora disponibile su CT.\n'
+        'Riprova più tardi o controlla https://www.cardtrader.com',
+      );
+    }
+
+    onProgress('Caricamento espansioni…', null);
+    final expansions = await ctService.fetchExpansionsForGameId(gameId);
+    if (expansions.isEmpty) {
+      throw Exception('Nessuna espansione trovata per "$ctGameName" (game_id=$gameId)');
+    }
+
+    onProgress('${expansions.length} espansioni trovate. Scaricando carte…', null);
+
+    final cards = <Map<String, dynamic>>[];
+    int nextId = 1;
+    int skipped = 0;
+
+    for (int i = 0; i < expansions.length; i++) {
+      final exp = expansions[i];
+      final expId = exp['id'] as int;
+      final expCode = (exp['code'] as String? ?? '').toLowerCase();
+      final expName = exp['name'] as String? ?? expCode;
+
+      onProgress(
+        '$expName (${i + 1}/${expansions.length})',
+        (i + 1) / expansions.length,
+      );
+
+      try {
+        final rawBps = await ctService.fetchBlueprintsForExpansion(expId);
+        final bps = rawBps.where(_isCardBlueprint).toList();
+
+        for (final bp in bps) {
+          final name = ((bp['name_en'] ?? bp['name']) as String? ?? '').trim();
+          if (name.isEmpty) { skipped++; continue; }
+
+          final props = (bp['fixed_properties'] as Map<String, dynamic>?) ?? {};
+          cards.add({
+            'id': nextId++,
+            'api_id': bp['id'].toString(),
+            'name': name,
+            'card_type': bp['category']?.toString()
+                ?? props['type']?.toString()
+                ?? props['card_type']?.toString(),
+            'rarity': bp['rarity']?.toString()
+                ?? props['rarity']?.toString(),
+            'set_code': expCode.isNotEmpty ? expCode : null,
+            'set_name': expName,
+          });
+        }
+      } catch (_) {
+        // Skip expansion on error — don't abort entire download
+        skipped++;
+      }
+    }
+
+    if (cards.isEmpty) {
+      throw Exception(
+        'Nessuna carta trovata per "$ctGameName" su CardTrader.\n'
+        'Espansioni trovate: ${expansions.length}, carte skippate: $skipped.',
+      );
+    }
+
+    onProgress('${cards.length} carte ${_catalogDisplayName(catalogKey)}. Caricando su Firestore…', null);
+    await _uploadCatalogChunks(
+      catalogCollection: '${catalogKey}_catalog',
+      cards: cards,
+      adminUid: adminUid,
+      isIncremental: false,
+      onProgress: (cur, tot) =>
+          onProgress('Chunk $cur di $tot…', cur / tot),
+    );
+
+    return {'totalCards': cards.length, 'skipped': skipped};
+  }
+
+  static String _catalogDisplayName(String key) => switch (key) {
+    'yugioh'          => 'Yu-Gi-Oh!',
+    'pokemon'         => 'Pokémon',
+    'magic'           => 'Magic: The Gathering',
+    'onepiece'        => 'One Piece',
+    'digimon'         => 'Digimon',
+    'lorcana'         => 'Disney Lorcana',
+    'flesh-and-blood' => 'Flesh and Blood',
+    'vanguard'        => 'Cardfight!! Vanguard',
+    'dragon-ball-super' => 'Dragon Ball Super',
+    'star-wars'       => 'Star Wars: Unlimited',
+    'riftbound'       => 'Riftbound',
+    'gundam'          => 'Gundam Card Game',
+    'union-arena'     => 'Union Arena',
+    _                 => key,
+  };
+
   /// Returns the list of all available catalogs
   static List<Map<String, String>> getCollectionList() {
     return const [
-      {'key': 'yugioh', 'name': 'Yu-Gi-Oh!', 'icon': 'style'},
-      {'key': 'pokemon', 'name': 'Pokémon', 'icon': 'catching_pokemon'},
-      {'key': 'magic', 'name': 'Magic: The Gathering', 'icon': 'auto_awesome'},
-      {'key': 'onepiece', 'name': 'One Piece', 'icon': 'sailing'},
+      {'key': 'yugioh',           'name': 'Yu-Gi-Oh!',               'icon': 'style'},
+      {'key': 'pokemon',          'name': 'Pokémon',                  'icon': 'catching_pokemon'},
+      {'key': 'magic',            'name': 'Magic: The Gathering',     'icon': 'auto_awesome'},
+      {'key': 'onepiece',         'name': 'One Piece',                'icon': 'sailing'},
+      {'key': 'digimon',          'name': 'Digimon',                  'icon': 'pets'},
+      {'key': 'lorcana',          'name': 'Disney Lorcana',           'icon': 'auto_stories'},
+      {'key': 'flesh-and-blood',  'name': 'Flesh and Blood',          'icon': 'sports_martial_arts'},
+      {'key': 'vanguard',         'name': 'Cardfight!! Vanguard',     'icon': 'shield'},
+      {'key': 'dragon-ball-super','name': 'Dragon Ball Super',        'icon': 'bolt'},
+      {'key': 'star-wars',        'name': 'Star Wars: Unlimited',     'icon': 'rocket'},
+      {'key': 'riftbound',        'name': 'Riftbound',                'icon': 'casino'},
+      {'key': 'gundam',           'name': 'Gundam Card Game',         'icon': 'smart_toy'},
+      {'key': 'union-arena',      'name': 'Union Arena',              'icon': 'people'},
     ];
   }
 }

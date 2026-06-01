@@ -52,18 +52,26 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
   }
 
   Future<void> _load() async {
-    final results = await Future.wait([
-      _repo.getDeckCards(widget.deckId),
-      _repo.getCardsByCollection(widget.collectionKey),
-    ]);
-    if (!mounted) return;
-    final owned = results[1] as List<CardModel>;
-    setState(() {
-      _deckCards = results[0] as List<Map<String, dynamic>>;
-      _ownedCards = owned;
-      _filteredOwned = owned;
-      _isLoading = false;
-    });
+    try {
+      final results = await Future.wait([
+        _repo.getDeckCards(widget.deckId),
+        _repo.getCardsByCollection(widget.collectionKey),
+      ]);
+      if (!mounted) return;
+      final owned = results[1] as List<CardModel>;
+      setState(() {
+        _deckCards = results[0] as List<Map<String, dynamic>>;
+        _ownedCards = owned;
+        _filteredOwned = owned;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Errore caricamento deck: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _refresh() async {

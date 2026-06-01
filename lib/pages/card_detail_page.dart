@@ -5,6 +5,7 @@ import '../models/card_model.dart';
 import '../models/album_model.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
+import '../utils/extensions.dart';
 import '../widgets/app_dialog.dart';
 import '../services/cardtrader_service.dart' show CardtraderService;
 import '../widgets/cardtrader_price_badge.dart' show CardtraderAllPricesSection;
@@ -1039,7 +1040,7 @@ class _CardtraderLinkButtonState extends State<_CardtraderLinkButton> {
 
   Future<void> _loadBlueprintUrl() async {
     final sn = widget.card.serialNumber;
-    final exp = sn.isEmpty ? '' : sn.split('-').first.toLowerCase();
+    final exp = sn.serialExpansionCode;
     final prices = await CardtraderService().getAllPricesForCard(
       catalog: widget.card.collection,
       expansionCode: exp,
@@ -1051,12 +1052,7 @@ class _CardtraderLinkButtonState extends State<_CardtraderLinkButton> {
     if (best.blueprintId > 0) setState(() => _url = Uri.parse(best.cardtraderUrl));
   }
 
-  static String? _ctSlug(String c) => switch (c) {
-    'yugioh'   => 'yu-gi-oh',
-    'pokemon'  => 'pokemon',
-    'onepiece' => 'one-piece',
-    _          => null,
-  };
+  static String? _ctSlug(String c) => c.ctSlug;
 
   @override
   Widget build(BuildContext context) {

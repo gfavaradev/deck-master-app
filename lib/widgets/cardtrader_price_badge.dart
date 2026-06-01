@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/extensions.dart';
 
 // ─── Multi-language prices section ────────────────────────────────────────────
 
@@ -40,12 +41,13 @@ class _CardtraderAllPricesSectionState
   final _service = CardtraderService();
   late final Future<List<CardtraderPrice>> _future;
 
-  static String _expansionCode(String sn) =>
-      sn.isEmpty ? '' : sn.split('-').first.toLowerCase();
+  static String? _ctSlug(String collection) => collection.ctSlug;
 
-  static String _collectorNumber(String sn) {
-    final idx = sn.indexOf('-');
-    return idx < 0 ? '' : sn.substring(idx + 1);
+  String _ctSearchUrl(String collection, String cardName) {
+    final slug = _ctSlug(collection);
+    if (slug == null) return '';
+    return 'https://www.cardtrader.com/en/$slug/singles'
+        '?q=${Uri.encodeQueryComponent(cardName)}';
   }
 
   @override
@@ -53,10 +55,10 @@ class _CardtraderAllPricesSectionState
     super.initState();
     _future = _service.getAllPricesForCard(
       catalog: widget.collection,
-      expansionCode: _expansionCode(widget.serialNumber),
+      expansionCode: widget.serialNumber.serialExpansionCode,
       cardName: widget.cardName,
       rarity: widget.rarity,
-      collectorNumber: _collectorNumber(widget.serialNumber),
+      collectorNumber: widget.serialNumber.serialCollectorNumber,
       catalogId: widget.catalogId,
     );
   }
@@ -75,6 +77,7 @@ class _CardtraderAllPricesSectionState
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<CardtraderPrice>>(
+      key: ValueKey('allprices_${widget.collection}_${widget.serialNumber}'),
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -90,15 +93,39 @@ class _CardtraderAllPricesSectionState
           );
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          final searchUrl = _ctSearchUrl(widget.collection, widget.cardName);
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              'Attualmente nessun prezzo disponibile.',
-              style: TextStyle(
-                fontSize: 11,
-                color: AppColors.textHint.withValues(alpha: 0.7),
-                fontStyle: FontStyle.italic,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Attualmente nessun prezzo disponibile.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textHint.withValues(alpha: 0.7),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                if (searchUrl.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: () => launchUrl(
+                      Uri.parse(searchUrl),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: const Text(
+                      'Cerca su CardTrader ↗',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.cardtraderTeal,
+                        decoration: TextDecoration.underline,
+                        decorationColor: AppColors.cardtraderTeal,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           );
         }
@@ -323,6 +350,23 @@ class _PriceRow extends StatelessWidget {
                     : AppColors.textHint,
               ),
             ),
+          // Link diretto alla pagina CT del blueprint
+          if (!isCatalogFallback && price!.blueprintId > 0) ...[
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () => launchUrl(
+                Uri.parse(price!.cardtraderUrl),
+                mode: LaunchMode.externalApplication,
+              ),
+              child: Icon(
+                Icons.open_in_new_rounded,
+                size: 12,
+                color: isHistorical
+                    ? Colors.orange.withValues(alpha: 0.7)
+                    : AppColors.cardtraderTeal,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -367,38 +411,16 @@ class _CardtraderPriceBadgeState extends State<CardtraderPriceBadge> {
 
   Future<CardtraderPrice?> _fetchPrice() {
     final sn = widget.serialNumber;
-    final expansionCode = _extractExpansionCode(sn);
-    final language = _extractLanguage(sn, widget.collection);
-    final collectorNumber = _extractCollectorNumber(sn);
-
     return _service.getPriceForCard(
       catalog: widget.collection,
-      expansionCode: expansionCode,
+      expansionCode: sn.serialExpansionCode,
       cardName: widget.cardName,
-      language: language,
+      language: CardtraderService.languageFromSerial(sn, widget.collection),
       rarity: widget.rarity,
-      collectorNumber: collectorNumber,
+      collectorNumber: sn.serialCollectorNumber,
       catalogId: widget.catalogId,
     );
   }
-
-  /// Extracts expansion code from serial number.
-  /// Examples: "LOB-EN001" → "lob", "swsh1-1" → "swsh1", "OP01-001" → "op01"
-  static String _extractExpansionCode(String sn) {
-    if (sn.isEmpty) return '';
-    return sn.split('-').first.toLowerCase();
-  }
-
-  /// Extracts the collector number from the serial number.
-  /// Examples: "MAGO-EN006" → "EN006", "swsh1-1" → "1", "OP01-001" → "001"
-  static String _extractCollectorNumber(String sn) {
-    final idx = sn.indexOf('-');
-    if (idx < 0) return '';
-    return sn.substring(idx + 1);
-  }
-
-  static String _extractLanguage(String sn, String collection) =>
-      CardtraderService.languageFromSerial(sn, collection);
 
   @override
   Widget build(BuildContext context) {

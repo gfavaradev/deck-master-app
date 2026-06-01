@@ -10,27 +10,42 @@ class CatalogConstants {
   static const String pokemon = 'pokemon';
   static const String magic = 'magic';
   static const String onepiece = 'onepiece';
+  static const String digimon = 'digimon';
+  static const String lorcana = 'lorcana';
+  static const String fleshAndBlood = 'flesh-and-blood';
+  static const String vanguard = 'vanguard';
+  static const String dragonBallSuper = 'dragon-ball-super';
+  static const String starWars = 'star-wars';
+  static const String riftbound = 'riftbound';
+  static const String gundam = 'gundam';
+  static const String unionArena = 'union-arena';
 
-  static const List<String> allCatalogs = [yugioh, pokemon, magic, onepiece];
+  static const List<String> allCatalogs = [
+    yugioh, pokemon, magic, onepiece,
+    digimon, lorcana, fleshAndBlood, vanguard,
+    dragonBallSuper, starWars, riftbound, gundam, unionArena,
+  ];
 
   /// Get Firestore collection name for a catalog
   static String getCollectionName(String catalog) => '${catalog}_catalog';
 
   /// Get display name for a catalog
-  static String getDisplayName(String catalog) {
-    switch (catalog) {
-      case yugioh:
-        return 'Yu-Gi-Oh!';
-      case pokemon:
-        return 'Pokémon';
-      case magic:
-        return 'Magic: The Gathering';
-      case onepiece:
-        return 'One Piece TCG';
-      default:
-        return catalog;
-    }
-  }
+  static String getDisplayName(String catalog) => switch (catalog) {
+    yugioh          => 'Yu-Gi-Oh!',
+    pokemon         => 'Pokémon',
+    magic           => 'Magic: The Gathering',
+    onepiece        => 'One Piece TCG',
+    digimon         => 'Digimon',
+    lorcana         => 'Disney Lorcana',
+    fleshAndBlood   => 'Flesh and Blood',
+    vanguard        => 'Cardfight!! Vanguard',
+    dragonBallSuper => 'Dragon Ball Super',
+    starWars        => 'Star Wars: Unlimited',
+    riftbound       => 'Riftbound',
+    gundam          => 'Gundam Card Game',
+    unionArena      => 'Union Arena',
+    _               => catalog,
+  };
 }
 
 // ============================================================
