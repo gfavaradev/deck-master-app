@@ -9,7 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:deck_master/models/pending_catalog_change.dart';
 import 'package:deck_master/services/database_helper.dart';
 import 'dart:async';
-import 'cloudinary_service.dart';
+import 'backblaze_service.dart';
 
 /// Bounded semaphore for limiting parallel async operations.
 class _Semaphore {
@@ -46,20 +46,25 @@ class AdminCatalogService {
   // Image Storage
   // ============================================================
 
+  /// Returns true if [url] points to a hosted image storage (Backblaze B2 or
+  /// legacy Backblaze). Used to detect already-migrated images.
+  static bool _isHostedImageUrl(String? url) =>
+      url != null &&
+      (url.contains('backblazeb2.com') || url.contains('backblazeb2.com'));
+
   /// Updates both camelCase and snake_case image URL fields on a One Piece card map.
-  /// Both fields are required: insertOnepieceCards reads imageUrl, the SQLite column uses image_url.
   static void _setOnepieceCardImageUrl(Map<String, dynamic> card, String url) {
     card['imageUrl'] ??= url;
     if (card['image_url'] == null ||
-        !(card['image_url'] as String).contains('cloudinary.com')) {
+        !_isHostedImageUrl(card['image_url'] as String?)) {
       card['image_url'] = url;
     }
   }
 
-  /// Uploads a card image to Cloudinary.
-  /// [catalog] determines the public_id prefix (e.g. 'yugioh', 'pokemon', 'onepiece').
+  /// Uploads a card image to Backblaze B2.
+  /// [catalog] determines the folder prefix (e.g. 'yugioh', 'pokemon', 'onepiece').
   /// [cardId] can be an int (YuGiOh) or String (Pokémon api_id).
-  /// Returns the Cloudinary secure URL, or null on failure.
+  /// Returns the Backblaze public URL, or null on failure.
   Future<String?> _uploadCardImageIfNeeded(
     String catalog,
     dynamic cardId,
@@ -69,11 +74,11 @@ class AdminCatalogService {
     if (sourceUrl == null || sourceUrl.isEmpty) return null;
     final safeId = cardId.toString().replaceAll(RegExp(r'[/\s]'), '_');
     try {
-      // Fast path: let Cloudinary fetch the URL directly — no local download needed.
+      // Fast path: upload to Backblaze directly from remote URL — no local download needed.
       // Skipped for onepiece: OPTCG CDN blocks non-browser User-Agents and needs
       // a .webp → .png fallback that only works when we control the HTTP request.
       if (catalog != 'onepiece') {
-        final url = await CloudinaryService.uploadFromRemoteUrl(
+        final url = await BackblazeService.uploadFromRemoteUrl(
           imageUrl: sourceUrl,
           catalog: catalog,
           cardId: cardId,
@@ -123,7 +128,7 @@ class AdminCatalogService {
         }
       }
 
-      return await CloudinaryService.uploadBytes(
+      return await BackblazeService.uploadBytes(
         bytes: uploadBytes,
         catalog: catalog,
         cardId: cardId,
@@ -153,7 +158,7 @@ class AdminCatalogService {
     updatedCard.remove('image_url');
 
     if (storageUrl != null) {
-      // Store Cloudinary URL at card level (backward compat for web / old clients)
+      // Store Backblaze URL at card level (backward compat for web / old clients)
       updatedCard['imageUrl'] = storageUrl;
 
       if (catalog == 'onepiece') {
@@ -164,7 +169,7 @@ class AdminCatalogService {
             final print = Map<String, dynamic>.from(p as Map);
             final existingArtwork = print['artwork'] as String?;
             if (existingArtwork == null || existingArtwork.isEmpty ||
-                !existingArtwork.contains('cloudinary.com')) {
+                !_isHostedImageUrl(existingArtwork)) {
               print['artwork'] = storageUrl;
             }
             return print;
@@ -182,7 +187,7 @@ class AdminCatalogService {
               final existingUrl = entry['image_url'] as String?;
               // Replace ygoprodeck URLs with Firebase Storage URL; preserve admin-set Storage URLs
               if (existingUrl == null || existingUrl.isEmpty ||
-                  !existingUrl.contains('cloudinary.com')) {
+                  !_isHostedImageUrl(existingUrl)) {
                 entry['image_url'] = storageUrl;
               }
               return entry;
@@ -756,7 +761,7 @@ class AdminCatalogService {
   /// Migrates all catalog card images from external URLs to Firebase Storage.
   ///
   /// Only processes cards that have `image_url` (external source) but no
-  /// `imageUrl` (Cloudinary URL). Already-migrated cards are skipped.
+  /// `imageUrl` (Backblaze URL). Already-migrated cards are skipped.
   ///
   /// Returns `{migrated, failed, chunksUpdated}`.
   Future<Map<String, dynamic>> migrateAllImagesToStorage({
@@ -782,9 +787,9 @@ class AdminCatalogService {
         final card = cards[i];
         final cardId = card['id'] ?? card['api_id'];
 
-        // Salta se l'immagine è già su Cloudinary
+        // Salta se l'immagine è già su Backblaze (o legacy Backblaze)
         final existingUrl = card['imageUrl'] as String?;
-        if (existingUrl != null && existingUrl.contains('cloudinary.com')) continue;
+        if (existingUrl != null && _isHostedImageUrl(existingUrl)) continue;
 
         // 1. URL originale API ancora presente (non ancora migrata)
         String? sourceUrl = card['image_url'] as String?;
@@ -825,7 +830,7 @@ class AdminCatalogService {
         updatedCard['imageUrl'] = storageUrl;
 
         // Populate image_url on all language set entries, replacing ygoprodeck
-        // URLs with Cloudinary URL; existing Cloudinary URLs are preserved
+        // URLs with Backblaze URL; existing Backblaze URLs are preserved
         final sets = updatedCard['sets'];
         if (sets is Map) {
           final updatedSets = Map<String, dynamic>.from(sets);
@@ -836,7 +841,7 @@ class AdminCatalogService {
                 final entry = Map<String, dynamic>.from(s as Map);
                 final existingUrl = entry['image_url'] as String?;
                 if (existingUrl == null || existingUrl.isEmpty ||
-                    !existingUrl.contains('cloudinary.com')) {
+                    !_isHostedImageUrl(existingUrl)) {
                   entry['image_url'] = storageUrl;
                 }
                 return entry;
@@ -947,8 +952,8 @@ class AdminCatalogService {
     final imageUrlMap = <int, String>{};
     for (final entry in existingMap.entries) {
       final url = entry.value['imageUrl'] as String?;
-      if (url != null && url.contains('cloudinary.com')) {
-        imageUrlMap[entry.key] = url;
+      if (_isHostedImageUrl(url)) {
+        imageUrlMap[entry.key] = url!;
       }
     }
 
@@ -1706,7 +1711,7 @@ class AdminCatalogService {
         final pm = Map<String, dynamic>.from(p as Map);
         final artwork = pm['artwork'] as String?;
         final cardSetId = pm['card_set_id'] as String?;
-        if (artwork != null && artwork.contains('cloudinary.com') && cardSetId != null) {
+        if (artwork != null && _isHostedImageUrl(artwork) && cardSetId != null) {
           existingImageUrls[cardSetId] = artwork;
         }
       }
@@ -1802,13 +1807,13 @@ class AdminCatalogService {
       );
     }
 
-    // Preserve existing Cloudinary URLs at card level from existing prints.
+    // Preserve existing Backblaze URLs at card level from existing prints.
     // New prints keep their raw artwork URL for the separate "Migra Immagini" step.
     for (final card in mergedCards) {
       final prints = card['prints'] as List<Map<String, dynamic>>? ?? [];
       for (final print in prints) {
         final artwork = print['artwork'] as String?;
-        if (artwork != null && artwork.contains('cloudinary.com')) {
+        if (artwork != null && _isHostedImageUrl(artwork)) {
           card['imageUrl'] = artwork;
           card.remove('image_url');
           break;
@@ -1970,10 +1975,10 @@ class AdminCatalogService {
           }
 
           final artwork = p['artwork'] as String?;
-          final alreadyMigrated = artwork != null && artwork.contains('cloudinary.com');
+          final alreadyMigrated = artwork != null && _isHostedImageUrl(artwork);
           if (alreadyMigrated && !force) { diagAlreadyMigrated++; continue; }
 
-          final sourceUrl = (artwork != null && !artwork.contains('cloudinary.com'))
+          final sourceUrl = (artwork != null && !_isHostedImageUrl(artwork))
               ? artwork
               : 'https://en.onepiece-cardgame.com/images/cardlist/card/$cardSetId.png';
 
@@ -2060,19 +2065,19 @@ class AdminCatalogService {
       'modifiedChunks': affectedChunkIds.toList(),
     }, SetOptions(merge: true));
 
-    // Verify a sample of uploaded URLs to confirm they're actually on Cloudinary.
+    // Verify a sample of uploaded URLs to confirm they're actually on Backblaze.
     final uploadedUrls = affectedChunkIds
         .expand((id) => chunkMap[id]!)
         .map((c) => (c['prints'] as List?)?.firstOrNull)
         .whereType<Map>()
         .map((p) => p['artwork'] as String?)
-        .where((u) => u != null && u.contains('cloudinary.com'))
+        .where((u) => _isHostedImageUrl(u))
         .cast<String>()
         .take(5)
         .toList();
     int verified = 0;
     for (final url in uploadedUrls) {
-      if (await CloudinaryService.verifyUrl(url)) verified++;
+      if (await BackblazeService.verifyUrl(url)) verified++;
     }
 
     return {
@@ -2466,7 +2471,7 @@ class AdminCatalogService {
 
     onProgress('${cards.length} carte ricevute. Preservando URL esistenti...', null);
 
-    // Preserve existing Cloudinary URLs for cards already migrated.
+    // Preserve existing Backblaze URLs for cards already migrated.
     // New cards keep their raw image_url for the separate "Migrate Images" step.
     final existingImageUrls = <String, String>{};
     if (!effectiveResuming) {
@@ -2475,8 +2480,8 @@ class AdminCatalogService {
             .timeout(const Duration(seconds: 60));
         for (final entry in existingMap.entries) {
           final url = entry.value['imageUrl'] as String?;
-          if (url != null && url.contains('cloudinary.com')) {
-            existingImageUrls[entry.key.toString()] = url;
+          if (_isHostedImageUrl(url)) {
+            existingImageUrls[entry.key.toString()] = url!;
           }
         }
       } catch (_) {}
@@ -2622,13 +2627,13 @@ class AdminCatalogService {
         final storageUrl = card['imageUrl'] as String?;
         final apiId = card['api_id'] as String? ?? '';
         if (apiId.isEmpty) continue;
-        if (storageUrl != null && storageUrl.contains('cloudinary.com') && !force) continue;
+        if (storageUrl != null && _isHostedImageUrl(storageUrl) && !force) continue;
 
         // Prefer stored CT URL; fall back to pokemontcg.io (reconstructed from api_id).
         // CT download with uploadImages:false stores image_url only when the blueprint
         // has an image — if it's absent we need the API fallback to have something to migrate.
         String? rawSource = (card['image_url'] ?? card['imageUrl']) as String?;
-        if (rawSource == null || rawSource.isEmpty || rawSource.contains('cloudinary.com')) {
+        if (rawSource == null || rawSource.isEmpty || _isHostedImageUrl(rawSource)) {
           // apiId format: 'swsh1-1'  →  set='swsh1', number='1'
           final dash = apiId.lastIndexOf('-');
           if (dash > 0) {
@@ -2711,13 +2716,13 @@ class AdminCatalogService {
     final uploadedUrls = affectedChunkIds
         .expand((id) => chunkMap[id]!)
         .map((c) => c['imageUrl'] as String?)
-        .where((u) => u != null && u.contains('cloudinary.com'))
+        .where((u) => _isHostedImageUrl(u))
         .cast<String>()
         .take(5)
         .toList();
     int verified = 0;
     for (final url in uploadedUrls) {
-      if (await CloudinaryService.verifyUrl(url)) verified++;
+      if (await BackblazeService.verifyUrl(url)) verified++;
     }
 
     return {
@@ -3450,7 +3455,7 @@ class AdminCatalogService {
   // ============================================================
 
   /// Scarica l'intero catalogo Magic da Scryfall (bulk data "oracle_cards"),
-  /// carica le immagini su Cloudinary e pubblica su Firestore come magic_catalog.
+  /// carica le immagini su Backblaze e pubblica su Firestore come magic_catalog.
   Future<Map<String, dynamic>> downloadMagicCatalogFromAPI({
     required String adminUid,
     required Function(String status, double? progress) onProgress,
@@ -3461,15 +3466,15 @@ class AdminCatalogService {
 
     onProgress('${cards.length} carte ricevute. Preservando URL esistenti...', null);
 
-    // Preserve existing Cloudinary URLs; new cards keep image_url for migration step.
+    // Preserve existing Backblaze URLs; new cards keep image_url for migration step.
     final existingImageUrls = <String, String>{};
     try {
       final existingMap = await _getExistingCardsMap('magic_catalog')
           .timeout(const Duration(seconds: 60));
       for (final entry in existingMap.entries) {
         final url = entry.value['imageUrl'] as String?;
-        if (url != null && url.contains('cloudinary.com')) {
-          existingImageUrls[entry.key.toString()] = url;
+        if (_isHostedImageUrl(url)) {
+          existingImageUrls[entry.key.toString()] = url!;
         }
       }
     } catch (_) {}
@@ -3572,7 +3577,7 @@ class AdminCatalogService {
     return {'newCards': processedCards.length, 'imagesOk': imagesOk, 'imagesFail': imagesFail};
   }
 
-  /// Migrates Magic card images to Cloudinary,
+  /// Migrates Magic card images to Backblaze,
   /// updating `imageUrl` on the card and `image_url` in the sets['en'] entry.
   Future<Map<String, dynamic>> migrateMagicImagesToStorage({
     required String adminUid,
@@ -3593,7 +3598,7 @@ class AdminCatalogService {
         final imageUrl = card['imageUrl'] as String?;
         final apiId = card['api_id'] as String? ?? '';
         if (apiId.isEmpty) continue;
-        if (imageUrl != null && imageUrl.contains('cloudinary.com') && !force) continue;
+        if (imageUrl != null && _isHostedImageUrl(imageUrl) && !force) continue;
 
         final rawSource = card['image_url'] as String?;
         if (rawSource == null || rawSource.isEmpty) continue;
@@ -3656,6 +3661,104 @@ class AdminCatalogService {
       'version': currentVersion + 1,
       'updatedBy': adminUid,
     }, SetOptions(merge: true));
+
+    return {
+      'migrated': migrated,
+      'failed': failed,
+      'chunksUpdated': affectedChunkIds.length,
+    };
+  }
+
+  // ============================================================
+  // Migrazione immagini generica (Digimon, Lorcana, FAB, Vanguard, …)
+  // ============================================================
+
+  /// Migra le immagini di qualsiasi catalogo v36 su Backblaze B2.
+  /// Legge ogni chunk Firestore, carica l'immagine da `imageUrl`/`image_url`
+  /// se non è già su storage hosted, poi aggiorna il chunk.
+  Future<Map<String, dynamic>> migrateGenericCatalogImages({
+    required String catalogKey,
+    required String adminUid,
+    required void Function(int current, int total) onProgress,
+    bool force = false,
+  }) async {
+    final catalogCollection = '${catalogKey}_catalog';
+    final chunkMap = await _downloadChunksMap(catalogCollection, onProgress);
+    if (chunkMap.isEmpty) return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+
+    final sortedChunkIds = chunkMap.keys.toList()..sort();
+    final toMigrate = <({String chunkId, int cardIndex, String cardId, String sourceUrl})>[];
+
+    for (final chunkId in sortedChunkIds) {
+      final cards = chunkMap[chunkId]!;
+      for (int i = 0; i < cards.length; i++) {
+        final card = cards[i];
+        final hosted = card['imageUrl'] as String?;
+        if (hosted != null && _isHostedImageUrl(hosted) && !force) continue;
+
+        // Cerca l'URL sorgente (può essere imageUrl non-hosted o image_url raw)
+        final source = (hosted != null && !_isHostedImageUrl(hosted))
+            ? hosted
+            : (card['image_url'] as String? ?? card['artwork'] as String?);
+        if (source == null || source.isEmpty) continue;
+
+        final cardId = card['api_id']?.toString() ?? card['id']?.toString() ?? '';
+        if (cardId.isEmpty) continue;
+
+        toMigrate.add((
+          chunkId: chunkId,
+          cardIndex: i,
+          cardId: cardId,
+          sourceUrl: source,
+        ));
+      }
+    }
+
+    if (toMigrate.isEmpty) {
+      return {'migrated': 0, 'failed': 0, 'chunksUpdated': 0};
+    }
+
+    int migrated = 0, failed = 0;
+    final affectedChunkIds = <String>{};
+
+    for (int i = 0; i < toMigrate.length; i++) {
+      final item = toMigrate[i];
+      onProgress(i + 1, toMigrate.length);
+      try {
+        final b2Url = await _uploadCardImageIfNeeded(catalogKey, item.cardId, item.sourceUrl);
+        if (b2Url != null) {
+          final card = Map<String, dynamic>.from(chunkMap[item.chunkId]![item.cardIndex]);
+          card['imageUrl'] = b2Url;
+          card.remove('image_url');
+          chunkMap[item.chunkId]![item.cardIndex] = card;
+          affectedChunkIds.add(item.chunkId);
+          migrated++;
+        } else {
+          failed++;
+        }
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    for (final chunkId in affectedChunkIds) {
+      await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .set({'cards': chunkMap[chunkId]!});
+    }
+
+    if (affectedChunkIds.isNotEmpty) {
+      final metaDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
+      final ver = metaDoc.exists ? (metaDoc.data()?['version'] as int? ?? 0) : 0;
+      await _firestore.collection(catalogCollection).doc('metadata').set({
+        'lastUpdated': FieldValue.serverTimestamp(),
+        'version': ver + 1,
+        'updatedBy': adminUid,
+      }, SetOptions(merge: true));
+    }
 
     return {
       'migrated': migrated,
@@ -3765,7 +3868,8 @@ class AdminCatalogService {
   // Digimon — digimoncard.io
   // ============================================================
 
-  static const String _digimonApiUrl = 'https://digimoncard.io/api-public/search.php';
+  // API ha rimosso .php e il parametro series=all → usare series=Digimon+Card+Game
+  static const String _digimonApiUrl = 'https://digimoncard.io/api-public/search';
 
   Future<Map<String, dynamic>> downloadDigimonCatalogFromAPI({
     required String adminUid,
@@ -3774,50 +3878,64 @@ class AdminCatalogService {
     onProgress('Scaricando catalogo Digimon…', null);
 
     final response = await http
-        .get(Uri.parse('$_digimonApiUrl?sort=name&series=all'))
-        .timeout(const Duration(minutes: 3));
+        .get(Uri.parse('$_digimonApiUrl?sort=name&series=Digimon+Card+Game'))
+        .timeout(const Duration(minutes: 5));
 
     if (response.statusCode != 200) {
-      throw Exception('Digimon API error: HTTP ${response.statusCode}');
+      throw Exception('Digimon API error: HTTP ${response.statusCode}\n${response.body}');
     }
 
     final raw = jsonDecode(response.body);
-    if (raw is! List) throw Exception('Risposta Digimon API non valida');
+    if (raw is! List) {
+      // L'API potrebbe restituire {"error":"..."} in caso di parametri errati
+      final errMsg = raw is Map ? raw['error']?.toString() : raw.runtimeType.toString();
+      throw Exception('Risposta Digimon API non valida: $errMsg');
+    }
 
     onProgress('${raw.length} stampe ricevute. Elaborando…', null);
 
     final cards = <Map<String, dynamic>>[];
+    final seen = <String>{};  // dedup set O(1) instead of O(n²)
     int nextId = 1;
 
     for (final item in raw.cast<Map<String, dynamic>>()) {
-      final apiId = (item['cardnumber'] as String? ?? '').trim();
+      // New API (2025): uses 'id' field (e.g. "BT5-103"). Old API used 'cardnumber'.
+      final apiId = (item['id'] as String? ?? item['cardnumber'] as String? ?? '').trim();
       final name = (item['name'] as String? ?? '').trim();
       if (apiId.isEmpty || name.isEmpty) continue;
 
-      // Deduplicate: skip reprints with the same api_id
-      if (cards.any((c) => c['api_id'] == apiId)) continue;
+      // Deduplicate by api_id (same card may appear multiple times for different prints)
+      if (!seen.add(apiId)) continue;
 
-      final setAbbr = (item['set_abbreviation'] as String? ?? '').trim();
+      // Set code: extract prefix before the last dash+digits ("BT5-103" → "BT5")
+      final setCode = apiId.contains('-') ? apiId.split('-').first : null;
+
+      // set_name is an array in the new API; fall back to first entry
+      final setNameRaw = item['set_name'];
+      final setName = setNameRaw is List && setNameRaw.isNotEmpty
+          ? setNameRaw.first?.toString()
+          : setNameRaw?.toString();
+
       cards.add({
         'id': nextId++,
         'api_id': apiId,
         'name': name,
         'card_type': item['type']?.toString(),
-        'subtype': item['attribute']?.toString(),
+        'subtype': item['digi_type']?.toString() ?? item['attribute']?.toString(),
         'rarity': item['rarity']?.toString(),
         'cost': item['level']?.toString(),
         'power': item['dp']?.toString(),
         'defense': item['play_cost']?.toString(),
         'effect': _combineDigimonEffect(
-          item['effect']?.toString(),
-          item['evolution_effect']?.toString(),
+          item['main_effect']?.toString() ?? item['effect']?.toString(),
+          item['source_effect']?.toString() ?? item['evolution_effect']?.toString(),
         ),
-        'set_code': setAbbr.isNotEmpty ? setAbbr : null,
-        'set_name': item['set_name']?.toString(),
+        'set_code': setCode,
+        'set_name': setName,
       });
     }
 
-    if (cards.isEmpty) throw Exception('Nessuna carta Digimon trovata');
+    if (cards.isEmpty) throw Exception('Nessuna carta Digimon trovata. Verifica i parametri API.');
 
     onProgress('${cards.length} carte Digimon. Caricando su Firestore…', null);
     await _uploadCatalogChunks(
@@ -4056,24 +4174,26 @@ class AdminCatalogService {
     required String adminUid,
     required Function(String status, double? progress) onProgress,
   }) async {
-    final ctGameName = _ctGameNames[catalogKey];
-    if (ctGameName == null) {
-      throw Exception('Catalogo "$catalogKey" non supportato per CT generic');
-    }
-
     final ctService = CardtraderService();
-    onProgress('Ricerca "$ctGameName" su CardTrader…', null);
-    final gameId = await ctService.findGameIdByName(ctGameName);
+
+    // Use hardcoded game IDs first (reliable), fall back to name search only if missing
+    int? gameId = CardtraderService.gameIds[catalogKey];
+    final ctGameName = _ctGameNames[catalogKey] ?? catalogKey;
 
     if (gameId == null) {
-      throw Exception(
-        '"$ctGameName" non trovato su CardTrader.\n'
-        'Il gioco potrebbe non essere ancora disponibile su CT.\n'
-        'Riprova più tardi o controlla https://www.cardtrader.com',
-      );
+      onProgress('Ricerca "$ctGameName" su CardTrader…', null);
+      gameId = await ctService.findGameIdByName(ctGameName);
+      if (gameId == null) {
+        throw Exception(
+          '"$ctGameName" non trovato su CardTrader.\n'
+          'Il gioco potrebbe non essere ancora disponibile su CT.\n'
+          'Riprova più tardi o controlla https://www.cardtrader.com',
+        );
+      }
+    } else {
+      onProgress('Caricamento espansioni $ctGameName…', null);
     }
 
-    onProgress('Caricamento espansioni…', null);
     final expansions = await ctService.fetchExpansionsForGameId(gameId);
     if (expansions.isEmpty) {
       throw Exception('Nessuna espansione trovata per "$ctGameName" (game_id=$gameId)');

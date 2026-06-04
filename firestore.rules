@@ -2,32 +2,83 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: true if the requester has role 'administrator' in their user document.
-    // Safe against missing documents: get() on a non-existent doc returns empty data,
-    // so .get('role', 'user') falls back to 'user'.
+    // Admin check — email-based (matches production deployment)
     function isAdmin() {
       return request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid))
-          .data.get('role', 'user') == 'administrator';
+        (request.auth.token.email == 'g.favara.dev@gmail.com' ||
+         request.auth.token.email == 'vivianaferreri98@gmail.com');
     }
 
-    // Yu-Gi-Oh catalog
+    // ── Core TCG catalogs ─────────────────────────────────────────────────────
+
     match /yugioh_catalog/{document=**} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
-    // Pokémon catalog
     match /pokemon_catalog/{document=**} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
-    // One Piece catalog
     match /onepiece_catalog/{document=**} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
+
+    match /magic_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // ── New TCG catalogs (v36) ────────────────────────────────────────────────
+
+    match /digimon_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /lorcana_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /flesh-and-blood_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /vanguard_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /dragon-ball-super_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /star-wars_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /riftbound_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /gundam_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /union-arena_catalog/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // ── Shared services ───────────────────────────────────────────────────────
 
     // CardTrader shared price cache
     match /cardtrader_prices/{document=**} {
@@ -41,18 +92,25 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // User profiles
+    // News feed
+    match /news/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // ── User data ─────────────────────────────────────────────────────────────
+
+    // User profiles — owner reads own doc; admins can read all
     match /users/{userId} {
-      // Owner reads own doc; admins can read all docs (for admin panel user list)
       allow read: if request.auth != null &&
         (request.auth.uid == userId || isAdmin());
 
-      // New users can create their own doc, but only with role 'user' (not self-promote)
+      // New users create own doc (cannot self-promote to admin)
       allow create: if request.auth != null &&
         request.auth.uid == userId &&
         request.resource.data.get('role', 'user') == 'user';
 
-      // Owner can update own profile but cannot change role; admins can update anything
+      // Owner updates own profile (cannot change role); admins update anything
       allow update: if request.auth != null && (
         isAdmin() ||
         (request.auth.uid == userId &&
@@ -62,7 +120,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // User sub-collections (collections, albums, cards, decks) — owner only
+    // User sub-collections (collections, albums, cards, decks, wishlists)
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }

@@ -17,9 +17,18 @@ class CardtraderService {
   static const _baseUrl = 'https://api.cardtrader.com/api/v2';
 
   static const gameIds = <String, int>{
-    'yugioh': 4,
-    'pokemon': 5,
-    'onepiece': 15,
+    'yugioh':           4,
+    'pokemon':          5,
+    'flesh-and-blood':  6,
+    'digimon':          8,
+    'dragon-ball-super':9,
+    'vanguard':         10,
+    'onepiece':         15,
+    'lorcana':          18,
+    'star-wars':        20,
+    'union-arena':      21,
+    'riftbound':        22,
+    'gundam':           23,
   };
 
   // Language property key per collection (in properties_hash)
@@ -572,6 +581,7 @@ class CardtraderService {
       _fetchBlueprints(expansionId);
 
   /// Fetches the full list of games from CardTrader.
+  /// CT returns either a raw array or a wrapped object {"array":[...]}.
   Future<List<Map<String, dynamic>>> fetchAllGames() async {
     if (kIsWeb) return [];
     final response = await http
@@ -579,7 +589,13 @@ class CardtraderService {
         .timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) return [];
     final raw = json.decode(response.body);
-    return raw is List ? raw.cast<Map<String, dynamic>>() : [];
+    if (raw is List) return raw.cast<Map<String, dynamic>>();
+    if (raw is Map) {
+      // CT wraps the list in {"array":[...]} or similar
+      final arr = raw['array'] ?? raw['games'] ?? raw['data'] ?? raw['items'];
+      if (arr is List) return arr.cast<Map<String, dynamic>>();
+    }
+    return [];
   }
 
   /// Finds the CardTrader game ID by partial name match (case-insensitive).

@@ -51,6 +51,7 @@ class _CatalogPageState extends State<CatalogPage> {
   double? _downloadProgress; // null = connecting, 0.0-1.0 = downloading/saving
   String _downloadMessage = '';
   String? _loadError;
+  Map<String, dynamic>? _pendingUpdateInfo; // aggiornamento incrementale disponibile
   int? _lastUsedAlbumId;
   // Multi-selection state
   bool _isSelectionMode = false;
@@ -129,32 +130,75 @@ class _CatalogPageState extends State<CatalogPage> {
         setState(() => _isCatalogMissing = true);
       }
     }
+
+    // Applica in background l'aggiornamento incrementale (es. nuove URL Backblaze)
+    // senza bloccare l'UI — le carte si aggiornano dopo il download silenzioso.
+    if (mounted && _pendingUpdateInfo != null) {
+      _applySilentCatalogUpdate();
+    }
   }
 
-  bool get _isSupportedCollection =>
-      widget.collectionKey == 'yugioh' ||
-      widget.collectionKey == 'pokemon' ||
-      widget.collectionKey == 'onepiece';
+  bool get _isSupportedCollection {
+    const supported = {
+      'yugioh', 'pokemon', 'onepiece', 'magic',
+      'digimon', 'lorcana', 'flesh-and-blood', 'vanguard',
+      'dragon-ball-super', 'star-wars', 'riftbound', 'gundam', 'union-arena',
+    };
+    return supported.contains(widget.collectionKey);
+  }
 
   /// Controlla se il catalogo locale è assente (primo download).
   /// Gli aggiornamenti vengono segnalati nelle Notifiche, non qui.
   Future<void> _checkCatalogMissing() async {
-    if (widget.collectionKey != 'yugioh' &&
-        widget.collectionKey != 'onepiece' &&
-        widget.collectionKey != 'pokemon') {
-      return;
-    }
     try {
-      final updateInfo = widget.collectionKey == 'onepiece'
-          ? await _dbHelper.checkOnepieceCatalogUpdates()
-          : widget.collectionKey == 'pokemon'
-              ? await _dbHelper.checkPokemonCatalogUpdates()
-              : await _dbHelper.checkCatalogUpdates();
-      if (!mounted) return;
-      if (updateInfo['needsUpdate'] == true &&
-          updateInfo['isFirstDownload'] == true) {
-        setState(() => _isCatalogMissing = true);
+      final Map<String, dynamic> updateInfo;
+      switch (widget.collectionKey) {
+        case 'yugioh':
+          updateInfo = await _dbHelper.checkCatalogUpdates();
+        case 'onepiece':
+          updateInfo = await _dbHelper.checkOnepieceCatalogUpdates();
+        case 'pokemon':
+          updateInfo = await _dbHelper.checkPokemonCatalogUpdates();
+        case 'magic':
+          updateInfo = await _dbHelper.checkMagicCatalogUpdates();
+        default:
+          // Cataloghi v36 generici (Digimon, Lorcana, FAB, ecc.)
+          updateInfo = await _dbHelper.checkGenericCatalogUpdates(widget.collectionKey);
       }
+      if (!mounted) return;
+      if (updateInfo['needsUpdate'] == true) {
+        if (updateInfo['isFirstDownload'] == true) {
+          setState(() => _isCatalogMissing = true);
+        } else {
+          setState(() => _pendingUpdateInfo = updateInfo);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Applica in background un aggiornamento incrementale disponibile (es. nuove URL
+  /// immagini dopo una migrazione admin). Non mostra loading overlay — la pagina
+  /// rimane usabile e si aggiorna automaticamente al termine.
+  Future<void> _applySilentCatalogUpdate() async {
+    final info = _pendingUpdateInfo;
+    if (info == null) return;
+    if (mounted) setState(() => _pendingUpdateInfo = null);
+    try {
+      await _dbHelper.downloadCollectionCatalog(
+        widget.collectionKey,
+        updateInfo: info,
+      );
+      if (!mounted) return;
+      setState(() {
+        _currentOffset = 0;
+        _catalogCards = [];
+        _hasMoreCards = true;
+        _isLoading = true;
+      });
+      await Future.wait([_loadPage(), _loadAlbumsAndOwned()]);
+      if (mounted) setState(() => _isLoading = false);
+    } on CatalogDownloadBusyException {
+      // un altro download è in corso — nessun problema, riprova alla prossima apertura
     } catch (_) {}
   }
 
@@ -187,6 +231,11 @@ class _CatalogPageState extends State<CatalogPage> {
       'connecting'  => 'Navigazione verso il Grand Line...',
       'downloading' => 'Shanks sta distribuendo le carte...',
       _             => 'Il Mugiwara Crew carica le carte...',
+    },
+    'magic' => switch (phase) {
+      'connecting'  => 'Connessione all\'Arxivio Arcano...',
+      'downloading' => 'Il Consiglio di Ravnica cataloga le carte...',
+      _             => 'Sigillatura nel Codex Magico...',
     },
     _ => switch (phase) {
       'connecting'  => 'Connessione in corso...',
@@ -235,24 +284,51 @@ class _CatalogPageState extends State<CatalogPage> {
         },
       );
       if (mounted) {
+        // Transizione atomica: passa direttamente a "loading" per evitare
+        // il flash di "nessuna carta trovata" tra download e caricamento lista
         setState(() {
           _isDownloadingUpdate = false;
           _isCatalogMissing = false;
           _downloadProgress = null;
+          _isLoading = true;
+          _catalogCards = [];
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Catalogo scaricato con successo!')),
         );
-        await _loadCards();
+        // Carica in parallelo: carte + album/owned
+        await Future.wait([_loadPage(), _loadAlbumsAndOwned()]);
+        if (mounted) setState(() => _isLoading = false);
       }
-    } catch (e) { // ignore: empty_catches
+    } on CatalogDownloadBusyException {
+      // Un altro catalogo è già in download — non cambiare lo stato, mostra solo avviso
       if (mounted) {
         setState(() {
           _isDownloadingUpdate = false;
           _downloadProgress = null;
+          // _isCatalogMissing rimane true → il bottone download rimane visibile
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore download: $e')),
+          const SnackBar(
+            content: Text('Un download è già in corso. Attendi il completamento.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isDownloadingUpdate = false;
+          _downloadProgress = null;
+          // _isCatalogMissing rimane true → il bottone download rimane visibile
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore download: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
@@ -622,28 +698,16 @@ class _CatalogPageState extends State<CatalogPage> {
                           }
 
                           final card = _catalogCards[index];
-                          final bool isYugioh = widget.collectionKey == 'yugioh';
                           final bool isOnePiece = widget.collectionKey == 'onepiece';
                           final bool isSelected = _selectedCardIds.contains(_getCardKey(card));
-                          final displayName = isYugioh
-                              ? (card['localizedName'] ?? card['name'])
-                              : card['name'];
-                          // Show localized set code for yugioh/pokemon; raw card_set_id for OP
-                          final displaySetCode = isYugioh || widget.collectionKey == 'pokemon'
-                              ? (card['localizedSetCode'] ?? card['setCode'])
-                              : card['setCode'];
-                          final displayRarityCode = isYugioh
-                              ? (card['localizedRarityCode'] ?? card['rarityCode'])
-                              : isOnePiece
-                                  ? card['rarity']
-                                  : card['rarityCode'];
-                          final displayRarityFull = isYugioh
-                              ? (card['localizedRarity'] ?? card['setRarity'] ?? displayRarityCode)
-                              : isOnePiece
-                                  ? card['rarity']
-                                  : (card['localizedRarity'] ?? card['setRarity'] ?? card['rarity'] ?? displayRarityCode);
-                          // Is this a foreign-language print? (found via set code search but not in user's language)
-                          final bool isForeignPrint = isYugioh && card['isLocalizedPrint'] == 0;
+                          // Unico percorso per tutte le collezioni — i campi localizzati (YGO)
+                          // hanno priorità; per le altre collezioni sono null e si usa il fallback.
+                          final displayName = (card['localizedName'] ?? card['name'] ?? '').toString();
+                          final displaySetCode = (card['localizedSetCode'] ?? card['setCode'])?.toString();
+                          final displayRarityCode = (card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'])?.toString();
+                          final displayRarityFull = (card['localizedRarity'] ?? card['setRarity'] ?? card['rarity'] ?? displayRarityCode)?.toString();
+                          // Foreign print badge: solo YGO quando isLocalizedPrint == 0
+                          final bool isForeignPrint = card['isLocalizedPrint'] == 0;
                           final String ownedKey =
                               '${card['id']}-${card['localizedSetCode'] ?? card['setCode'] ?? ''}';
                           final int ownedQty = _ownedQuantityMap[ownedKey] ?? 0;
@@ -673,7 +737,7 @@ class _CatalogPageState extends State<CatalogPage> {
                                         child: Stack(
                                           fit: StackFit.expand,
                                           children: [
-                                            _buildCardImage(card, isYugioh, index),
+                                            _buildCardImage(card, index),
                                             // Badge lingua One Piece (top-left)
                                             if (isOnePiece)
                                               Positioned(
@@ -817,7 +881,7 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
-  Widget _buildCardImage(Map<String, dynamic> card, bool isYugioh, int cardIndex) {
+  Widget _buildCardImage(Map<String, dynamic> card, int cardIndex) {
     final imageUrl = card['artwork'] as String?;
     final isOwned = card['isOwned'] == 1;
     if (imageUrl == null || imageUrl.isEmpty) {

@@ -210,7 +210,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     }
 
     final verifyNote = (verified != null && verifiedOf > 0)
-        ? '\nVerifica: $verified/$verifiedOf URL raggiungibili su Cloudinary'
+        ? '\nVerifica: $verified/$verifiedOf URL raggiungibili su Backblaze'
         : '';
     return '$migrated migrate, $failed errori, $chunks chunk aggiornati.$verifyNote';
   }
@@ -219,7 +219,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'yugioh',
         'Migrazione Immagini',
         'Migrazione Immagini',
-        'Migra le immagini delle carte da ygoprodeck.com a Firebase Storage.\n\n'
+        'Migra le immagini delle carte da ygoprodeck.com a Backblaze B2.\n\n'
             'Solo le immagini non ancora migrate vengono scaricate. '
             'Può richiedere diversi minuti. Continuare?',
         (uid) => _service.migrateAllImagesToStorage(
@@ -275,7 +275,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'Scarica Catalogo da CardTrader',
         'Scarica il catalogo $catalog da CardTrader (blueprint + metadati) '
             'e sostituisce il catalogo su Firestore.\n\n'
-            'Le immagini NON vengono caricate su Firebase Storage — '
+            'Le immagini NON vengono caricate su Backblaze B2 — '
             'esegui "Migra Immagini" subito dopo.\n\n'
             'Carte aggiunte manualmente vengono preservate.\n\n'
             'Può richiedere diversi minuti. Continuare?',
@@ -309,8 +309,8 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'Download Completo One Piece',
         'Download Completo One Piece TCG',
         'Scarica l\'intero catalogo One Piece TCG da OPTCG API, '
-            'carica le immagini su Firebase Storage e salva tutto su Firestore.\n\n'
-            'Le immagini già su Firebase Storage vengono preservate.\n\n'
+            'carica le immagini su Backblaze B2 e salva tutto su Firestore.\n\n'
+            'Le immagini già su Backblaze B2 vengono preservate.\n\n'
             'Può richiedere diversi minuti. Continuare?',
         (uid) => _service.downloadOnepieceCatalogFromAPI(
           adminUid: uid,
@@ -324,7 +324,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'Migrazione Immagini One Piece',
         'Migrazione Immagini One Piece',
         'Scarica le immagini delle carte One Piece dall\'OPTCG API '
-            'e le carica su Firebase Storage.\n\n'
+            'e le carica su Backblaze B2.\n\n'
             'Solo le immagini non ancora migrate vengono scaricate. '
             'Può richiedere diversi minuti. Continuare?',
         (uid) => _service.migrateOnepieceImagesToStorage(
@@ -369,7 +369,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'magic',
         'Migrazione Immagini Magic',
         'Migrazione Immagini Magic: The Gathering',
-        'Carica le immagini Magic da Scryfall su Cloudinary.\n\n'
+        'Carica le immagini Magic da Scryfall su Backblaze.\n\n'
             'Solo le immagini non ancora migrate vengono caricate. '
             'Può richiedere diversi minuti. Continuare?',
         (uid) => _service.migrateMagicImagesToStorage(
@@ -419,7 +419,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'Download Catalogo Pokémon TCG',
         'Scarica l\'intero catalogo Pokémon TCG da pokemontcg.io e '
             'sostituisce tutti i chunk su Firestore.\n\n'
-            'Le URL immagini già su Firebase Storage vengono preservate.\n\n'
+            'Le URL immagini già su Backblaze B2 vengono preservate.\n\n'
             'Può richiedere diversi minuti. Continuare?',
         (uid) => _service.downloadPokemonCatalogFromAPI(
           adminUid: uid,
@@ -432,7 +432,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         'pokemon',
         'Migrazione Immagini Pokémon',
         'Migrazione Immagini Pokémon',
-        'Scarica le immagini Pokémon da pokemontcg.io e le carica su Firebase Storage '
+        'Scarica le immagini Pokémon da pokemontcg.io e le carica su Backblaze B2 '
             'con compressione JPEG.\n\n'
             'Solo le immagini non ancora migrate vengono scaricate. '
             'Può richiedere diversi minuti. Continuare?',
@@ -539,6 +539,9 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   Future<void> _syncCardtraderOnePiece() =>
       _syncCardtraderWithLanguagePicker('onepiece');
 
+  Future<void> _syncCT(String catalog) =>
+      _syncCardtraderWithLanguagePicker(catalog);
+
   // ─── Nuove collezioni ────────────────────────────────────────────────────
 
   Future<void> _downloadFullDigimon() => _run(
@@ -561,14 +564,23 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         (r) => '${r['totalCards']} carte Lorcana caricate su Firestore.',
       );
 
-  Future<void> _downloadFullFab() => _run(
-        'flesh-and-blood',
-        'Download Flesh and Blood Catalog',
-        (uid) => _service.downloadFabCatalogFromAPI(
+  Future<void> _downloadFullFab() => _downloadGenericFromCT('flesh-and-blood');
+
+  /// Migrazione immagini generica per Digimon, Lorcana, FAB e tutte le collezioni CT.
+  Future<void> _migrateGenericImages(String catalogKey) => _confirmAndRun(
+        catalogKey,
+        'Migrazione Immagini ${_catalogDisplayName(catalogKey)}',
+        'Migra Immagini ${_catalogDisplayName(catalogKey)}',
+        'Carica le immagini di ${_catalogDisplayName(catalogKey)} su Backblaze B2.\n\n'
+            'Solo le immagini non ancora migrate vengono elaborate. '
+            'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.migrateGenericCatalogImages(
+          catalogKey: catalogKey,
           adminUid: uid,
-          onProgress: _onProgress,
+          onProgress: (cur, tot) =>
+              _onProgress('$cur / $tot immagini', tot > 0 ? cur / tot : null),
         ),
-        (r) => '${r['totalCards']} carte FAB caricate su Firestore.',
+        _migrationResultMessage,
       );
 
   Future<void> _downloadGenericFromCT(String catalogKey) => _run(
@@ -858,7 +870,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         return [
           _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da YGOPRODeck API', _downloadFull),
           _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove (incrementale)', _downloadIncremental),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Firebase Storage', _migrateImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica su Backblaze B2', _migrateImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set IT/FR/DE/PT/SP da EN', _fillMissingSetsYugioh),
           _StepDef(Icons.translate, 'Scarica Traduzioni', 'Nomi e descrizioni ufficiali', _translateMissingYugioh),
         ];
@@ -867,7 +879,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           _StepDef(Icons.cloud_download, 'Scarica Catalogo (CT)', 'Blueprint e metadati da CardTrader (senza immagini)', () => _downloadFromCardtrader('onepiece')),
           _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove da OPTCG API (prezzi preservati)', _downloadIncrementalOnePiece),
           _StepDef(Icons.download_for_offline, 'Scarica da OPTCG API', 'Download completo — fonte alternativa', _downloadFullOnePiece),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini CT su Firebase Storage', _migrateOnePieceImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Backblaze B2', _migrateOnePieceImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsOnePiece),
         ];
       case 'pokemon':
@@ -875,27 +887,30 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           _StepDef(Icons.cloud_download, 'Scarica Catalogo (CT)', 'Blueprint e metadati da CardTrader (senza immagini)', () => _downloadFromCardtrader('pokemon')),
           _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove da pokemontcg.io (prezzi preservati)', _downloadIncrementalPokemon),
           _StepDef(Icons.download_for_offline, 'Scarica da pokemontcg.io', 'Download completo — fonte alternativa', _downloadFullPokemon),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini CT su Firebase Storage', _migratePokemonImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Backblaze B2', _migratePokemonImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsPokemon),
         ];
       case 'magic':
         return [
           _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da Scryfall (oracle_cards ~100 MB)', _downloadFullMagic),
           _StepDef(Icons.update, 'Aggiorna Nuove Carte', 'Solo carte nuove o modificate (incrementale)', _downloadIncrementalMagic),
-          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Cloudinary', _migrateMagicImages),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Backblaze B2', _migrateMagicImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsMagic),
         ];
       case 'digimon':
         return [
-          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da digimoncard.io (EN)', _downloadFullDigimon),
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da digimoncard.io (EN)',             _downloadFullDigimon),
+          _StepDef(Icons.cloud_upload,         'Migra Immagini',   'Carica immagini su Backblaze B2',                      () => _migrateGenericImages('digimon')),
         ];
       case 'lorcana':
         return [
-          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da lorcana-api.com (EN/IT/FR/DE)', _downloadFullLorcana),
+          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da lorcana-api.com (EN/IT/FR/DE)',   _downloadFullLorcana),
+          _StepDef(Icons.cloud_upload,         'Migra Immagini',   'Carica immagini su Backblaze B2',                      () => _migrateGenericImages('lorcana')),
         ];
       case 'flesh-and-blood':
         return [
-          _StepDef(Icons.download_for_offline, 'Scarica Catalogo', 'Download completo da fabdb.net (EN)', _downloadFullFab),
+          _StepDef(Icons.cloud_download, 'Scarica da CardTrader', 'Blueprint e metadati da CardTrader (fabdb.net non disponibile)', _downloadFullFab),
+          _StepDef(Icons.cloud_upload,   'Migra Immagini',        'Carica immagini su Backblaze B2',                               () => _migrateGenericImages('flesh-and-blood')),
         ];
       case 'vanguard':
       case 'dragon-ball-super':
@@ -910,6 +925,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             'Blueprint e metadati da CardTrader (se disponibile)',
             () => _downloadGenericFromCT(cat.key),
           ),
+          _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Backblaze B2', () => _migrateGenericImages(cat.key)),
         ];
       default:
         return [];
@@ -1075,31 +1091,23 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
             ] else
               const SizedBox(height: 12),
 
+            // ──TCG ─────────────────────────────────────────────────────
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                _opButton(
-                  icon: Icons.style,
-                  label: 'Yu-Gi-Oh!',
-                  color: Colors.deepPurple,
-                  onTap: _syncCardtraderYugioh,
-                  tooltip: 'Sincronizza prezzi YGO per lingua e edizione',
-                ),
-                _opButton(
-                  icon: Icons.catching_pokemon,
-                  label: 'Pokémon',
-                  color: Colors.red.shade700,
-                  onTap: _syncCardtraderPokemon,
-                  tooltip: 'Sincronizza prezzi Pokémon per lingua',
-                ),
-                _opButton(
-                  icon: Icons.sailing,
-                  label: 'One Piece',
-                  color: Colors.orange.shade800,
-                  onTap: _syncCardtraderOnePiece,
-                  tooltip: 'Sincronizza prezzi One Piece',
-                ),
+                _opButton(icon: Icons.auto_awesome,       label: 'Yu-Gi-Oh!',   color: const Color(0xFF7B1FA2), onTap: _syncCardtraderYugioh,              tooltip: 'Sincronizza prezzi YGO per lingua e edizione'),
+                _opButton(icon: Icons.catching_pokemon,   label: 'Pokémon',     color: const Color(0xFFF57C00), onTap: _syncCardtraderPokemon,             tooltip: 'Sincronizza prezzi Pokémon per lingua'),
+                _opButton(icon: Icons.sailing,            label: 'One Piece',   color: const Color(0xFFD32F2F), onTap: _syncCardtraderOnePiece,            tooltip: 'Sincronizza prezzi One Piece'),
+                _opButton(icon: Icons.pets,                  label: 'Digimon',      color: const Color(0xFF0288D1), onTap: () => _syncCT('digimon'),          tooltip: 'Sincronizza prezzi Digimon'),
+                _opButton(icon: Icons.auto_stories,          label: 'Lorcana',      color: const Color(0xFF7B1FA2), onTap: () => _syncCT('lorcana'),          tooltip: 'Sincronizza prezzi Disney Lorcana'),
+                _opButton(icon: Icons.sports_martial_arts,   label: 'F&B',          color: const Color(0xFF880E4F), onTap: () => _syncCT('flesh-and-blood'),  tooltip: 'Sincronizza prezzi Flesh and Blood'),
+                _opButton(icon: Icons.shield,                label: 'Vanguard',     color: const Color(0xFF1565C0), onTap: () => _syncCT('vanguard'),         tooltip: 'Sincronizza prezzi Cardfight!! Vanguard'),
+                _opButton(icon: Icons.bolt,                  label: 'Dragon Ball',  color: const Color(0xFFFF6F00), onTap: () => _syncCT('dragon-ball-super'),tooltip: 'Sincronizza prezzi Dragon Ball Super'),
+                _opButton(icon: Icons.rocket_launch,         label: 'Star Wars',    color: const Color(0xFF37474F), onTap: () => _syncCT('star-wars'),        tooltip: 'Sincronizza prezzi Star Wars: Unlimited'),
+                _opButton(icon: Icons.casino,                label: 'Riftbound',    color: const Color(0xFF4A148C), onTap: () => _syncCT('riftbound'),        tooltip: 'Sincronizza prezzi Riftbound'),
+                _opButton(icon: Icons.smart_toy,             label: 'Gundam',       color: const Color(0xFF37474F), onTap: () => _syncCT('gundam'),           tooltip: 'Sincronizza prezzi Gundam Card Game'),
+                _opButton(icon: Icons.people,                label: 'Union Arena',  color: const Color(0xFF2E7D32), onTap: () => _syncCT('union-arena'),      tooltip: 'Sincronizza prezzi Union Arena'),
               ],
             ),
           ],
@@ -1110,10 +1118,19 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
   Widget _buildCoverageStats() {
     final catalogMeta = <String, ({String label, Color color})>{
-      'yugioh':   (label: 'Yu-Gi-Oh!',  color: const Color(0xFF7B1FA2)),
-      'pokemon':  (label: 'Pokémon',    color: const Color(0xFFF57C00)),
-      'onepiece': (label: 'One Piece',  color: const Color(0xFFD32F2F)),
-      'magic':    (label: 'Magic',      color: const Color(0xFF7B5EA7)),
+      'yugioh':           (label: 'Yu-Gi-Oh!',    color: const Color(0xFF7B1FA2)),
+      'pokemon':          (label: 'Pokémon',       color: const Color(0xFFF57C00)),
+      'onepiece':         (label: 'One Piece',     color: const Color(0xFFD32F2F)),
+      'magic':            (label: 'Magic',         color: const Color(0xFF7B5EA7)),
+      'digimon':          (label: 'Digimon',       color: const Color(0xFF0288D1)),
+      'lorcana':          (label: 'Lorcana',       color: const Color(0xFF7B1FA2)),
+      'flesh-and-blood':  (label: 'F&B',           color: const Color(0xFF880E4F)),
+      'vanguard':         (label: 'Vanguard',      color: const Color(0xFF1565C0)),
+      'dragon-ball-super':(label: 'Dragon Ball',  color: const Color(0xFFFF6F00)),
+      'star-wars':        (label: 'Star Wars',     color: const Color(0xFF37474F)),
+      'riftbound':        (label: 'Riftbound',     color: const Color(0xFF4A148C)),
+      'gundam':           (label: 'Gundam',        color: const Color(0xFF546E7A)),
+      'union-arena':      (label: 'Union Arena',   color: const Color(0xFF2E7D32)),
     };
 
     return FutureBuilder<List<Map<String, dynamic>>>(

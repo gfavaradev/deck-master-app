@@ -452,11 +452,11 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                           hintText: 'Carica dal dispositivo →',
                           border: const OutlineInputBorder(),
                           isDense: true,
-                          suffixIcon: _imageUrlController.text.contains('cloudinary.com')
+                          suffixIcon: _imageUrlController.text.contains('backblazeb2.com') || _imageUrlController.text.contains('cloudinary.com')
                               ? const Icon(Icons.check_circle, color: Colors.green, size: 18)
                               : null,
                         ),
-                        readOnly: _imageUrlController.text.contains('cloudinary.com'),
+                        readOnly: _imageUrlController.text.contains('backblazeb2.com') || _imageUrlController.text.contains('cloudinary.com'),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -497,7 +497,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                       ),
                   ],
                 ),
-                if (_imageUrlController.text.contains('cloudinary.com'))
+                if (_imageUrlController.text.contains('backblazeb2.com') || _imageUrlController.text.contains('cloudinary.com'))
                   Padding(
                     padding: const EdgeInsets.only(top: 8, bottom: 4),
                     child: ClipRRect(
@@ -1596,14 +1596,15 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     }
 
     final imageUrl = _imageUrlController.text.trim();
-    if (imageUrl.isNotEmpty && !imageUrl.contains('cloudinary.com')) {
+    final isHosted = imageUrl.contains('backblazeb2.com') || imageUrl.contains('cloudinary.com');
+    if (imageUrl.isNotEmpty && !isHosted) {
       final proceed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('URL immagine non è Cloudinary'),
+          title: const Text('URL immagine non valido'),
           content: const Text(
-            'L\'URL inserito non punta a Cloudinary.\n\n'
-            'Le immagini devono essere caricate su Cloudinary tramite il pulsante di upload.\n\n'
+            'L\'URL inserito non punta a Backblaze B2.\n\n'
+            'Le immagini devono essere caricate tramite il pulsante di upload.\n\n'
             'Salvare comunque?',
           ),
           actions: [

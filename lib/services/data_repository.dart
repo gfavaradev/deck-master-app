@@ -15,6 +15,7 @@ import '../models/collection_model.dart';
 import '../models/wishlist_model.dart';
 import 'price_alert_service.dart';
 import 'scryfall_service.dart';
+import 'backblaze_service.dart';
 
 // Top-level functions so compute() can spawn them in a background isolate.
 List<Map<String, dynamic>> _normalizeYugiohBatch(List<Map<String, dynamic>> cards) =>
@@ -30,6 +31,25 @@ List<Map<String, dynamic>> _normalizeMagicBatch(List<Map<String, dynamic>> cards
 /// All pages should use this instead of DatabaseHelper directly.
 /// Reads come from SQLite (fast, offline).
 /// Writes go to SQLite first, then push to Firestore if online.
+// ID OPTCG validi: OP01-001, ST01-001, OP01-EN001, OP01-EN001a — stesso pattern della migrazione.
+// ID surrogate CardTrader (BANDAI-245405, numeri puri) non hanno file in Backblaze.
+final _optcgCardSetIdRegex = RegExp(r'^[A-Z]{2,5}\d{1,2}-([A-Z]{2})?\d{3,4}[a-z]?$');
+
+/// Genera l'URL Backblaze per carte One Piece il cui imageUrl non è ancora hosted.
+/// Usa catalogId (int ID in onepiece_cards) + serialNumber (card_set_id OPTCG).
+/// Surrogati (BANDAI-*, UP-*) vengono lasciati invariati — non hanno file in Backblaze.
+CardModel _fixOnepieceCardImage(CardModel card) {
+  if (BackblazeService.isBackblazeUrl(card.imageUrl ?? '')) return card;
+  final cardId = int.tryParse(card.catalogId ?? '');
+  final setCode = card.serialNumber;
+  if (cardId == null || setCode.isEmpty || !_optcgCardSetIdRegex.hasMatch(setCode)) return card;
+  return card.copyWith(
+    imageUrl: BackblazeService.publicUrl(
+      BackblazeService.buildPath('onepiece', cardId, setCode: setCode),
+    ),
+  );
+}
+
 class DataRepository {
   static final DataRepository _instance = DataRepository._internal();
   factory DataRepository() => _instance;
@@ -340,7 +360,7 @@ class DataRepository {
 
     String? resolvedImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
     // CT download (uploadImages:false) stores no image URL → reconstruct pokemontcg.io fallback
-    // so SQLite has something even before migration uploads the Cloudinary version.
+    // so SQLite has something even before migration uploads the Backblaze version.
     if (resolvedImageUrl == null || resolvedImageUrl.isEmpty) {
       final apiId = card['api_id'] as String? ?? '';
       final dash = apiId.lastIndexOf('-');
@@ -699,6 +719,7 @@ class DataRepository {
         if (collection == 'yugioh' &&
             (imageUrl == null ||
              imageUrl.isEmpty ||
+             imageUrl.contains('backblazeb2.com') ||
              imageUrl.contains('cloudinary.com'))) {
           final cid = c['catalogId']?.toString();
           if (cid != null && cid.isNotEmpty) {
@@ -733,7 +754,9 @@ class DataRepository {
     final lower = rawLang.toLowerCase();
     final mapped = lower == 'sp' ? 'es' : lower;
     final lang = validLangs.contains(mapped) ? mapped : 'en';
-    return await _dbHelper.getCardsByCollection(collection, language: lang);
+    final cards = await _dbHelper.getCardsByCollection(collection, language: lang);
+    if (collection != 'onepiece') return cards;
+    return cards.map(_fixOnepieceCardImage).toList();
   }
 
   Future<Map<String, double>> getCollectionCompletions() async {
@@ -746,7 +769,9 @@ class DataRepository {
       // On web there is no local catalog to join against; return user cards directly.
       return getCardsByCollection(collection);
     }
-    return await _dbHelper.getCardsWithCatalog(collection);
+    final cards = await _dbHelper.getCardsWithCatalog(collection);
+    if (collection != 'onepiece') return cards;
+    return cards.map(_fixOnepieceCardImage).toList();
   }
 
   Future<List<CardModel>> findOwnedInstances(String collection, String name, String serialNumber, String rarity) async {
@@ -757,7 +782,9 @@ class DataRepository {
         c.rarity.toLowerCase() == rarity.toLowerCase()
       ).toList();
     }
-    return await _dbHelper.findOwnedInstances(collection, name, serialNumber, rarity);
+    final cards = await _dbHelper.findOwnedInstances(collection, name, serialNumber, rarity);
+    if (collection != 'onepiece') return cards;
+    return cards.map(_fixOnepieceCardImage).toList();
   }
 
   Future<int> getCardCountByAlbum(int albumId) async {
@@ -1104,7 +1131,11 @@ class DataRepository {
   /// Lock globale: impedisce download paralleli sullo stesso catalogo.
   static bool _isDownloadingCatalog = false;
 
+  /// True se un download di catalogo è già in corso.
+  bool get isDownloadingCatalog => _isDownloadingCatalog;
+
   /// Generic catalog download, routes by [collectionKey].
+  /// Lancia [CatalogDownloadBusyException] se un altro download è già in corso.
   Future<void> downloadCollectionCatalog(
     String collectionKey, {
     Map<String, dynamic>? updateInfo,
@@ -1112,8 +1143,7 @@ class DataRepository {
     void Function(double)? onSaveProgress,
   }) async {
     if (_isDownloadingCatalog) {
-
-      return;
+      throw const CatalogDownloadBusyException();
     }
     _isDownloadingCatalog = true;
     try {
@@ -1317,7 +1347,19 @@ class DataRepository {
 
   Future<List<Map<String, dynamic>>> getOnepieceCardPrints(int cardId) async {
     if (kIsWeb) return [];
-    return await _dbHelper.getOnepieceCardPrints(cardId);
+    final rows = await _dbHelper.getOnepieceCardPrints(cardId);
+    return rows.map((r) {
+      final artwork = r['artwork'] as String?;
+      if (BackblazeService.isBackblazeUrl(artwork ?? '')) return r;
+      final setCode = r['setCode'] as String?;
+      if (setCode == null || setCode.isEmpty) return r;
+      if (!_optcgCardSetIdRegex.hasMatch(setCode)) return r;
+      final map = Map<String, dynamic>.from(r);
+      map['artwork'] = BackblazeService.publicUrl(
+        BackblazeService.buildPath('onepiece', cardId, setCode: setCode),
+      );
+      return map;
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> getMagicCardPrints(int cardId) async {
@@ -1342,7 +1384,21 @@ class DataRepository {
 
   Future<List<Map<String, dynamic>>> getSetDetail(String collection, String setIdentifier, {String lang = 'en'}) async {
     if (kIsWeb) return [];
-    return _dbHelper.getSetDetail(collection, setIdentifier, lang: lang);
+    final rows = await _dbHelper.getSetDetail(collection, setIdentifier, lang: lang);
+    if (collection != 'onepiece') return rows;
+    return rows.map((r) {
+      final imageUrl = r['imageUrl'] as String?;
+      if (BackblazeService.isBackblazeUrl(imageUrl ?? '')) return r;
+      final cardId = r['id'];
+      final setCode = r['serialNumber'] as String?;
+      if (cardId == null || setCode == null || setCode.isEmpty) return r;
+      if (!_optcgCardSetIdRegex.hasMatch(setCode)) return r;
+      final map = Map<String, dynamic>.from(r);
+      map['imageUrl'] = BackblazeService.publicUrl(
+        BackblazeService.buildPath('onepiece', cardId, setCode: setCode),
+      );
+      return map;
+    }).toList();
   }
 
   Future<Map<String, dynamic>?> checkSetCompletion(String collection, String serialNumber) async {
@@ -1762,8 +1818,21 @@ class DataRepository {
     if (kIsWeb) {
       return _getOnepieceCatalogCardsWeb(query: query, limit: limit, offset: offset);
     }
-    return await _dbHelper.getOnepieceCatalogCards(
+    final rows = await _dbHelper.getOnepieceCatalogCards(
         query: query, language: language, limit: limit, offset: offset);
+    return rows.map((r) {
+      final artwork = r['artwork'] as String?;
+      if (BackblazeService.isBackblazeUrl(artwork ?? '')) return r;
+      final cardId = r['id'];
+      final setCode = r['setCode'] as String?;
+      if (cardId == null || setCode == null || setCode.isEmpty) return r;
+      if (!_optcgCardSetIdRegex.hasMatch(setCode)) return r;
+      final map = Map<String, dynamic>.from(r);
+      map['artwork'] = BackblazeService.publicUrl(
+        BackblazeService.buildPath('onepiece', cardId, setCode: setCode),
+      );
+      return map;
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> _getOnepieceCatalogCardsWeb({
@@ -2363,8 +2432,11 @@ class DataRepository {
     } else if (collection == 'magic') {
       if (offset > 0) return [];
       return getMagicCatalogCards(query: query, limit: limit);
+    } else if (DatabaseHelper.genericTablePrefix(collection) != null) {
+      // Cataloghi v36 — tabelle dedicate (digimon_cards, lorcana_cards, ecc.)
+      return _dbHelper.getGenericCatalogCards(collection, query: query, limit: limit, offset: offset);
     } else {
-      // Cataloghi generici: carica tutto (no paginazione)
+      // Fallback: vecchio schema catalog_cards (YGO-style)
       if (offset > 0) return [];
       return getCatalogCards(collection, query: query);
     }
@@ -2403,4 +2475,13 @@ class DataRepository {
 
   Future<void> updateCardPurchasePrice(int cardId, double? price) =>
       _dbHelper.updateCardPurchasePrice(cardId, price);
+}
+
+/// Lanciata da [DataRepository.downloadCollectionCatalog] quando un altro
+/// download è già in corso. Permette alla UI di mostrare un messaggio
+/// esplicito invece di ignorare silenziosamente la richiesta.
+class CatalogDownloadBusyException implements Exception {
+  const CatalogDownloadBusyException();
+  @override
+  String toString() => 'Un download di catalogo è già in corso. Attendi il completamento prima di avviarne un altro.';
 }

@@ -30,7 +30,11 @@ class HomePageSimple extends StatefulWidget {
 }
 
 class _HomePageSimpleState extends State<HomePageSimple> {
-  static const _catalogAvailable = {'yugioh', 'onepiece', 'pokemon', 'magic'};
+  static const _catalogAvailable = {
+    'yugioh', 'onepiece', 'pokemon', 'magic',
+    'digimon', 'lorcana', 'flesh-and-blood', 'vanguard',
+    'dragon-ball-super', 'star-wars', 'riftbound', 'gundam', 'union-arena',
+  };
 
   final DataRepository _repo = DataRepository();
   List<CollectionModel> _unlockedCollections = [];

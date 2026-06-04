@@ -52,7 +52,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 36,
+      version: 37,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -450,6 +450,15 @@ class DatabaseHelper {
       await db.execute("INSERT OR IGNORE INTO collections(id,name,isUnlocked) VALUES('flesh-and-blood','Flesh and Blood',0)");
       await db.execute("INSERT OR IGNORE INTO collections(id,name,isUnlocked) VALUES('star-wars','Star Wars: Unlimited',0)");
     }
+    if (oldVersion < 37) {
+      // Fix: dispositivi creati fresh alla versione 26-36 hanno onepiece_prints senza
+      // le colonne lingua aggiunte dalle migration v22/v26 (CREATE TABLE IF NOT EXISTS
+      // era già passato e quelle migration non giravano su fresh install recenti).
+      for (final lang in ['it', 'de', 'pt', 'sp', 'ko', 'zh']) {
+        await _addColumnIfMissing(db, 'onepiece_prints', 'set_name_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'onepiece_prints', 'rarity_$lang', 'TEXT');
+      }
+    }
   }
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
@@ -682,6 +691,18 @@ class DatabaseHelper {
         rarity_jp TEXT,
         set_name_fr TEXT,
         rarity_fr TEXT,
+        set_name_it TEXT,
+        rarity_it TEXT,
+        set_name_de TEXT,
+        rarity_de TEXT,
+        set_name_pt TEXT,
+        rarity_pt TEXT,
+        set_name_sp TEXT,
+        rarity_sp TEXT,
+        set_name_ko TEXT,
+        rarity_ko TEXT,
+        set_name_zh TEXT,
+        rarity_zh TEXT,
         ct_synced_at TEXT,
         ct_listing_count INTEGER,
         created_at TEXT,
@@ -2091,12 +2112,56 @@ class DatabaseHelper {
       'yugioh'   => 'yugioh_cards',
       'pokemon'  => 'pokemon_cards',
       'onepiece' => 'onepiece_cards',
+      'magic'    => 'magic_cards',
       _          => null,
     };
-    if (table == null) return 0;
     final db = await database;
-    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM $table');
+    if (table != null) {
+      final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM $table');
+      return result.first['cnt'] as int? ?? 0;
+    }
+    // v36 generic tables
+    final prefix = genericTablePrefix(collectionKey);
+    if (prefix == null) return 0;
+    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM ${prefix}_cards');
     return result.first['cnt'] as int? ?? 0;
+  }
+
+  /// Queries a v36 generic catalog table and returns cards in the format
+  /// expected by CatalogPage (same field names as the YGO/Pokemon/OP queries).
+  Future<List<Map<String, dynamic>>> getGenericCatalogCards(
+    String catalogKey, {
+    String? query,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final prefix = genericTablePrefix(catalogKey);
+    if (prefix == null) return [];
+    final db = await database;
+    final where = (query != null && query.isNotEmpty)
+        ? 'WHERE name LIKE ? OR api_id LIKE ?'
+        : '';
+    final args = (query != null && query.isNotEmpty)
+        ? ['%$query%', '%$query%']
+        : <dynamic>[];
+    final rows = await db.rawQuery('''
+      SELECT
+        api_id      AS id,
+        name,
+        api_id      AS setCode,
+        rarity,
+        rarity      AS setRarity,
+        image_url   AS artwork,
+        card_type,
+        effect,
+        set_code,
+        set_name
+      FROM ${prefix}_cards
+      $where
+      ORDER BY name, api_id
+      LIMIT $limit OFFSET $offset
+    ''', args);
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
   /// Returns an existing card in [albumId] with the same [catalogId], [serialNumber] and [rarity], or null.
@@ -3887,16 +3952,35 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getCardtraderCoverageStats() async {
     final db = await database;
 
-    // Count local catalog cards per collection
+    // Count local catalog cards per collection (includes all v36 tables)
     final localCounts = <String, int>{};
-    for (final row in await db.rawQuery('''
-      SELECT 'yugioh' AS catalog, COUNT(*) AS n FROM yugioh_cards
-      UNION ALL
-      SELECT 'pokemon', COUNT(*) FROM pokemon_cards
-      UNION ALL
-      SELECT 'onepiece', COUNT(*) FROM onepiece_cards
-    ''')) {
-      localCounts[row['catalog'] as String] = (row['n'] as int? ?? 0);
+    try {
+      for (final row in await db.rawQuery('''
+        SELECT 'yugioh'           AS catalog, COUNT(*) AS n FROM yugioh_cards
+        UNION ALL SELECT 'pokemon',           COUNT(*) FROM pokemon_cards
+        UNION ALL SELECT 'onepiece',          COUNT(*) FROM onepiece_cards
+        UNION ALL SELECT 'magic',             COUNT(*) FROM magic_cards
+        UNION ALL SELECT 'digimon',           COUNT(*) FROM digimon_cards
+        UNION ALL SELECT 'lorcana',           COUNT(*) FROM lorcana_cards
+        UNION ALL SELECT 'flesh-and-blood',   COUNT(*) FROM fab_cards
+        UNION ALL SELECT 'vanguard',          COUNT(*) FROM vanguard_cards
+        UNION ALL SELECT 'dragon-ball-super', COUNT(*) FROM dragonball_cards
+        UNION ALL SELECT 'star-wars',         COUNT(*) FROM starwars_cards
+        UNION ALL SELECT 'riftbound',         COUNT(*) FROM riftbound_cards
+        UNION ALL SELECT 'gundam',            COUNT(*) FROM gundam_cards
+        UNION ALL SELECT 'union-arena',       COUNT(*) FROM union_arena_cards
+      ''')) {
+        localCounts[row['catalog'] as String] = (row['n'] as int? ?? 0);
+      }
+    } catch (_) {
+      // Fallback per DB non ancora migrati a v36
+      for (final row in await db.rawQuery('''
+        SELECT 'yugioh' AS catalog, COUNT(*) AS n FROM yugioh_cards
+        UNION ALL SELECT 'pokemon', COUNT(*) FROM pokemon_cards
+        UNION ALL SELECT 'onepiece', COUNT(*) FROM onepiece_cards
+      ''')) {
+        localCounts[row['catalog'] as String] = (row['n'] as int? ?? 0);
+      }
     }
 
     // Count distinct CT blueprints per catalog (blueprint_id is per-card, not per-language)
@@ -3916,12 +4000,24 @@ class DatabaseHelper {
       };
     }
 
-    return ['yugioh', 'pokemon', 'onepiece'].map((cat) => {
-      'catalog': cat,
-      'localCards': localCounts[cat] ?? 0,
-      'ctBlueprints': ctMap[cat]?['ct_blueprints'] ?? 0,
-      'ctPriced': ctMap[cat]?['ct_priced'] ?? 0,
-    }).toList();
+    // Include all known CT-syncable catalogs, skip those with 0 local cards AND 0 CT blueprints
+    const allCatalogs = [
+      'yugioh', 'pokemon', 'onepiece', 'magic',
+      'digimon', 'lorcana', 'flesh-and-blood', 'vanguard',
+      'dragon-ball-super', 'star-wars', 'riftbound', 'gundam', 'union-arena',
+    ];
+
+    return allCatalogs
+        .map((cat) => {
+              'catalog': cat,
+              'localCards': localCounts[cat] ?? 0,
+              'ctBlueprints': ctMap[cat]?['ct_blueprints'] ?? 0,
+              'ctPriced': ctMap[cat]?['ct_priced'] ?? 0,
+            })
+        .where((r) =>
+            (r['localCards'] as int) > 0 ||
+            (r['ctBlueprints'] as int) > 0)
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> getAllDecks() async {
@@ -4083,17 +4179,18 @@ class DatabaseHelper {
             );
           }
 
-          // Solo URL Cloudinary sono accettate come immagini valide
-          bool isCloudinaryUrl(String? url) =>
-              url != null && url.contains('cloudinary.com');
+          // Solo URL di storage hosted (Backblaze o legacy Cloudinary) sono valide
+          bool isHostedImageUrl(String? url) =>
+              url != null &&
+              (url.contains('backblazeb2.com') || url.contains('cloudinary.com'));
           final cardImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
-          final cardArtwork = isCloudinaryUrl(cardImageUrl) ? cardImageUrl : null;
+          final cardArtwork = isHostedImageUrl(cardImageUrl) ? cardImageUrl : null;
           for (final p in prints) {
             final print = Map<String, dynamic>.from(p as Map);
             final rawArtwork = print['artwork'] as String? ?? cardImageUrl;
-            final artwork = isCloudinaryUrl(rawArtwork) ? rawArtwork : cardArtwork;
+            final artwork = isHostedImageUrl(rawArtwork) ? rawArtwork : cardArtwork;
             // ON CONFLICT: aggiorna tutti i campi eccetto artwork — se il nuovo
-            // valore non è Cloudinary, preserva quello già in SQLite.
+            // valore non è hosted, preserva quello già in SQLite.
             await txn.rawInsert('''
               INSERT INTO onepiece_prints
                 (card_id, card_set_id, set_id, set_name, rarity,
@@ -4113,7 +4210,8 @@ class DatabaseHelper {
                 market_price_ko  = COALESCE(excluded.market_price_ko, market_price_ko),
                 market_price_zh  = COALESCE(excluded.market_price_zh, market_price_zh),
                 artwork          = COALESCE(
-                  CASE WHEN excluded.artwork LIKE '%cloudinary.com%'
+                  CASE WHEN excluded.artwork LIKE '%backblazeb2.com%'
+                            OR excluded.artwork LIKE '%cloudinary.com%'
                        THEN excluded.artwork END,
                   artwork
                 ),
@@ -4162,14 +4260,14 @@ class DatabaseHelper {
     final upperLang = language.toUpperCase();
     final String langFilter;
     if (upperLang == 'JP') {
+      // ID reali OPTCG JP: hanno cifre SIA prima che dopo il '-' (es. OP01-001).
+      // ID surrogate CardTrader (BANDAI-245405, UP-244176) hanno lettere prima del
+      // '-' → esclusi controllando che il char immediatamente prima di '-' sia una cifra.
       langFilter = '''
-        AND (
-          op.card_set_id NOT LIKE '%-%'
-          OR (
-            INSTR(op.card_set_id, '-') > 0
-            AND SUBSTR(op.card_set_id, INSTR(op.card_set_id, '-') + 1, 1) BETWEEN '0' AND '9'
-          )
-        )''';
+        AND INSTR(op.card_set_id, '-') > 0
+        AND SUBSTR(op.card_set_id, INSTR(op.card_set_id, '-') + 1, 1) BETWEEN '0' AND '9'
+        AND SUBSTR(op.card_set_id, INSTR(op.card_set_id, '-') - 1, 1) BETWEEN '0' AND '9'
+        ''';
     } else {
       langFilter = '''
         AND INSTR(op.card_set_id, '-') > 0
