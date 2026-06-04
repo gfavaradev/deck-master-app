@@ -4,9 +4,9 @@ import 'package:deck_master/constants/app_constants.dart';
 void main() {
   // ── CatalogConstants ──────────────────────────────────────────────────────
   group('CatalogConstants', () {
-    test('allCatalogs contiene tutti e 4 i cataloghi', () {
+    test('allCatalogs contiene i cataloghi principali', () {
       expect(CatalogConstants.allCatalogs, containsAll(['yugioh', 'pokemon', 'onepiece', 'magic']));
-      expect(CatalogConstants.allCatalogs.length, 4);
+      expect(CatalogConstants.allCatalogs.length, 13);
     });
 
     group('getCollectionName', () {

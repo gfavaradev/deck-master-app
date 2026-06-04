@@ -156,7 +156,7 @@ void main() {
       test('pokemon → true', () => expect(Validators.isValidCatalog('pokemon'), isTrue));
       test('onepiece → true', () => expect(Validators.isValidCatalog('onepiece'), isTrue));
       test('magic → true', () => expect(Validators.isValidCatalog('magic'), isTrue));
-      test('invalid → false', () => expect(Validators.isValidCatalog('digimon'), isFalse));
+      test('invalid → false', () => expect(Validators.isValidCatalog('invalid_catalog'), isFalse));
       test('null → false', () => expect(Validators.isValidCatalog(null), isFalse));
       test('YUGIOH maiuscolo → false (case-sensitive)', () {
         expect(Validators.isValidCatalog('YUGIOH'), isFalse);
