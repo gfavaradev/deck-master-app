@@ -1,4 +1,6 @@
 import '../l10n/app_localizations.dart';
+import 'dart:math' as math;
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,15 +13,10 @@ import '../widgets/card_dialogs.dart';
 import 'pro_page.dart';
 
 class CardScannerPage extends StatefulWidget {
-  /// If set, limits scanning to this specific collection.
   final String? collectionKey;
   final String? collectionName;
 
-  const CardScannerPage({
-    super.key,
-    this.collectionKey,
-    this.collectionName,
-  });
+  const CardScannerPage({super.key, this.collectionKey, this.collectionName});
 
   @override
   State<CardScannerPage> createState() => _CardScannerPageState();
@@ -29,11 +26,16 @@ class _CardScannerPageState extends State<CardScannerPage> {
   final _scanner = CardScannerService();
   final _repo = DataRepository();
 
-  _ScanState _state = _ScanState.idle;
+  _ScanState _state = _ScanState.preview;
   CardScanResult? _result;
   String? _errorMessage;
 
-  // ── Scanner limit ─────────────────────────────────────────────────────────
+  // ── Camera ────────────────────────────────────────────────────────────────
+  CameraController? _cameraCtrl;
+  bool _cameraReady = false;
+  String? _cameraError;
+
+  // ── Scan limit ────────────────────────────────────────────────────────────
   static const int _kFreeLimit = 25;
   static const String _kScanCountKey = 'scanner_monthly_count';
   static const String _kScanMonthKey = 'scanner_month';
@@ -51,8 +53,6 @@ class _CardScannerPageState extends State<CardScannerPage> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}';
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-
   static const _collectionLabels = {
     'yugioh': 'Yu-Gi-Oh!',
     'pokemon': 'Pokémon',
@@ -65,10 +65,48 @@ class _CardScannerPageState extends State<CardScannerPage> {
     'onepiece': AppColors.onepieceAccent,
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
     _loadScanLimit();
+    _initCamera();
+  }
+
+  @override
+  void dispose() {
+    _cameraCtrl?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) setState(() => _cameraError = 'Nessuna fotocamera trovata sul dispositivo.');
+        return;
+      }
+      if (!mounted) return;
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+      final ctrl = CameraController(
+        back,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      await ctrl.initialize();
+      if (!mounted) { await ctrl.dispose(); return; }
+      setState(() {
+        _cameraCtrl = ctrl;
+        _cameraReady = true;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _cameraError = 'Impossibile accedere alla fotocamera: $e');
+    }
   }
 
   Future<void> _loadScanLimit() async {
@@ -95,9 +133,6 @@ class _CardScannerPageState extends State<CardScannerPage> {
       _isPro = isPro;
       _limitLoaded = true;
     });
-
-    // Auto-open camera after limit is loaded
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
   }
 
   Future<void> _incrementScanCount() async {
@@ -161,10 +196,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
           FilledButton.icon(
             onPressed: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ProPage()),
-              );
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
             },
             icon: const Icon(Icons.workspace_premium, size: 16),
             label: Text(l10n.cardScannerGoToPro),
@@ -180,8 +212,6 @@ class _CardScannerPageState extends State<CardScannerPage> {
     );
   }
 
-  /// Shows the Google Play-required prominent disclosure before first camera use.
-  /// Returns true if the user consented (or had already consented), false otherwise.
   Future<bool> _ensureAiConsent() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_kAiConsentKey) == true) return true;
@@ -205,7 +235,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
         ),
         content: const SingleChildScrollView(
           child: Text(
-            'Per identificare le tue carte, la foto scattata viene inviata temporaneamente ai servizi AI di Google (Gemini) tramite connessione cifrata.\n\n'
+            'Per identificare le tue carte, il fotogramma acquisito viene inviato temporaneamente ai servizi AI di Google (Gemini) tramite connessione cifrata.\n\n'
             'Le immagini non vengono conservate da Deck Master né da Google oltre il tempo necessario all\'elaborazione della singola richiesta.\n\n'
             'Continuando autorizzi questo trasferimento. Puoi rifiutare: in quel caso lo scanner non sarà disponibile.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.55),
@@ -237,7 +267,8 @@ class _CardScannerPageState extends State<CardScannerPage> {
   }
 
   Future<void> _scan() async {
-    if (!_limitLoaded) return;
+    if (_state == _ScanState.analyzing) return;
+    if (!_limitLoaded || !_cameraReady) return;
 
     if (!_canScan) {
       _showLimitDialog();
@@ -249,26 +280,27 @@ class _CardScannerPageState extends State<CardScannerPage> {
       return;
     }
 
+    final ctrl = _cameraCtrl;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+
     setState(() {
-      _state = _ScanState.scanning;
+      _state = _ScanState.analyzing;
       _result = null;
       _errorMessage = null;
     });
 
     try {
-      final result = await _scanner.scanFromCamera(
-        collectionHint: widget.collectionKey,
-      );
+      final xFile = await ctrl.takePicture();
+      await _incrementScanCount();
       if (!mounted) return;
 
-      // Count every API call (found or not)
-      await _incrementScanCount();
+      final result = await _scanner.processImage(xFile, collectionHint: widget.collectionKey);
       if (!mounted) return;
 
       if (result == null) {
         setState(() {
           _state = _ScanState.notFound;
-          _errorMessage = 'Carta non riconosciuta.\nProva con una foto più nitida e ben illuminata.';
+          _errorMessage = 'Carta non riconosciuta.\nInquadra meglio la carta e riprova.';
         });
       } else {
         setState(() {
@@ -276,13 +308,21 @@ class _CardScannerPageState extends State<CardScannerPage> {
           _result = result;
         });
       }
-    } catch (e) { // ignore: empty_catches
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _state = _ScanState.notFound;
         _errorMessage = 'Errore durante la scansione: $e';
       });
     }
+  }
+
+  void _resetToPreview() {
+    setState(() {
+      _state = _ScanState.preview;
+      _result = null;
+      _errorMessage = null;
+    });
   }
 
   Future<void> _addToCollection() async {
@@ -328,35 +368,38 @@ class _CardScannerPageState extends State<CardScannerPage> {
     );
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final showCounter = _limitLoaded && !_isPro;
     final isNearLimit = _scansRemaining <= 5;
+    final inCameraView = _state == _ScanState.preview || _state == _ScanState.analyzing;
 
     return Scaffold(
-      backgroundColor: AppColors.bgDark,
+      backgroundColor: inCameraView ? Colors.black : AppColors.bgDark,
+      extendBodyBehindAppBar: inCameraView,
       appBar: AppBar(
         title: Text(AppLocalizations.of(context)!.cardScannerTitle),
-        backgroundColor: AppColors.bgMedium,
-        foregroundColor: AppColors.textPrimary,
+        backgroundColor: inCameraView ? Colors.black.withValues(alpha: 0.35) : AppColors.bgMedium,
+        foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           if (showCounter)
             Padding(
               padding: const EdgeInsets.only(right: 14),
               child: Center(
                 child: GestureDetector(
-                  onTap: isNearLimit || _scansRemaining == 0
-                      ? _showLimitDialog
-                      : null,
+                  onTap: isNearLimit || _scansRemaining == 0 ? _showLimitDialog : null,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: isNearLimit
-                          ? AppColors.error.withValues(alpha: 0.15)
-                          : AppColors.blue.withValues(alpha: 0.15),
+                          ? AppColors.error.withValues(alpha: 0.20)
+                          : Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isNearLimit ? AppColors.error : AppColors.blue,
+                        color: isNearLimit ? AppColors.error : Colors.white.withValues(alpha: 0.4),
                         width: 0.8,
                       ),
                     ),
@@ -366,7 +409,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
                         Icon(
                           Icons.document_scanner_outlined,
                           size: 12,
-                          color: isNearLimit ? AppColors.error : AppColors.blue,
+                          color: isNearLimit ? AppColors.error : Colors.white,
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -374,7 +417,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: isNearLimit ? AppColors.error : AppColors.blue,
+                            color: isNearLimit ? AppColors.error : Colors.white,
                           ),
                         ),
                       ],
@@ -385,75 +428,139 @@ class _CardScannerPageState extends State<CardScannerPage> {
             ),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        bottom: true,
-        child: !_limitLoaded
-            ? const Center(child: CircularProgressIndicator())
-            : AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: switch (_state) {
-                  _ScanState.idle     => _buildIdle(),
-                  _ScanState.scanning => _buildScanning(),
-                  _ScanState.found    => _buildFound(),
-                  _ScanState.notFound => _buildNotFound(),
-                },
+      body: switch (_state) {
+        _ScanState.preview || _ScanState.analyzing => _buildLiveScanner(),
+        _ScanState.found    => _buildFound(),
+        _ScanState.notFound => _buildNotFound(),
+      },
+    );
+  }
+
+  // ── Live scanner view (preview + analyzing overlay) ───────────────────────
+
+  Widget _buildLiveScanner() {
+    final isAnalyzing = _state == _ScanState.analyzing;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Camera preview
+        if (_cameraReady && _cameraCtrl != null)
+          _CameraFit(controller: _cameraCtrl!)
+        else if (_cameraError != null)
+          _buildCameraError()
+        else
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
+
+        // Scanning frame overlay
+        if (_cameraReady)
+          const _ScannerFrameOverlay(),
+
+        // Analyzing overlay
+        if (isAnalyzing)
+          Container(
+            color: Colors.black.withValues(alpha: 0.6),
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: AppColors.gold, strokeWidth: 3),
+                  SizedBox(height: 20),
+                  Text(
+                    'Analisi in corso…',
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Gemini Vision AI',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
               ),
+            ),
+          ),
+
+        // Bottom controls (shown only in preview state)
+        if (!isAnalyzing && _cameraReady)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildScanControls(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildScanControls() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).padding.bottom + 28),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.75)],
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Inquadra la carta e premi Scansiona',
+            style: TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          // Scan button
+          GestureDetector(
+            onTap: _scan,
+            child: Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.gold,
+                boxShadow: [
+                  BoxShadow(color: AppColors.gold.withValues(alpha: 0.45), blurRadius: 18, spreadRadius: 2),
+                ],
+              ),
+              child: const Icon(Icons.document_scanner_outlined, color: Colors.black87, size: 30),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text('Scansiona', style: TextStyle(color: Colors.white70, fontSize: 12)),
+          if (!_isPro && _scansRemaining <= 5 && _scansRemaining > 0) ...[
+            const SizedBox(height: 12),
+            _ScanLimitWarning(
+              remaining: _scansRemaining,
+              onUpgrade: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage())),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildIdle() {
+  Widget _buildCameraError() {
     return Center(
-      key: const ValueKey('idle'),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.document_scanner_outlined,
-                size: 80, color: AppColors.textHint),
-            const SizedBox(height: 24),
-            const Text(
-              'Punta la fotocamera su una carta\nper identificarla automaticamente',
+            const Icon(Icons.no_photography_outlined, size: 64, color: Colors.white54),
+            const SizedBox(height: 16),
+            Text(
+              _cameraError ?? 'Fotocamera non disponibile.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+              style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
             ),
-            const SizedBox(height: 32),
-            _scanButton(),
-            if (!_isPro && _scansRemaining <= 5 && _scansRemaining > 0) ...[
-              const SizedBox(height: 16),
-              _ScanLimitWarning(remaining: _scansRemaining, onUpgrade: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
-              }),
-            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildScanning() {
-    return const Center(
-      key: ValueKey('scanning'),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircularProgressIndicator(color: AppColors.blue),
-          SizedBox(height: 20),
-          Text(
-            'Analisi in corso…',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'OCR → Gemini Vision',
-            style: TextStyle(color: AppColors.textHint, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
+  // ── Result views (unchanged from before) ─────────────────────────────────
 
   Widget _buildFound() {
     final result = _result!;
@@ -467,7 +574,6 @@ class _CardScannerPageState extends State<CardScannerPage> {
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          // ── Card preview ──────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -478,7 +584,6 @@ class _CardScannerPageState extends State<CardScannerPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Image
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: SizedBox(
@@ -497,26 +602,18 @@ class _CardScannerPageState extends State<CardScannerPage> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                // Info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          _Badge(
-                            label: collectionLabel,
-                            color: collectionColor,
-                          ),
+                          _Badge(label: collectionLabel, color: collectionColor),
                           const SizedBox(width: 8),
                           _Badge(
                             label: result.source == 'ocr' ? 'OCR' : 'AI',
-                            color: result.source == 'ocr'
-                                ? AppColors.blue
-                                : AppColors.purple,
-                            icon: result.source == 'gemini'
-                                ? Icons.auto_awesome
-                                : null,
+                            color: result.source == 'ocr' ? AppColors.blue : AppColors.purple,
+                            icon: result.source == 'gemini' ? Icons.auto_awesome : null,
                           ),
                         ],
                       ),
@@ -543,18 +640,15 @@ class _CardScannerPageState extends State<CardScannerPage> {
                       if (!inCatalog) ...[
                         const SizedBox(height: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.orange.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                                color: Colors.orange.withValues(alpha: 0.4)),
+                            border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
                           ),
                           child: const Text(
                             'Carta non nel catalogo locale',
-                            style: TextStyle(
-                                color: Colors.orange, fontSize: 11),
+                            style: TextStyle(color: Colors.orange, fontSize: 11),
                           ),
                         ),
                       ],
@@ -565,8 +659,6 @@ class _CardScannerPageState extends State<CardScannerPage> {
             ),
           ),
           const SizedBox(height: 24),
-
-          // ── Actions ───────────────────────────────────────────────────────
           if (inCatalog)
             SizedBox(
               width: double.infinity,
@@ -578,8 +670,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
                   backgroundColor: Colors.green.shade700,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -587,15 +678,14 @@ class _CardScannerPageState extends State<CardScannerPage> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: _scan,
-              icon: const Icon(Icons.camera_alt_outlined),
+              onPressed: _resetToPreview,
+              icon: const Icon(Icons.document_scanner_outlined),
               label: Text(AppLocalizations.of(context)!.cardScannerScanAnother),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.textSecondary,
                 side: BorderSide(color: AppColors.textHint.withValues(alpha: 0.4)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
@@ -621,31 +711,149 @@ class _CardScannerPageState extends State<CardScannerPage> {
                   color: AppColors.textSecondary, fontSize: 15, height: 1.5),
             ),
             const SizedBox(height: 32),
-            _scanButton(),
+            ElevatedButton.icon(
+              onPressed: _resetToPreview,
+              icon: const Icon(Icons.document_scanner_outlined),
+              label: Text(AppLocalizations.of(context)!.cardScannerOpenCamera),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _scanButton() {
-    return ElevatedButton.icon(
-      onPressed: _scan,
-      icon: const Icon(Icons.camera_alt),
-      label: Text(AppLocalizations.of(context)!.cardScannerOpenCamera),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.blue,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
+// ─── Camera full-fit helper ───────────────────────────────────────────────────
+
+/// Fills the available space with the camera preview, cropping edges if needed
+/// (similar to how a native camera viewfinder looks).
+class _CameraFit extends StatelessWidget {
+  final CameraController controller;
+  const _CameraFit({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (ctx, constraints) {
+      final previewSize = controller.value.previewSize;
+      if (previewSize == null) return const SizedBox.expand();
+      // previewSize is landscape (width > height) on most devices
+      final previewAspect = previewSize.flipped.aspectRatio; // portrait
+      final screenAspect = constraints.maxWidth / constraints.maxHeight;
+      final scale = screenAspect > previewAspect
+          ? constraints.maxWidth / (constraints.maxHeight * previewAspect)
+          : 1.0;
+      return ClipRect(
+        child: Transform.scale(
+          scale: scale,
+          child: Center(child: CameraPreview(controller)),
+        ),
+      );
+    });
+  }
+}
+
+// ─── Scanner frame overlay ────────────────────────────────────────────────────
+
+class _ScannerFrameOverlay extends StatelessWidget {
+  const _ScannerFrameOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _FramePainter());
+  }
+}
+
+class _FramePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Dark semi-transparent overlay with a cut-out rectangle
+    const double frameW = 260;
+    final double frameH = frameW * 1.4; // card aspect ratio ≈ 1:1.4
+    final double left = (size.width - frameW) / 2;
+    final double top = (size.height - frameH) / 2 - 30;
+    final frameRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(left, top, frameW, frameH),
+      const Radius.circular(12),
+    );
+
+    // Dim the area outside the frame
+    final dimPaint = Paint()..color = Colors.black.withValues(alpha: 0.50);
+    final fullPath = Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
+    final framePath = Path()..addRRect(frameRect);
+    canvas.drawPath(
+      Path.combine(PathOperation.difference, fullPath, framePath),
+      dimPaint,
+    );
+
+    // White frame border
+    final borderPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawRRect(frameRect, borderPaint);
+
+    // Corner markers
+    _drawCorners(canvas, left, top, frameW, frameH);
+  }
+
+  void _drawCorners(Canvas canvas, double l, double t, double w, double h) {
+    const double cLen = 22;
+    const double r = 12.0;
+    final paint = Paint()
+      ..color = AppColors.gold
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    final corners = [
+      // top-left
+      [Offset(l + r, t), Offset(l + r + cLen, t)],
+      [Offset(l, t + r), Offset(l, t + r + cLen)],
+      // top-right
+      [Offset(l + w - r, t), Offset(l + w - r - cLen, t)],
+      [Offset(l + w, t + r), Offset(l + w, t + r + cLen)],
+      // bottom-left
+      [Offset(l + r, t + h), Offset(l + r + cLen, t + h)],
+      [Offset(l, t + h - r), Offset(l, t + h - r - cLen)],
+      // bottom-right
+      [Offset(l + w - r, t + h), Offset(l + w - r - cLen, t + h)],
+      [Offset(l + w, t + h - r), Offset(l + w, t + h - r - cLen)],
+    ];
+
+    for (final c in corners) {
+      canvas.drawLine(c[0], c[1], paint);
+    }
+    // arc corners
+    _drawCornerArc(canvas, paint, l, t, r, math.pi, true);
+    _drawCornerArc(canvas, paint, l + w - r * 2, t, r, math.pi * 1.5, true);
+    _drawCornerArc(canvas, paint, l, t + h - r * 2, r, math.pi * 0.5, true);
+    _drawCornerArc(canvas, paint, l + w - r * 2, t + h - r * 2, r, 0, true);
+  }
+
+  void _drawCornerArc(Canvas canvas, Paint paint, double x, double y, double r,
+      double startAngle, bool clockwise) {
+    canvas.drawArc(
+      Rect.fromLTWH(x, y, r * 2, r * 2),
+      startAngle,
+      math.pi / 2 * (clockwise ? 1 : -1),
+      false,
+      paint,
     );
   }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-enum _ScanState { idle, scanning, found, notFound }
+enum _ScanState { preview, analyzing, found, notFound }
 
 class _CardPlaceholder extends StatelessWidget {
   const _CardPlaceholder();
@@ -659,8 +867,6 @@ class _CardPlaceholder extends StatelessWidget {
   }
 }
 
-// ─── Scan limit warning banner ────────────────────────────────────────────────
-
 class _ScanLimitWarning extends StatelessWidget {
   final int remaining;
   final VoidCallback onUpgrade;
@@ -671,7 +877,7 @@ class _ScanLimitWarning extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.warning.withValues(alpha: 0.10),
+        color: AppColors.warning.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
       ),
@@ -705,8 +911,6 @@ class _ScanLimitWarning extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _Badge extends StatelessWidget {
   final String label;
   final Color color;
@@ -732,8 +936,7 @@ class _Badge extends StatelessWidget {
           ],
           Text(
             label,
-            style: TextStyle(
-                color: color, fontSize: 10, fontWeight: FontWeight.bold),
+            style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
           ),
         ],
       ),
