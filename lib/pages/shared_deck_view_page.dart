@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -83,8 +84,8 @@ class _SharedDeckViewPageState extends State<SharedDeckViewPage> {
     if (ownedInDeck.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Non possiedi nessuna carta di questo deck'),
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.sharedDeckNoCards),
           backgroundColor: AppColors.warning,
         ),
       );
@@ -105,7 +106,7 @@ class _SharedDeckViewPageState extends State<SharedDeckViewPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Deck importato! (${ownedInDeck.length} carte aggiunte)'),
+          content: Text(AppLocalizations.of(context)!.sharedDeckImported(ownedInDeck.length)),
           backgroundColor: AppColors.success,
         ),
       );
@@ -125,7 +126,7 @@ class _SharedDeckViewPageState extends State<SharedDeckViewPage> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Deck Condiviso'),
+        title: Text(AppLocalizations.of(context)!.sharedDeckTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
@@ -283,7 +284,7 @@ class _SharedDeckViewPageState extends State<SharedDeckViewPage> {
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: code));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Codice copiato!'), duration: Duration(seconds: 2)),
+                        SnackBar(content: Text(AppLocalizations.of(context)!.sharedDeckCodeCopied), duration: const Duration(seconds: 2)),
                       );
                     },
                     child: Container(
@@ -312,7 +313,7 @@ class _SharedDeckViewPageState extends State<SharedDeckViewPage> {
                 ],
               ),
               const SizedBox(height: 4),
-              Text('di $owner · $collection · $total carte',
+              Text(AppLocalizations.of(context)!.sharedDeckByOwner(owner, collection, total),
                   style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
             ],
           ),

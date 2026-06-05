@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -127,8 +128,8 @@ class _AdminExcelPageState extends State<AdminExcelPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgMedium,
-        title: const Text('Conferma importazione',
-            style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(AppLocalizations.of(context)!.adminExcelImportConfirmTitle,
+            style: const TextStyle(color: AppColors.textPrimary)),
         content: Text(
           'Verranno aggiornate ${preview.totalChanged} carte su Firestore.\n\n'
           'Solo i campi non vuoti nel file Excel sovrascriveranno i dati esistenti. '
@@ -197,7 +198,7 @@ class _AdminExcelPageState extends State<AdminExcelPage> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Export / Import Excel'),
+        title: Text(AppLocalizations.of(context)!.adminExcelTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
@@ -295,19 +296,17 @@ class _AdminExcelPageState extends State<AdminExcelPage> {
   }
 
   Widget _buildExportCard() {
+    final l10n = AppLocalizations.of(context)!;
     return _card(
-      title: 'Esporta in Excel',
+      title: l10n.adminExcelExportTitle,
       icon: Icons.download,
-      subtitle: 'Genera un file .xlsx con due fogli:\n'
-          '• Carte — dati completi della carta (tutte le traduzioni)\n'
-          '• Stampe — tutti i print con set/rarità/prezzi per lingua\n'
-          'Il catalogo deve essere già stato scaricato da Firestore.',
+      subtitle: l10n.adminExcelExportSubtitle,
       child: SizedBox(
         width: double.infinity,
         child: FilledButton.icon(
           onPressed: _isRunning ? null : _export,
           icon: const Icon(Icons.table_chart, size: 18),
-          label: const Text('Esporta e Condividi'),
+          label: Text(l10n.adminExcelExportBtn),
           style: FilledButton.styleFrom(backgroundColor: _accentColor),
         ),
       ),
@@ -316,18 +315,18 @@ class _AdminExcelPageState extends State<AdminExcelPage> {
 
   Widget _buildImportCard() {
     final preview = _preview;
+    final l10n = AppLocalizations.of(context)!;
     return _card(
-      title: 'Importa da Excel',
+      title: l10n.adminExcelImportTitle,
       icon: Icons.upload,
-      subtitle: 'Seleziona un file .xlsx esportato da questa app con le '
-          'traduzioni o i metadati modificati.',
+      subtitle: l10n.adminExcelImportSubtitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           OutlinedButton.icon(
             onPressed: _isRunning ? null : _pickAndPreview,
             icon: const Icon(Icons.folder_open, size: 18),
-            label: const Text('Seleziona file .xlsx'),
+            label: Text(l10n.adminExcelSelectFileBtn),
             style: OutlinedButton.styleFrom(
               foregroundColor: _accentColor,
               side: BorderSide(color: _accentColor.withValues(alpha: 0.6)),
@@ -340,7 +339,7 @@ class _AdminExcelPageState extends State<AdminExcelPage> {
             FilledButton.icon(
               onPressed: _isRunning ? null : _applyImport,
               icon: const Icon(Icons.cloud_upload, size: 18),
-              label: Text('Applica ${preview.totalChanged} modifiche su Firestore'),
+              label: Text(AppLocalizations.of(context)!.adminExcelApplyBtn(preview.totalChanged)),
               style: FilledButton.styleFrom(backgroundColor: Colors.green.shade700),
             ),
           ],

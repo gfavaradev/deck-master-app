@@ -168,7 +168,7 @@ class _EmptyState extends StatelessWidget {
               size: 28, color: color.withValues(alpha: 0.3)),
           const SizedBox(height: 8),
           Text(
-            'Il grafico si aggiorna ogni volta che\nvisiti questa pagina.',
+            'Il grafico si aggiorna ogni volta che\nvisiti questa pagina.', // TODO: l10n
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,

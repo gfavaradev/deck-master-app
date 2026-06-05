@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -384,13 +385,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _deleteAll() async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => const AppConfirmDialog(
-        title: 'Cancella tutto',
+      builder: (_) => AppConfirmDialog(
+        title: l10n.notifClearAllTitle,
         icon: Icons.notifications_off_outlined,
-        message: 'Vuoi eliminare tutte le notifiche?',
-        confirmLabel: 'Elimina',
+        message: l10n.notifClearAllMsg,
+        confirmLabel: l10n.notifClearAllTitle,
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -404,14 +406,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Notifiche'),
+        title: Text(AppLocalizations.of(context)!.notificationsTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
         actions: [
           if (_history.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.delete_sweep_outlined),
-              tooltip: 'Cancella tutto',
+              tooltip: AppLocalizations.of(context)!.notifClearAllTooltip,
               onPressed: _deleteAll,
             ),
         ],
@@ -585,7 +587,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: () => Navigator.pop(context, {'action': 'download'}),
-                    child: const Text('Scarica'),
+                    child: Text(AppLocalizations.of(context)!.notifDownloadBtn),
                   ),
                 ),
                 const SizedBox(height: 6),

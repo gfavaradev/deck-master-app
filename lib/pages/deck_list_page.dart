@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/data_repository.dart';
@@ -28,8 +29,9 @@ class _AddDeckDialogState extends State<_AddDeckDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return AppDialog(
-      title: 'Nuovo Deck',
+      title: l10n.deckListNewDeckTitle,
       icon: Icons.style_outlined,
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,7 +55,7 @@ class _AddDeckDialogState extends State<_AddDeckDialog> {
             ],
             style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
             decoration: InputDecoration(
-              hintText: 'Es. MazzoAttacco',
+              hintText: l10n.deckListNewDeckHint,
               hintStyle: const TextStyle(color: AppColors.textHint),
               errorText: _nameError,
               prefixIcon: const Icon(Icons.style_outlined, color: AppColors.blue, size: 20),
@@ -75,7 +77,7 @@ class _AddDeckDialogState extends State<_AddDeckDialog> {
         OutlinedButton(
           onPressed: () => Navigator.pop(context),
           style: appDialogCancelStyle(),
-          child: const Text('Annulla'),
+          child: Text(l10n.btnCancel),
         ),
         FilledButton(
           onPressed: () {
@@ -87,7 +89,7 @@ class _AddDeckDialogState extends State<_AddDeckDialog> {
             Navigator.pop(context, name);
           },
           style: appDialogConfirmStyle(),
-          child: const Text('Crea'),
+          child: Text(l10n.btnCreate),
         ),
       ],
     );
@@ -128,13 +130,14 @@ class _DeckListPageState extends State<DeckListPage> {
   }
 
   Future<void> _deleteDeck(Map<String, dynamic> deck) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AppConfirmDialog(
-        title: 'Elimina Deck',
+        title: l10n.dlgDeleteDeckTitle,
         icon: Icons.delete_outline,
-        message: 'Sei sicuro di voler eliminare "${deck['name']}"?',
-        confirmLabel: 'Elimina',
+        message: l10n.dlgDeleteDeckMsg(deck['name'] as String),
+        confirmLabel: l10n.btnDelete,
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -143,7 +146,7 @@ class _DeckListPageState extends State<DeckListPage> {
     _refreshDecks();
     TopUndoBar.show(
       context: context,
-      message: 'Deck "${deck['name']}" eliminato',
+      message: l10n.msgDeckDeleted(deck['name'] as String),
     );
   }
 
@@ -159,12 +162,13 @@ class _DeckListPageState extends State<DeckListPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       body: SafeArea(
         top: false,
         bottom: true,
         child: _decks.isEmpty
-            ? const Center(child: Text('Nessun deck creato.'))
+            ? Center(child: Text(l10n.deckListNoDecks))
             : ListView.builder(
                 itemCount: _decks.length,
                 itemBuilder: (context, index) {

@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -128,13 +129,14 @@ class _CardDetailPageState extends State<CardDetailPage> {
   }
 
   Future<void> _delete() async {
+    final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AppConfirmDialog(
-        title: 'Elimina carta',
+        title: l10n.cardDetailDeleteTitle,
         icon: Icons.delete_outline,
-        message: 'Eliminare "${_card.name}" dalla collezione?',
-        confirmLabel: 'Elimina',
+        message: l10n.cardDetailDeleteMsg(_card.name),
+        confirmLabel: l10n.btnDelete,
       ),
     );
     if (confirm != true || !mounted) return;
@@ -179,7 +181,7 @@ class _CardDetailPageState extends State<CardDetailPage> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                tooltip: 'Elimina',
+                tooltip: AppLocalizations.of(context)!.cardDetailTooltipDelete,
                 onPressed: _delete,
               ),
             ],
@@ -231,7 +233,7 @@ class _CardDetailPageState extends State<CardDetailPage> {
                   _PricesPanel(card: card),
                   const Divider(color: AppColors.divider, height: 1),
                   _Panel(
-                    title: 'ANDAMENTO PREZZI',
+                    title: AppLocalizations.of(context)!.cardDetailPriceHistory,
                     child: CardtraderPriceHistoryChart(card: card),
                   ),
                 ],
@@ -870,8 +872,9 @@ class _AlbumPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return _Panel(
-      title: 'ALBUM',
+      title: l10n.cardDetailAlbumSection,
       child: availableAlbums.isNotEmpty
           ? DropdownButtonFormField<int>(
               initialValue: selectedId,
@@ -927,8 +930,9 @@ class _PricesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return _Panel(
-      title: 'VALORE DI MERCATO',
+      title: l10n.cardDetailMarketValue,
       child: CardtraderAllPricesSection(
         collection: card.collection,
         serialNumber: card.serialNumber,
@@ -949,8 +953,9 @@ class _DecksPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return _Panel(
-      title: 'DECK',
+      title: l10n.cardDetailDeckSection,
       child: Column(
         children: decks.map((d) {
           return Padding(
@@ -998,8 +1003,9 @@ class _DescriptionPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return _Panel(
-      title: 'DESCRIZIONE',
+      title: l10n.cardDetailDescription,
       child: Text(
         description,
         style: const TextStyle(
@@ -1057,12 +1063,13 @@ class _CardtraderLinkButtonState extends State<_CardtraderLinkButton> {
   @override
   Widget build(BuildContext context) {
     if (_url == null) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context)!;
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
         onPressed: () => launchUrl(_url!, mode: LaunchMode.externalApplication),
         icon: const Icon(Icons.open_in_new, size: 13),
-        label: const Text('Vedi su CardTrader'),
+        label: Text(l10n.cardDetailViewOnCardtrader),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.teal,
           side: const BorderSide(color: Colors.teal),

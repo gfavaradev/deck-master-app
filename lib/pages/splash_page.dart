@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -35,11 +36,12 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
 
   static const String _lastVersionKey = 'app_last_version';
 
-  static const _returningMessages = [
-    'Le tue carte ti stavano aspettando.',
-    'Il tuo mazzo è pronto per l\'azione.',
-    'La collezione chiama, il collezionista risponde.',
-    'Ogni carta ha una storia. Qual è la tua di oggi?',
+  // Returning messages are now handled via l10n in _buildGreeting
+  static List<String> _getReturningMessages(AppLocalizations l10n) => [
+    l10n.splashReturning1,
+    l10n.splashReturning2,
+    l10n.splashReturning3,
+    l10n.splashReturning4,
   ];
 
   @override
@@ -283,9 +285,11 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   }
 
   Widget _buildGreeting() {
+    final l10n = AppLocalizations.of(context)!;
+    final returningMessages = _getReturningMessages(l10n);
     final subtitle = _isFirstLogin
-        ? 'La tua avventura da collezionista inizia ora. 🎴'
-        : _returningMessages[DateTime.now().millisecond % _returningMessages.length];
+        ? l10n.splashFirstLoginSubtitle
+        : returningMessages[DateTime.now().millisecond % returningMessages.length];
 
     return Center(
       key: const ValueKey('greeting'),
@@ -314,7 +318,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
               ),
               const SizedBox(height: 36),
               Text(
-                _isFirstLogin ? 'Benvenuto,' : 'Bentornato,',
+                _isFirstLogin ? l10n.splashWelcomeFirst : l10n.splashWelcomeBack,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 22,
@@ -346,9 +350,9 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 16, height: 1.6),
               ),
               const SizedBox(height: 64),
-              const Text(
-                'Tocca per continuare',
-                style: TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 0.5),
+              Text(
+                l10n.splashTapToContinue,
+                style: const TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 0.5),
               ),
             ],
           ),

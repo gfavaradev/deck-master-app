@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -69,7 +70,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore caricamento deck: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorGeneric(e.toString())), backgroundColor: Colors.red),
       );
     }
   }
@@ -124,22 +125,23 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
   }
 
   Future<void> _shareDeck() async {
+    final l10n = AppLocalizations.of(context)!;
     if (!_isPro) {
       showDialog(
         context: context,
         builder: (_) => AppDialog(
-          title: 'Condivisione Pro',
+          title: l10n.deckDetailSharePro,
           icon: Icons.workspace_premium,
           iconColor: AppColors.gold,
-          content: const Text(
-            'La condivisione dei deck è disponibile per gli utenti Pro.\nUpgrada per condividere i tuoi deck con la community!',
-            style: TextStyle(color: AppColors.textSecondary),
+          content: Text(
+            l10n.deckDetailShareProMsg,
+            style: const TextStyle(color: AppColors.textSecondary),
           ),
           actions: [
             OutlinedButton(
               onPressed: () => Navigator.pop(context),
               style: appDialogCancelStyle(),
-              child: const Text('Annulla'),
+              child: Text(l10n.btnCancel),
             ),
             FilledButton(
               onPressed: () {
@@ -147,7 +149,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
               },
               style: appDialogConfirmStyle(),
-              child: const Text('Vai a Pro'),
+              child: Text(l10n.btnGoPro),
             ),
           ],
         ),
@@ -157,7 +159,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
 
     if (_deckCards.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Aggiungi carte al deck prima di condividerlo'), backgroundColor: AppColors.warning),
+        SnackBar(content: Text(l10n.deckDetailAddBeforeShare), backgroundColor: AppColors.warning),
       );
       return;
     }
@@ -191,7 +193,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore: $e'), backgroundColor: AppColors.error),
+        SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorGeneric(e.toString())), backgroundColor: AppColors.error),
       );
     } finally {
       if (mounted) setState(() => _sharing = false);
@@ -199,10 +201,11 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
   }
 
   void _showShareDialog(String code) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (_) => AppDialog(
-        title: 'Deck Condiviso!',
+        title: l10n.deckDetailSharedTitle,
         icon: Icons.check_circle_outline,
         iconColor: AppColors.success,
         content: Column(
@@ -218,7 +221,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
                 Clipboard.setData(ClipboardData(text: code));
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Codice copiato!'), duration: Duration(seconds: 2)),
+                  SnackBar(content: Text(l10n.deckDetailCodeCopied), duration: const Duration(seconds: 2)),
                 );
               },
               child: Container(
@@ -258,7 +261,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
           FilledButton(
             onPressed: () => Navigator.pop(context),
             style: appDialogConfirmStyle(),
-            child: const Text('Chiudi'),
+            child: Text(l10n.btnClose),
           ),
         ],
       ),
@@ -285,6 +288,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
@@ -304,7 +308,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
               ),
             ),
             Text(
-              '$_totalDeckCards carte nel deck',
+              '$_totalDeckCards carte nel deck', // TODO: l10n
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -323,7 +327,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
                     Icons.share_outlined,
                     color: _isPro ? AppColors.gold : AppColors.textHint,
                   ),
-                  tooltip: _isPro ? 'Condividi Deck' : 'Condividi Deck (Pro)',
+                  tooltip: _isPro ? l10n.deckDetailShareTooltip : l10n.deckDetailShareTooltipPro,
                   onPressed: _shareDeck,
                 ),
         ],
@@ -351,22 +355,23 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
   // ─── Top half: carte nel deck ─────────────────────────────────────────────
 
   Widget _buildDeckSection() {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
         _SectionHeader(
           icon: Icons.style_outlined,
-          label: 'Nel Deck',
+          label: l10n.deckDetailInDeck,
           count: _deckCards.length,
           accentColor: AppColors.blue,
-          hint: 'Dettaglio • − per rimuovere',
+          hint: l10n.deckDetailInDeckHint,
         ),
         Expanded(
           child: _deckCards.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
-                    'Nessuna carta — aggiungile\ndalle carte possedute qui sotto',
+                    'Nessuna carta — aggiungile\ndalle carte possedute qui sotto', // TODO: l10n
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textHint, fontSize: 13),
+                    style: const TextStyle(color: AppColors.textHint, fontSize: 13),
                   ),
                 )
               : GridView.builder(
@@ -402,14 +407,15 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
   // ─── Bottom half: carte possedute ────────────────────────────────────────
 
   Widget _buildOwnedSection() {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
         _SectionHeader(
           icon: Icons.photo_album_outlined,
-          label: 'Possedute',
+          label: l10n.deckDetailOwned,
           count: _filteredOwned.length,
           accentColor: AppColors.success,
-          hint: 'Tocca per aggiungere',
+          hint: l10n.deckDetailOwnedHint,
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
@@ -417,7 +423,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
             controller: _searchController,
             style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
             decoration: InputDecoration(
-              hintText: 'Cerca carta...',
+              hintText: l10n.deckDetailSearchHint,
               hintStyle: const TextStyle(color: AppColors.textHint, fontSize: 13),
               prefixIcon: const Icon(Icons.search, size: 18, color: AppColors.textHint),
               suffixIcon: _searchController.text.isNotEmpty
@@ -447,10 +453,10 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
         ),
         Expanded(
           child: _filteredOwned.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
-                    'Nessuna carta trovata',
-                    style: TextStyle(color: AppColors.textHint, fontSize: 13),
+                    l10n.catalogNoCards,
+                    style: const TextStyle(color: AppColors.textHint, fontSize: 13),
                   ),
                 )
               : GridView.builder(

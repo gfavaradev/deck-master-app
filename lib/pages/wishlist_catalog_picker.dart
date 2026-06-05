@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/wishlist_model.dart';
@@ -86,7 +87,7 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
     setState(() { _addedIds.add(catalogId); _adding = false; });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${item.name} aggiunta alla Wishlist'),
+        content: Text(AppLocalizations.of(context)!.wishlistItemAddedMsg(item.name)),
         backgroundColor: AppColors.success,
         duration: const Duration(seconds: 2),
       ),
@@ -95,10 +96,11 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Cerca nel catalogo'),
+        title: Text(l10n.wishlistCatalogSearchTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
         bottom: PreferredSize(
@@ -114,7 +116,7 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
                   autofocus: true,
                   style: const TextStyle(color: AppColors.textPrimary),
                   decoration: InputDecoration(
-                    hintText: 'Cerca per nome o codice set...',
+                    hintText: l10n.wishlistCatalogSearchHint,
                     hintStyle: const TextStyle(color: AppColors.textHint),
                     filled: true,
                     fillColor: AppColors.bgLight,
@@ -174,6 +176,7 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
   }
 
   Widget _buildBody() {
+    final l10n = AppLocalizations.of(context)!;
     if (_searching) {
       return const Center(child: CircularProgressIndicator(color: AppColors.gold));
     }
@@ -185,7 +188,7 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
             Icon(Icons.search, size: 56, color: AppColors.textHint),
             const SizedBox(height: 12),
             const Text(
-              'Cerca una carta per aggiungerla\nalla tua Wishlist',
+              'Cerca una carta per aggiungerla\nalla tua Wishlist', // TODO: l10n
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textHint, fontSize: 14),
             ),
@@ -194,9 +197,9 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
       );
     }
     if (_results.isEmpty) {
-      return const Center(
-        child: Text('Nessun risultato trovato',
-            style: TextStyle(color: AppColors.textHint, fontSize: 15)),
+      return Center(
+        child: Text(l10n.wishlistNoResults,
+            style: const TextStyle(color: AppColors.textHint, fontSize: 15)),
       );
     }
     return ListView.builder(
@@ -266,7 +269,7 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
                 : IconButton(
                     icon: const Icon(Icons.favorite_border, color: AppColors.gold),
                     onPressed: () => _add(card),
-                    tooltip: 'Aggiungi alla Wishlist',
+                    tooltip: AppLocalizations.of(context)!.wishlistAddToWishlistTooltip,
                   ),
           ],
         ),

@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
@@ -76,7 +77,7 @@ class _StatsPageState extends State<StatsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Statistiche'),
+        title: Text(AppLocalizations.of(context)!.statsTitle),
       ),
       body: SafeArea(
         top: false,
@@ -180,7 +181,7 @@ class _StatsPageState extends State<StatsPage> {
                   child: const Icon(Icons.collections_bookmark, color: Colors.blue, size: 24),
                 ),
                 const SizedBox(width: 12),
-                const Text('Per Collezione', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(AppLocalizations.of(context)!.statsPerCollection, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 12),
@@ -201,7 +202,7 @@ class _StatsPageState extends State<StatsPage> {
                     ),
                     const SizedBox(width: 8),
                     Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
-                    Text('$cards carte', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                    Text(AppLocalizations.of(context)!.statsCardsCount(cards), style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                     const SizedBox(width: 12),
                     Text('€${value.toStringAsFixed(2)}',
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
@@ -236,7 +237,7 @@ class _StatsPageState extends State<StatsPage> {
                   child: const Icon(Icons.auto_awesome, color: Colors.amber, size: 24),
                 ),
                 const SizedBox(width: 12),
-                const Text('Per Rarità (top 10)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(AppLocalizations.of(context)!.statsPerRarity, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 12),
@@ -293,7 +294,7 @@ class _StatsPageState extends State<StatsPage> {
           ),
           child: const Icon(Icons.layers, color: Colors.orange, size: 30),
         ),
-        title: const Text('Espansioni', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(AppLocalizations.of(context)!.statsSetsSection, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         subtitle: Text(
           'Completamento set per ${widget.collectionName}',
           style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
@@ -353,17 +354,18 @@ class _ScopeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         _ToggleChip(
-          label: 'Collezione',
+          label: l10n.statsTabCollection,
           active: !isGlobal,
           onTap: () => onChanged(false),
         ),
         const SizedBox(width: 4),
         _ToggleChip(
-          label: 'Globale',
+          label: l10n.statsTabGlobal,
           active: isGlobal,
           onTap: () => onChanged(true),
         ),

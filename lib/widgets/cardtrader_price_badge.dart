@@ -100,7 +100,7 @@ class _CardtraderAllPricesSectionState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Attualmente nessun prezzo disponibile.',
+                  'Attualmente nessun prezzo disponibile.', // TODO: l10n
                   style: TextStyle(
                     fontSize: 11,
                     color: AppColors.textHint.withValues(alpha: 0.7),
@@ -115,7 +115,7 @@ class _CardtraderAllPricesSectionState
                       mode: LaunchMode.externalApplication,
                     ),
                     child: const Text(
-                      'Cerca su CardTrader ↗',
+                      'Cerca su CardTrader ↗', // TODO: l10n
                       style: TextStyle(
                         fontSize: 11,
                         color: AppColors.cardtraderTeal,
@@ -535,7 +535,7 @@ class _PriceBadge extends StatelessWidget {
                 // Catalog fallback (blueprintId==0): no link, no date.
                 if (isHistorical && price.syncedAt.isNotEmpty)
                   Text(
-                    'Ultimo: ${_formatDate(price.syncedAtDate)}',
+                    'Ultimo: ${_formatDate(price.syncedAtDate)}', // TODO: l10n
                     style: const TextStyle(
                       fontSize: 9,
                       color: Colors.orange,

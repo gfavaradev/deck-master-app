@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import '../services/admin_catalog_service.dart';
 import '../services/auth_service.dart';
@@ -156,7 +157,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
         _filterCards(_searchController.text);
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Modifica in attesa di pubblicazione'), duration: Duration(seconds: 2)),
+        SnackBar(content: Text(AppLocalizations.of(context)!.adminCollectionCardEditedPending), duration: const Duration(seconds: 2)),
       );
     } catch (e) { // ignore: empty_catches
       if (!mounted) return;
@@ -191,7 +192,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
         _filterCards(_searchController.text);
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Carta aggiunta — in attesa di pubblicazione'), duration: Duration(seconds: 2)),
+        SnackBar(content: Text(AppLocalizations.of(context)!.adminCollectionCardAddedPending), duration: const Duration(seconds: 2)),
       );
     } catch (e) { // ignore: empty_catches
       if (!mounted) return;
@@ -202,16 +203,17 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
   }
 
   Future<void> _deleteCard(Map<String, dynamic> card) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Elimina Carta'),
-        content: Text('Eliminare "${card['name']}" dal catalogo?'),
+        title: const Text('Elimina Carta'), // TODO: l10n
+        content: Text(l10n.adminCollectionDeleteMsg(card['name']?.toString() ?? '')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.btnCancel)),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Elimina', style: TextStyle(color: Colors.red)),
+            child: Text(l10n.btnDelete, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -250,16 +252,17 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
     final adminUid = _authService.currentUserId;
     if (adminUid == null) return;
 
+    final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Pubblica Modifiche'),
-        content: Text('Pubblicare ${_pendingChanges.length} modifiche su Firestore?'),
+        title: Text(l10n.adminCollectionTitle),
+        content: Text(l10n.adminCollectionPublishMsg(_pendingChanges.length)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.btnCancel)),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Pubblica'),
+            child: Text(l10n.adminCollectionTitle),
           ),
         ],
       ),
@@ -283,7 +286,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
         _isLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Modifiche pubblicate con successo!'), backgroundColor: Colors.green),
+        SnackBar(content: Text(AppLocalizations.of(context)!.adminCollectionPublishSuccess), backgroundColor: Colors.green),
       );
     } catch (e) { // ignore: empty_catches
       if (!mounted) return;
@@ -315,7 +318,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.upload),
-                  tooltip: 'Pubblica modifiche',
+                  tooltip: AppLocalizations.of(context)!.adminCollectionPublishTooltip,
                   onPressed: _publishChanges,
                 ),
                 Positioned(
@@ -334,7 +337,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
             ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Ricarica da Firestore',
+            tooltip: AppLocalizations.of(context)!.adminCollectionReloadTooltip,
             onPressed: () => _loadData(forceRefresh: true),
           ),
         ],
@@ -367,7 +370,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                     child: TextField(
                       controller: _searchController,
                       decoration: InputDecoration(
-                        hintText: 'Cerca per nome, ID o archetipo...',
+                        hintText: AppLocalizations.of(context)!.adminCollectionSearchHint,
                         prefixIcon: const Icon(Icons.search),
                         suffixIcon: _searchController.text.isNotEmpty
                             ? IconButton(
@@ -412,7 +415,7 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                 // Card list
                 Expanded(
                   child: _filteredCards.isEmpty
-                      ? const Center(child: Text('Nessuna carta trovata'))
+                      ? Center(child: Text(AppLocalizations.of(context)!.adminCollectionNoCards))
                       : ListView.builder(
                           itemCount: _filteredCards.length,
                           itemBuilder: (context, index) {

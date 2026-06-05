@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -47,10 +48,10 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     if (uid == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Sessione scaduta. Fai il logout e accedi di nuovo.'),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.adminHomeSessions),
             backgroundColor: Colors.red,
-            duration: Duration(seconds: 4),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -82,10 +83,10 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     } on _CancelledException {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Operazione annullata.'),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.adminHomeOperationCancelled),
             backgroundColor: Colors.orange,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -998,7 +999,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
                   MaterialPageRoute(builder: (_) => const AdminProPage()),
                 ),
                 icon: const Icon(Icons.manage_accounts, size: 16),
-                label: const Text('Gestisci Utenti Pro'),
+                label: Text(AppLocalizations.of(context)!.adminHomeManageProUsers),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.gold,
                   foregroundColor: Colors.black,
@@ -1168,16 +1169,16 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
               if (snap.hasError)
                 Text('Errore: ${snap.error}', style: const TextStyle(fontSize: 11, color: Colors.red))
               else if (!snap.hasData || snap.data!.isEmpty)
-                const Text('Nessun dato CT in cache locale.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary))
+                Text(AppLocalizations.of(context)!.adminHomeCtNoData, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary))
               else ...[
                 // Header row
-                const Row(
+                Row(
                   children: [
-                    SizedBox(width: 84),
-                    Expanded(child: Text('Catalogo', style: TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
-                    Expanded(child: Text('CT blueprint', style: TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
-                    Expanded(child: Text('Con prezzo', style: TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
-                    Expanded(child: Text('Diff.', style: TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
+                    const SizedBox(width: 84),
+                    Expanded(child: Text(AppLocalizations.of(context)!.adminHomeCtData, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
+                    Expanded(child: Text(AppLocalizations.of(context)!.adminHomeCtBlueprint, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
+                    Expanded(child: Text(AppLocalizations.of(context)!.adminHomeCtWithPrice, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
+                    Expanded(child: Text(AppLocalizations.of(context)!.adminHomeCtDiff, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -1642,7 +1643,7 @@ class AdminHomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Admin — Gestione Catalogo'),
+        title: Text(AppLocalizations.of(context)!.adminCatalogTitle),
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
       ),

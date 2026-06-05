@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -121,9 +122,10 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     if (widget.updateNotification != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('App aggiornata alla versione ${widget.updateNotification}'),
+              content: Text(l10n.msgAppUpdated(widget.updateNotification!)),
               duration: const Duration(seconds: 4),
               backgroundColor: Colors.green.shade700,
             ),
@@ -172,6 +174,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
   void _startPhase1Tutorial() {
     if (!TutorialService.instance.isActive || TutorialService.instance.phase != 1) return;
+    final l10n = AppLocalizations.of(context)!;
 
     TutorialCoachMark(
       targets: [
@@ -182,9 +185,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           contents: [
             TargetContent(
               align: ContentAlign.bottom,
-              child: const TutorialContentWidget(
-                title: 'Scanner Carta',
-                description: 'Scansiona le tue carte fisiche con la fotocamera per aggiungerle automaticamente alla collezione.',
+              child: TutorialContentWidget(
+                title: l10n.tutorialScannerTitle,
+                description: l10n.tutorialScannerDesc,
               ),
             ),
           ],
@@ -196,9 +199,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           contents: [
             TargetContent(
               align: ContentAlign.bottom,
-              child: const TutorialContentWidget(
-                title: 'Wishlist',
-                description: 'Aggiungi le carte che vuoi acquistare e imposta un prezzo obiettivo. Riceverai un avviso quando il prezzo scende.',
+              child: TutorialContentWidget(
+                title: l10n.tutorialWishlistTitle,
+                description: l10n.tutorialWishlistDesc,
               ),
             ),
           ],
@@ -210,9 +213,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           contents: [
             TargetContent(
               align: ContentAlign.bottom,
-              child: const TutorialContentWidget(
-                title: 'Analisi ROI',
-                description: 'Inserisci il prezzo pagato per ogni carta e scopri quanto vale il tuo investimento nel tempo.',
+              child: TutorialContentWidget(
+                title: l10n.tutorialRoiTitle,
+                description: l10n.tutorialRoiDesc,
               ),
             ),
           ],
@@ -220,7 +223,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       ],
       colorShadow: Colors.black,
       opacityShadow: 0.85,
-      textSkip: 'SALTA',
+      textSkip: l10n.tutorialSkip,
       onFinish: _onPhase1Done,
       onSkip: () { _onPhase1Done(); return true; },
     ).show(context: context);
@@ -259,7 +262,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             const Icon(Icons.emoji_events, color: Colors.black),
             const SizedBox(width: 10),
             Text(
-              'Sei salito al livello $newLevel! 🎉',
+              AppLocalizations.of(context)!.msgLevelUp(newLevel),
               style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
             ),
           ],
@@ -530,7 +533,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         } catch (e) { // ignore: empty_catches
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Errore aggiornamento ${info['collectionName'] ?? key}: $e')),
+              SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorUpdateCollection(info['collectionName'] ?? key, e.toString()))),
             );
           }
         }
@@ -552,8 +555,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         });
         if (successCount > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Catalogo aggiornato con successo!'),
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.msgCatalogUpdatedSuccess),
               backgroundColor: Colors.green,
             ),
           );
@@ -641,7 +644,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Errore ripristino $name: $e'),
+                  content: Text(AppLocalizations.of(context)!.msgErrorRestoreCollection(name, e.toString())),
                   backgroundColor: Colors.red,
                   duration: const Duration(seconds: 6),
                 ),
@@ -665,12 +668,12 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           });
           if (successCount > 0) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Catalogo ripristinato con successo!'), backgroundColor: Colors.green),
+              SnackBar(content: Text(AppLocalizations.of(context)!.msgCatalogRestoredSuccess), backgroundColor: Colors.green),
             );
           } else if (lastError != null) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Ripristino fallito: $lastError'),
+                content: Text(AppLocalizations.of(context)!.msgCatalogRestoreFailed(lastError.toString())),
                 backgroundColor: Colors.red,
                 duration: const Duration(seconds: 8),
               ),
@@ -772,11 +775,12 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             );
     }
 
+    final l10n = AppLocalizations.of(context)!;
     String appBarTitle;
     if (!inCollection) {
       appBarTitle = _isAdmin ? 'Admin — Gestione Catalogo' : 'Deck Master';
     } else {
-      const titles = ['Home', 'Le mie Carte', 'Catalogo', 'Raccolta', 'News'];
+      final titles = [l10n.navHome, l10n.navMyCards, l10n.navCatalog, l10n.navCollection, l10n.navNews];
       appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';
     }
 
@@ -802,11 +806,11 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             selectedIconTheme: const IconThemeData(color: AppColors.gold),
             selectedLabelTextStyle: const TextStyle(color: AppColors.gold, fontSize: 12),
             unselectedLabelTextStyle: TextStyle(color: AppColors.textHint, fontSize: 12),
-            destinations: const [
-              NavigationRailDestination(icon: Icon(Icons.style), label: Text('Carte')),
-              NavigationRailDestination(icon: Icon(Icons.search), label: Text('Catalogo')),
-              NavigationRailDestination(icon: Icon(Icons.book), label: Text('Raccolta')),
-              NavigationRailDestination(icon: Icon(Icons.newspaper_outlined), label: Text('News')),
+            destinations: [
+              NavigationRailDestination(icon: const Icon(Icons.style), label: Text(l10n.navCards)),
+              NavigationRailDestination(icon: const Icon(Icons.search), label: Text(l10n.navCatalog)),
+              NavigationRailDestination(icon: const Icon(Icons.book), label: Text(l10n.navCollection)),
+              NavigationRailDestination(icon: const Icon(Icons.newspaper_outlined), label: Text(l10n.navNews)),
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1),
@@ -834,7 +838,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         leading: inCollection
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
-                tooltip: 'Torna alla Home',
+                tooltip: l10n.tooltipBackToHome,
                 onPressed: _exitCollection,
               )
             : null,
@@ -845,7 +849,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             IconButton(
               key: _scannerBtnKey,
               icon: const Icon(Icons.document_scanner_outlined),
-              tooltip: 'Scansiona carta',
+              tooltip: l10n.tooltipScanCard,
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -859,7 +863,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           IconButton(
             key: _wishlistBtnKey,
             icon: const Icon(Icons.favorite_border),
-            tooltip: 'Wishlist',
+            tooltip: l10n.tooltipWishlist,
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const WishlistPage()),
@@ -868,7 +872,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           IconButton(
             key: _roiBtnKey,
             icon: const Icon(Icons.trending_up),
-            tooltip: 'Analisi ROI',
+            tooltip: l10n.tooltipRoi,
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const RoiPage()),
@@ -879,7 +883,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             children: [
               IconButton(
                 icon: const Icon(Icons.notifications_outlined),
-                tooltip: 'Notifiche',
+                tooltip: l10n.tooltipNotifications,
                 onPressed: () async {
                   final result = await Navigator.push<Map<String, dynamic>>(
                     context,
@@ -961,7 +965,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               children: [
                 IconButton(
                   icon: const Icon(Icons.cloud_download_outlined),
-                  tooltip: 'Aggiornamento catalogo disponibile — tocca per scaricare',
+                  tooltip: l10n.tooltipCatalogUpdate,
                   onPressed: _startCatalogDownload,
                 ),
                 Positioned(
@@ -980,7 +984,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
-            tooltip: 'Statistiche',
+            tooltip: l10n.tooltipStats,
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -992,7 +996,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             ),
           ),
           PopupMenuButton<String>(
-            tooltip: 'Menu utente',
+            tooltip: l10n.tooltipUserMenu,
             onSelected: (value) async {
               if (value == 'profile') {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
@@ -1002,7 +1006,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 final shown = await _checkForAppUpdate(force: true);
                 if (!shown && mounted) {
                   messenger.showSnackBar(
-                    const SnackBar(content: Text('Sei già all\'ultima versione disponibile.')),
+                    SnackBar(content: Text(l10n.msgAlreadyLatestVersion)),
                   );
                 }
               } else if (value == 'settings') {
@@ -1022,52 +1026,52 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'profile',
                 child: ListTile(
-                  leading: Icon(Icons.manage_accounts_outlined),
-                  title: Text('Profilo'),
+                  leading: const Icon(Icons.manage_accounts_outlined),
+                  title: Text(l10n.menuProfile),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'settings',
                 child: ListTile(
-                  leading: Icon(Icons.settings),
-                  title: Text('Impostazioni'),
+                  leading: const Icon(Icons.settings),
+                  title: Text(l10n.menuSettings),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'check_update',
                 child: ListTile(
-                  leading: Icon(Icons.system_update_alt_rounded),
-                  title: Text('Controlla aggiornamenti'),
+                  leading: const Icon(Icons.system_update_alt_rounded),
+                  title: Text(l10n.menuCheckUpdates),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'donations',
                 child: ListTile(
-                  leading: Icon(Icons.coffee, color: Color(0xFFFF6B35)),
-                  title: Text('Offrimi un caffè',
-                      style: TextStyle(color: Color(0xFFFF6B35), fontWeight: FontWeight.w600)),
+                  leading: const Icon(Icons.coffee, color: Color(0xFFFF6B35)),
+                  title: Text(l10n.menuDonations,
+                      style: const TextStyle(color: Color(0xFFFF6B35), fontWeight: FontWeight.w600)),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'support',
                 child: ListTile(
-                  leading: Icon(Icons.support_agent),
-                  title: Text('Supporto'),
+                  leading: const Icon(Icons.support_agent),
+                  title: Text(l10n.menuSupport),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'logout',
                 child: ListTile(
-                  leading: Icon(Icons.logout, color: Colors.red),
-                  title: Text('Logout', style: TextStyle(color: Colors.red)),
+                  leading: const Icon(Icons.logout, color: Colors.red),
+                  title: Text(l10n.btnLogout, style: const TextStyle(color: Colors.red)),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -1104,12 +1108,12 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               backgroundColor: AppColors.bgMedium,
               selectedItemColor: AppColors.gold,
               unselectedItemColor: AppColors.textHint,
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-                BottomNavigationBarItem(icon: Icon(Icons.style), label: 'Carte'),
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Catalogo'),
-                BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Raccolta'),
-                BottomNavigationBarItem(icon: Icon(Icons.newspaper_outlined), label: 'News'),
+              items: [
+                BottomNavigationBarItem(icon: const Icon(Icons.home), label: l10n.navHome),
+                BottomNavigationBarItem(icon: const Icon(Icons.style), label: l10n.navCards),
+                BottomNavigationBarItem(icon: const Icon(Icons.search), label: l10n.navCatalog),
+                BottomNavigationBarItem(icon: const Icon(Icons.book), label: l10n.navCollection),
+                BottomNavigationBarItem(icon: const Icon(Icons.newspaper_outlined), label: l10n.navNews),
               ],
               onTap: _onNavTap,
             )
@@ -1126,9 +1130,9 @@ enum _DownloadPhase { connecting, downloading, saving }
 class _CollectionTheme {
   final Color accent;
   final IconData icon;
-  final String connecting;
-  final String downloading;
-  final String saving;
+  final String Function(AppLocalizations) connecting;
+  final String Function(AppLocalizations) downloading;
+  final String Function(AppLocalizations) saving;
   const _CollectionTheme({
     required this.accent,
     required this.icon,
@@ -1142,25 +1146,35 @@ const _kCollectionThemes = <String, _CollectionTheme>{
   'yugioh': _CollectionTheme(
     accent: Color(0xFF9B59B6),
     icon: Icons.auto_fix_high_rounded,
-    connecting: 'Connessione al Mondo delle Ombre...',
-    downloading: 'Maximillion Pegasus sta creando le carte...',
-    saving: 'Il Faraone sigilla le carte nel Dueling Book...',
+    connecting: _yugiohConnecting,
+    downloading: _yugiohDownloading,
+    saving: _yugiohSaving,
   ),
   'pokemon': _CollectionTheme(
     accent: Color(0xFFFFCB05),
     icon: Icons.catching_pokemon_rounded,
-    connecting: 'Connessione al Lab. del Prof. Oak...',
-    downloading: 'Il Prof. Oak sta catalogando i Pokémon...',
-    saving: 'Archiviazione nel Pokédex Nazionale...',
+    connecting: _pokemonConnecting,
+    downloading: _pokemonDownloading,
+    saving: _pokemonSaving,
   ),
   'onepiece': _CollectionTheme(
     accent: Color(0xFFE74C3C),
     icon: Icons.sailing_rounded,
-    connecting: 'Navigazione verso il Grand Line...',
-    downloading: 'Shanks sta distribuendo le carte...',
-    saving: 'Il Mugiwara Crew carica le carte...',
+    connecting: _onepieceConnecting,
+    downloading: _onepieceDownloading,
+    saving: _onepieceSaving,
   ),
 };
+
+String _yugiohConnecting(AppLocalizations l10n) => l10n.downloadYugiohConnecting;
+String _yugiohDownloading(AppLocalizations l10n) => l10n.downloadYugiohDownloading;
+String _yugiohSaving(AppLocalizations l10n) => l10n.downloadYugiohSaving;
+String _pokemonConnecting(AppLocalizations l10n) => l10n.downloadPokemonConnecting;
+String _pokemonDownloading(AppLocalizations l10n) => l10n.downloadPokemonDownloading;
+String _pokemonSaving(AppLocalizations l10n) => l10n.downloadPokemonSaving;
+String _onepieceConnecting(AppLocalizations l10n) => l10n.downloadOnepieceConnecting;
+String _onepieceDownloading(AppLocalizations l10n) => l10n.downloadOnepieceDownloading;
+String _onepieceSaving(AppLocalizations l10n) => l10n.downloadOnepieceSaving;
 
 // ─── Download popover card ────────────────────────────────────────────────────
 
@@ -1189,16 +1203,17 @@ class _DownloadPopoverCard extends StatelessWidget {
 
     final pct = progress != null ? '${(progress! * 100).toInt()}%' : '···';
 
+    final l10n = AppLocalizations.of(context)!;
     final phaseMessage = theme == null
         ? switch (phase) {
-            _DownloadPhase.connecting  => 'Connessione in corso...',
-            _DownloadPhase.downloading => 'Download in corso...',
-            _DownloadPhase.saving      => 'Salvataggio in corso...',
+            _DownloadPhase.connecting  => l10n.downloadPhaseConnecting,
+            _DownloadPhase.downloading => l10n.downloadPhaseDownloading,
+            _DownloadPhase.saving      => l10n.downloadPhaseSaving,
           }
         : switch (phase) {
-            _DownloadPhase.connecting  => theme.connecting,
-            _DownloadPhase.downloading => theme.downloading,
-            _DownloadPhase.saving      => theme.saving,
+            _DownloadPhase.connecting  => theme.connecting(l10n),
+            _DownloadPhase.downloading => theme.downloading(l10n),
+            _DownloadPhase.saving      => theme.saving(l10n),
           };
 
     final multiCollection = index > 0 && total > 1;
@@ -1286,9 +1301,9 @@ class _DownloadPopoverCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Tocca fuori per chiudere',
-                  style: TextStyle(color: AppColors.textHint, fontSize: 10),
+                Text(
+                  l10n.popoverTapToClose,
+                  style: const TextStyle(color: AppColors.textHint, fontSize: 10),
                 ),
               ],
             ),

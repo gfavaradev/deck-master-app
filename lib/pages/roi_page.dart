@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../services/data_repository.dart';
@@ -47,9 +48,11 @@ class _RoiPageState extends State<RoiPage> {
           contents: [
             TargetContent(
               align: ContentAlign.bottom,
-              child: const TutorialContentWidget(
-                title: 'Valore Portfolio',
-                description: 'Qui vedi il valore totale delle carte che possiedi. Inserisci il prezzo d\'acquisto di ogni carta per calcolare il tuo ROI e scoprire quanto è cresciuto il tuo investimento.',
+              child: Builder(
+                builder: (ctx) => TutorialContentWidget(
+                  title: AppLocalizations.of(ctx)!.roiPortfolioTitle,
+                  description: 'Qui vedi il valore totale delle carte che possiedi. Inserisci il prezzo d\'acquisto di ogni carta per calcolare il tuo ROI e scoprire quanto è cresciuto il tuo investimento.', // TODO: l10n
+                ),
               ),
             ),
           ],
@@ -108,10 +111,11 @@ class _RoiPageState extends State<RoiPage> {
       text: currentPrice != null ? currentPrice.toStringAsFixed(2) : '',
     );
 
+    final l10n = AppLocalizations.of(context)!;
     final result = await showDialog<double?>(
       context: context,
       builder: (ctx) => AppDialog(
-        title: 'Prezzo d\'acquisto',
+        title: l10n.roiPurchasePriceTitle,
         icon: Icons.euro,
         iconColor: AppColors.gold,
         content: Column(
@@ -131,11 +135,11 @@ class _RoiPageState extends State<RoiPage> {
             TextField(
               controller: ctrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Prezzo pagato per copia (€)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.roiPurchasePriceLabel,
+                border: const OutlineInputBorder(),
                 prefixText: '€ ',
-                helperText: 'Inserisci il prezzo per singola copia',
+                helperText: 'Inserisci il prezzo per singola copia', // TODO: l10n
               ),
               autofocus: true,
             ),
@@ -144,19 +148,19 @@ class _RoiPageState extends State<RoiPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annulla'),
+            child: Text(l10n.btnCancel),
           ),
           if (currentPrice != null)
             TextButton(
               onPressed: () => Navigator.pop(ctx, -1.0),
-              child: const Text('Rimuovi', style: TextStyle(color: AppColors.error)),
+              child: Text(l10n.btnDelete, style: const TextStyle(color: AppColors.error)),
             ),
           FilledButton(
             onPressed: () {
               final val = double.tryParse(ctrl.text.replaceAll(',', '.'));
               Navigator.pop(ctx, val ?? 0.0);
             },
-            child: const Text('Salva'),
+            child: Text(l10n.btnSave),
           ),
         ],
       ),
@@ -174,7 +178,7 @@ class _RoiPageState extends State<RoiPage> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Analisi ROI'),
+        title: Text(AppLocalizations.of(context)!.roiTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
@@ -212,15 +216,15 @@ class _RoiPageState extends State<RoiPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Portafoglio',
-              style: TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 1.2)),
+          Text(AppLocalizations.of(context)!.roiPortfolio,
+              style: const TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 1.2)),
           const SizedBox(height: 8),
           Row(
             key: _kpiKey,
             children: [
               Expanded(
                 child: _KpiCard(
-                  label: 'Valore totale',
+                  label: AppLocalizations.of(context)!.roiTotalValue,
                   value: '€${currentValue.toStringAsFixed(2)}',
                   color: AppColors.gold,
                   icon: Icons.account_balance_wallet_outlined,
@@ -251,28 +255,28 @@ class _RoiPageState extends State<RoiPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('ROI',
-              style: TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 1.2)),
+          Text(AppLocalizations.of(context)!.roiSection,
+              style: const TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 1.2)),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _KpiCard(label: 'Investito', value: '€${invested.toStringAsFixed(2)}', color: AppColors.blue, icon: Icons.payments_outlined)),
+              Expanded(child: _KpiCard(label: AppLocalizations.of(context)!.roiInvested, value: '€${invested.toStringAsFixed(2)}', color: AppColors.blue, icon: Icons.payments_outlined)),
               const SizedBox(width: 8),
-              Expanded(child: _KpiCard(label: 'Valore CT', value: '€${ownedValue.toStringAsFixed(2)}', color: AppColors.cardtraderTeal, icon: Icons.trending_up)),
+              Expanded(child: _KpiCard(label: AppLocalizations.of(context)!.roiValueCt, value: '€${ownedValue.toStringAsFixed(2)}', color: AppColors.cardtraderTeal, icon: Icons.trending_up)),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
               Expanded(child: _KpiCard(
-                label: 'Guadagno',
+                label: AppLocalizations.of(context)!.roiGain,
                 value: '${gain >= 0 ? '+' : ''}€${gain.toStringAsFixed(2)}',
                 color: gainColor,
                 icon: gain >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
               )),
               const SizedBox(width: 8),
               Expanded(child: _KpiCard(
-                label: 'ROI %',
+                label: AppLocalizations.of(context)!.roiPercent,
                 value: '${roiPct >= 0 ? '+' : ''}${roiPct.toStringAsFixed(1)}%',
                 color: gainColor,
                 icon: Icons.percent,
@@ -292,12 +296,12 @@ class _RoiPageState extends State<RoiPage> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Row(
         children: [
-          const Text('Carte tracciate',
-              style: TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 1.2)),
+          Text(AppLocalizations.of(context)!.roiTrackedCards,
+              style: const TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 1.2)),
           const Spacer(),
           if (cardCount > 0)
             Text(
-              '$cardCount carte',
+              AppLocalizations.of(context)!.statsCardsCount(cardCount),
               style: const TextStyle(color: AppColors.textHint, fontSize: 12),
             ),
         ],
@@ -355,8 +359,8 @@ class _RoiPageState extends State<RoiPage> {
                       foregroundColor: color,
                       side: BorderSide(color: color.withValues(alpha: 0.4)),
                     ),
-                    icon: Icon(Icons.add, size: 18),
-                    label: Text('Aggiungi prezzi $label'),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text(AppLocalizations.of(ctx2)!.roiAddPricesBtn(label)),
                   ),
                 );
               }).toList(),

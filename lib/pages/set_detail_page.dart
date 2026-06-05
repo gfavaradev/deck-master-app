@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -84,6 +85,7 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final owned = widget.ownedCards;
     final total = widget.totalCards;
     final pct = total > 0 ? owned / total : 0.0;
@@ -107,9 +109,9 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
           unselectedLabelColor: AppColors.textSecondary,
           indicatorColor: AppColors.gold,
           tabs: [
-            Tab(text: 'Tutte (${_allCards.length})'),
-            Tab(text: 'Possedute (${_ownedCards.length})'),
-            Tab(text: 'Mancanti (${_missingCards.length})'),
+            Tab(text: 'Tutte (${_allCards.length})'), // TODO: l10n
+            Tab(text: 'Possedute (${_ownedCards.length})'), // TODO: l10n
+            Tab(text: 'Mancanti (${_missingCards.length})'), // TODO: l10n
           ],
         ),
       ),
@@ -128,7 +130,7 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
                           const Icon(Icons.error_outline, size: 48, color: AppColors.error),
                           const SizedBox(height: 12),
                           Text(
-                            'Errore nel caricamento',
+                            'Errore nel caricamento', // TODO: l10n
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                           ),
                           const SizedBox(height: 8),
@@ -141,7 +143,7 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
                           FilledButton.icon(
                             onPressed: _loadCards,
                             icon: const Icon(Icons.refresh),
-                            label: const Text('Riprova'),
+                            label: Text(l10n.setDetailRetry),
                           ),
                         ],
                       ),
@@ -166,9 +168,12 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
 
   Widget _buildList(List<Map<String, dynamic>> cards) {
     if (cards.isEmpty) {
-      return const Center(
-        child: Text('Nessuna carta.', style: TextStyle(color: AppColors.textHint)),
-      );
+      return Builder(builder: (context) {
+        final l10n = AppLocalizations.of(context)!;
+        return Center(
+          child: Text(l10n.setDetailNoCards, style: const TextStyle(color: AppColors.textHint)),
+        );
+      });
     }
     return LayoutBuilder(builder: (context, constraints) {
       final isWide = constraints.maxWidth > 600;

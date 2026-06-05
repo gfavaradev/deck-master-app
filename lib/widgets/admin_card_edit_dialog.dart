@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -336,6 +337,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Dialog(
       child: Container(
         width: 860,
@@ -392,7 +394,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
+                TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.btnCancel)),
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () => _saveCard(),
@@ -400,7 +402,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                     backgroundColor: Colors.deepPurple,
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text('Salva Carta'),
+                  child: Text(l10n.adminCardEditSaveBtn),
                 ),
               ],
             ),
@@ -438,7 +440,9 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
           _field('Descrizione Inglese', _descEnController, maxLines: 4),
           _sectionTitle('Immagine Carta'),
           StatefulBuilder(
-            builder: (ctx, setS) => Column(
+            builder: (ctx, setS) {
+              final l10nCtx = AppLocalizations.of(ctx)!;
+              return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
@@ -449,7 +453,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                         controller: _imageUrlController,
                         decoration: InputDecoration(
                           labelText: 'Image URL',
-                          hintText: 'Carica dal dispositivo →',
+                          hintText: l10nCtx.adminCardEditImageHint,
                           border: const OutlineInputBorder(),
                           isDense: true,
                           suffixIcon: _imageUrlController.text.contains('backblazeb2.com') || _imageUrlController.text.contains('cloudinary.com')
@@ -468,7 +472,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                     else
                       IconButton(
                         icon: const Icon(Icons.upload_file, color: Colors.orange),
-                        tooltip: 'Carica dal dispositivo',
+                        tooltip: l10nCtx.adminCardEditImageTooltip,
                         onPressed: () async {
                           setS(() => _imageUploading = true);
                           try {
@@ -484,8 +488,8 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                               setS(() => _imageUrlController.text = url);
                             } else if (ctx.mounted && url == null) {
                               ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Upload non riuscito o timeout'),
+                                SnackBar(
+                                  content: Text(l10nCtx.adminCardEditUploadFailed),
                                   backgroundColor: Colors.red,
                                 ),
                               );
@@ -511,7 +515,8 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                     ),
                   ),
               ],
-            ),
+            );
+            },
           ),
           const SizedBox(height: 12),
           if (_catalog == 'yugioh') ...[
@@ -786,13 +791,14 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
   // ─── Tab: Stats ──────────────────────────────────────────────────────────────
 
   Widget _buildStatsTab() {
+    final l10n = AppLocalizations.of(context)!;
     if (_catalog == 'pokemon') {
       return _buildPokemonMechanicsSection();
     }
     if (_catalog != 'yugioh') {
-      return const Center(
-        child: Text('Statistiche non applicabili per questa collezione.',
-            style: TextStyle(color: Colors.grey)),
+      return Center(
+        child: Text(l10n.adminCardEditStatsNA,
+            style: const TextStyle(color: Colors.grey)),
       );
     }
     return SingleChildScrollView(
@@ -834,9 +840,9 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
               ),
             ],
           ] else
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(child: Text('Le Spell e Trap non hanno statistiche mostro', style: TextStyle(color: Colors.grey))),
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(child: Text(l10n.adminCardEditSpellTrapNA, style: const TextStyle(color: Colors.grey))),
             ),
         ],
       ),
@@ -846,6 +852,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
   // ─── Pokemon Mechanics Section ───────────────────────────────────────────────
 
   Widget _buildPokemonMechanicsSection() {
+    final l10n = AppLocalizations.of(context)!;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -859,12 +866,12 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
               TextButton.icon(
                 onPressed: () => _addPokemonAttack(),
                 icon: const Icon(Icons.add, size: 16),
-                label: const Text('Aggiungi'),
+                label: Text(l10n.btnAdd),
               ),
             ],
           ),
           if (_pkAttacks.isEmpty)
-            const Text('Nessun attacco.', style: TextStyle(color: Colors.grey, fontSize: 12))
+            Text(l10n.adminCardEditNoAttacks, style: const TextStyle(color: Colors.grey, fontSize: 12))
           else
             ..._pkAttacks.asMap().entries.map((e) => Card(
               margin: const EdgeInsets.only(bottom: 6),
@@ -894,12 +901,12 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
               TextButton.icon(
                 onPressed: () => _addPokemonAbility(),
                 icon: const Icon(Icons.add, size: 16),
-                label: const Text('Aggiungi'),
+                label: Text(l10n.btnAdd),
               ),
             ],
           ),
           if (_pkAbilities.isEmpty)
-            const Text('Nessuna abilità.', style: TextStyle(color: Colors.grey, fontSize: 12))
+            Text(l10n.adminCardEditNoAbilities, style: const TextStyle(color: Colors.grey, fontSize: 12))
           else
             ..._pkAbilities.asMap().entries.map((e) => Card(
               margin: const EdgeInsets.only(bottom: 6),
@@ -1008,55 +1015,58 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          title: Text(initial == null ? 'Nuovo Attacco' : 'Modifica Attacco'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nome Attacco *', border: OutlineInputBorder())),
-                const SizedBox(height: 8),
-                const Text('Costo Energia:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 4,
-                  children: energyTypes.map((t) => FilterChip(
-                    label: Text(t, style: const TextStyle(fontSize: 10)),
-                    selected: cost.contains(t),
-                    onSelected: (v) => setS(() {
-                      if (v) { cost.add(t); } else { cost.remove(t); }
-                    }),
-                  )).toList(),
-                ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(child: TextField(controller: damageCtrl, decoration: const InputDecoration(labelText: 'Danno (es. 120)', border: OutlineInputBorder()))),
-                ]),
-                const SizedBox(height: 8),
-                TextField(controller: textCtrl, decoration: const InputDecoration(labelText: 'Testo Effetto', border: OutlineInputBorder()), maxLines: 3),
-              ],
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx)!;
+        return StatefulBuilder(
+          builder: (ctx, setS) => AlertDialog(
+            title: Text(initial == null ? l10n.adminCardEditNewAttackTitle : l10n.adminCardEditEditAttackTitle),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nome Attacco *', border: OutlineInputBorder())),
+                  const SizedBox(height: 8),
+                  const Text('Costo Energia:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 4,
+                    children: energyTypes.map((t) => FilterChip(
+                      label: Text(t, style: const TextStyle(fontSize: 10)),
+                      selected: cost.contains(t),
+                      onSelected: (v) => setS(() {
+                        if (v) { cost.add(t); } else { cost.remove(t); }
+                      }),
+                    )).toList(),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Expanded(child: TextField(controller: damageCtrl, decoration: const InputDecoration(labelText: 'Danno (es. 120)', border: OutlineInputBorder()))),
+                  ]),
+                  const SizedBox(height: 8),
+                  TextField(controller: textCtrl, decoration: const InputDecoration(labelText: 'Testo Effetto', border: OutlineInputBorder()), maxLines: 3),
+                ],
+              ),
             ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.btnCancel)),
+              ElevatedButton(
+                onPressed: () {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  Navigator.pop(ctx, {
+                    'name': nameCtrl.text.trim(),
+                    'cost': cost,
+                    'convertedEnergyCost': cost.length,
+                    'damage': damageCtrl.text.trim(),
+                    'text': textCtrl.text.trim(),
+                  });
+                },
+                child: Text(l10n.btnSave),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
-            ElevatedButton(
-              onPressed: () {
-                if (nameCtrl.text.trim().isEmpty) return;
-                Navigator.pop(ctx, {
-                  'name': nameCtrl.text.trim(),
-                  'cost': cost,
-                  'convertedEnergyCost': cost.length,
-                  'damage': damageCtrl.text.trim(),
-                  'text': textCtrl.text.trim(),
-                });
-              },
-              child: const Text('Salva'),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
 
     nameCtrl.dispose(); damageCtrl.dispose(); textCtrl.dispose();
@@ -1082,36 +1092,39 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          title: Text(initial == null ? 'Nuova Abilità' : 'Modifica Abilità'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nome Abilità *', border: OutlineInputBorder())),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: abilityType,
-                decoration: const InputDecoration(labelText: 'Tipo', border: OutlineInputBorder()),
-                items: ['Ability', 'Pokémon Power'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                onChanged: (v) => setS(() => abilityType = v!),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx)!;
+        return StatefulBuilder(
+          builder: (ctx, setS) => AlertDialog(
+            title: Text(initial == null ? l10n.adminCardEditNewAbilityTitle : l10n.adminCardEditEditAbilityTitle),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nome Abilità *', border: OutlineInputBorder())),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: abilityType,
+                  decoration: const InputDecoration(labelText: 'Tipo', border: OutlineInputBorder()),
+                  items: ['Ability', 'Pokémon Power'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                  onChanged: (v) => setS(() => abilityType = v!),
+                ),
+                const SizedBox(height: 8),
+                TextField(controller: textCtrl, decoration: const InputDecoration(labelText: 'Testo Effetto *', border: OutlineInputBorder()), maxLines: 3),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.btnCancel)),
+              ElevatedButton(
+                onPressed: () {
+                  if (nameCtrl.text.trim().isEmpty || textCtrl.text.trim().isEmpty) return;
+                  Navigator.pop(ctx, {'name': nameCtrl.text.trim(), 'type': abilityType, 'text': textCtrl.text.trim()});
+                },
+                child: Text(l10n.btnSave),
               ),
-              const SizedBox(height: 8),
-              TextField(controller: textCtrl, decoration: const InputDecoration(labelText: 'Testo Effetto *', border: OutlineInputBorder()), maxLines: 3),
             ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
-            ElevatedButton(
-              onPressed: () {
-                if (nameCtrl.text.trim().isEmpty || textCtrl.text.trim().isEmpty) return;
-                Navigator.pop(ctx, {'name': nameCtrl.text.trim(), 'type': abilityType, 'text': textCtrl.text.trim()});
-              },
-              child: const Text('Salva'),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
 
     nameCtrl.dispose(); textCtrl.dispose();
@@ -1168,6 +1181,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
   // ─── Tab: Set per Lingua ─────────────────────────────────────────────────────
 
   Widget _buildSetsTab() {
+    final l10n = AppLocalizations.of(context)!;
     final hasEnSets = _setsByLanguage['en']?.isNotEmpty ?? false;
     return Column(
       children: [
@@ -1185,7 +1199,7 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
               ElevatedButton.icon(
                 onPressed: hasEnSets ? _generateSetsFromEn : null,
                 icon: const Icon(Icons.auto_fix_high, size: 15),
-                label: const Text('Genera da EN'),
+                label: Text(l10n.adminCardEditGenerateFromEn),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,
@@ -1223,13 +1237,13 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
                   ),
                   trailing: IconButton(
                     icon: const Icon(Icons.add_circle_outline, color: Colors.orange),
-                    tooltip: 'Aggiungi set',
+                    tooltip: l10n.adminCardEditAddSetTooltip,
                     onPressed: () => _addSet(lang),
                   ),
                   children: sets.isEmpty
-                      ? [const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Text('Nessun set per questa lingua.', style: TextStyle(color: Colors.grey)))]
+                      ? [Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(l10n.adminCardEditSetsNoData, style: const TextStyle(color: Colors.grey)))]
                       : sets.asMap().entries.map((entry) {
                           final i = entry.key;
                           final s = entry.value;
@@ -1404,78 +1418,81 @@ class _AdminCardEditDialogState extends State<AdminCardEditDialog>
     if (!mounted) return null;
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setS) {
-          return AlertDialog(
-            title: Text('${initialData == null ? 'Aggiungi' : 'Modifica'} Set — $langLabel'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _dialogField(setCodeCtrl, 'Set Code *', 'es. LOB-EN001'),
-                  const SizedBox(height: 12),
-                  // Set Name con autocomplete
-                  _autocompleteField(
-                    label: 'Set Name *',
-                    initialValue: currentSetName,
-                    suggestions: setNameSugs,
-                    onChanged: (v) => currentSetName = v,
-                  ),
-                  const SizedBox(height: 12),
-                  // Rarità con autocomplete
-                  _autocompleteField(
-                    label: 'Rarità *',
-                    initialValue: currentRarity,
-                    suggestions: raritySugs,
-                    onChanged: (v) => currentRarity = v,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: priceCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Prezzo (€)',
-                      hintText: 'es. 4.50',
-                      border: OutlineInputBorder(),
-                      prefixText: '€ ',
+      builder: (dialogCtx) {
+        final l10n = AppLocalizations.of(dialogCtx)!;
+        return StatefulBuilder(
+          builder: (ctx, setS) {
+            return AlertDialog(
+              title: Text('${initialData == null ? 'Aggiungi' : 'Modifica'} Set — $langLabel'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _dialogField(setCodeCtrl, 'Set Code *', 'es. LOB-EN001'),
+                    const SizedBox(height: 12),
+                    // Set Name con autocomplete
+                    _autocompleteField(
+                      label: 'Set Name *',
+                      initialValue: currentSetName,
+                      suggestions: setNameSugs,
+                      onChanged: (v) => currentSetName = v,
                     ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-                    ],
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    // Rarità con autocomplete
+                    _autocompleteField(
+                      label: 'Rarità *',
+                      initialValue: currentRarity,
+                      suggestions: raritySugs,
+                      onChanged: (v) => currentRarity = v,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: priceCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Prezzo (€)',
+                        hintText: 'es. 4.50',
+                        border: OutlineInputBorder(),
+                        prefixText: '€ ',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
-              ElevatedButton(
-                onPressed: () async {
-                  if (setCodeCtrl.text.trim().isEmpty ||
-                      currentSetName.trim().isEmpty ||
-                      currentRarity.trim().isEmpty) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(content: Text('Tutti i campi sono obbligatori')),
-                    );
-                    return;
-                  }
-                  await AdminSuggestionsService.addSetName(lang, currentSetName.trim());
-                  await AdminSuggestionsService.addRarity(lang, currentRarity.trim());
-                  if (ctx.mounted) {
-                    Navigator.pop(ctx, {
-                      'set_code': setCodeCtrl.text.trim(),
-                      'set_name': currentSetName.trim(),
-                      'rarity': currentRarity.trim(),
-                      'set_price': double.tryParse(priceCtrl.text) ?? 0.0,
-                    });
-                  }
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-                child: const Text('Salva'),
-              ),
-            ],
-          );
-        },
-      ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.btnCancel)),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (setCodeCtrl.text.trim().isEmpty ||
+                        currentSetName.trim().isEmpty ||
+                        currentRarity.trim().isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Tutti i campi sono obbligatori')),
+                      );
+                      return;
+                    }
+                    await AdminSuggestionsService.addSetName(lang, currentSetName.trim());
+                    await AdminSuggestionsService.addRarity(lang, currentRarity.trim());
+                    if (ctx.mounted) {
+                      Navigator.pop(ctx, {
+                        'set_code': setCodeCtrl.text.trim(),
+                        'set_name': currentSetName.trim(),
+                        'rarity': currentRarity.trim(),
+                        'set_price': double.tryParse(priceCtrl.text) ?? 0.0,
+                      });
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                  child: Text(l10n.btnSave),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
     for (final c in [setCodeCtrl, priceCtrl]) {

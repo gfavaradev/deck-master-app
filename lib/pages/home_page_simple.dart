@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -86,11 +87,12 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     final allEmpty = _unlockedCollections.isEmpty && _availableCollections.isEmpty;
     if (allEmpty) return;
 
+    final l10n = AppLocalizations.of(context)!;
     final hasUnlocked = _unlockedCollections.isNotEmpty;
-    final title = hasUnlocked ? 'La tua Collezione' : 'Sblocca una Collezione';
+    final title = hasUnlocked ? l10n.tutorialCollectionTitle : l10n.tutorialUnlockCollectionTitle;
     final desc = hasUnlocked
-        ? 'Tocca questa card per aprire la tua collezione e iniziare ad aggiungere le tue carte!'
-        : 'Tocca questa card per sbloccare la tua prima collezione. È completamente gratuita!';
+        ? l10n.tutorialCollectionDesc
+        : l10n.tutorialUnlockCollectionDesc;
 
     TutorialCoachMark(
       targets: [
@@ -109,7 +111,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
       ],
       colorShadow: Colors.black,
       opacityShadow: 0.85,
-      textSkip: 'SALTA',
+      textSkip: l10n.tutorialSkip,
       onFinish: _onPhase0Done,
       onSkip: () { _onPhase0Done(); return true; },
     ).show(context: context);
@@ -183,17 +185,18 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   }
 
   void _showFreeUnlockDialog(CollectionModel collection) {
+    final l10n = AppLocalizations.of(context)!;
     final isFirst = _isFirstCollection;
     showDialog<bool>(
       context: context,
       builder: (_) => AppConfirmDialog(
-        title: 'Sblocca ${collection.name}',
+        title: l10n.homeUnlockTitle(collection.name),
         icon: isFirst ? Icons.lock_open_outlined : Icons.workspace_premium,
         iconColor: isFirst ? AppColors.blue : AppColors.gold,
         message: isFirst
-            ? 'Vuoi aggiungere ${collection.name} come tua prima collezione? È completamente gratuita!'
-            : 'Con il piano Pro sblocchi tutte le collezioni senza pubblicità.',
-        confirmLabel: 'Sblocca',
+            ? l10n.homeUnlockFirstMsg(collection.name)
+            : l10n.homeUnlockProMsg,
+        confirmLabel: l10n.homeUnlockBtn,
         confirmColor: isFirst ? AppColors.blue : AppColors.gold,
       ),
     ).then((confirmed) {
@@ -202,19 +205,20 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   }
 
   void _showRewardedUnlockDialog(CollectionModel collection) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog<void>(
       context: context,
       builder: (ctx) => AppDialog(
-        title: 'Sblocca ${collection.name}',
+        title: l10n.homeWatchVideoTitle(collection.name),
         icon: Icons.ondemand_video_outlined,
         iconColor: AppColors.blue,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Guarda un breve video per sbloccare questa collezione gratuitamente.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+            Text(
+              l10n.homeWatchVideoMsg,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
             ),
             const SizedBox(height: 16),
             Container(
@@ -228,10 +232,10 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                 children: [
                   const Icon(Icons.workspace_premium, color: AppColors.gold, size: 18),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Con il piano Pro sblocchi tutto senza pubblicità.',
-                      style: TextStyle(color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w600),
+                      l10n.homeWatchVideoProNote,
+                      style: const TextStyle(color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ),
                   TextButton(
@@ -245,7 +249,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    child: const Text('Vai Pro', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    child: Text(l10n.btnGoPro, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -256,13 +260,13 @@ class _HomePageSimpleState extends State<HomePageSimple> {
           OutlinedButton(
             onPressed: () => Navigator.pop(ctx),
             style: appDialogCancelStyle(),
-            child: const Text('Annulla'),
+            child: Text(l10n.btnCancel),
           ),
           FilledButton.icon(
             icon: _adLoading
                 ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.play_circle_outline, size: 18),
-            label: const Text('Guarda Video'),
+            label: Text(l10n.homeWatchVideoBtn),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.blue,
               padding: const EdgeInsets.symmetric(vertical: 13),
@@ -285,10 +289,11 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     if (ad == null) {
       // Ad non disponibile: riprova e mostra un messaggio
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Video non disponibile al momento. Riprova tra qualche secondo.'),
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: Text(l10n.msgVideoNotAvailable),
+            duration: const Duration(seconds: 3),
           ),
         );
         _preloadRewardedAd();
@@ -305,9 +310,10 @@ class _HomePageSimpleState extends State<HomePageSimple> {
         // Ricompensa guadagnata → sblocca la collezione
         _unlock(collection);
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${collection.name} sbloccata!'),
+              content: Text(l10n.msgCollectionUnlocked(collection.name)),
               backgroundColor: AppColors.success,
               duration: const Duration(seconds: 2),
             ),
@@ -320,8 +326,9 @@ class _HomePageSimpleState extends State<HomePageSimple> {
       },
       onFailed: (error) {
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Errore durante il video. Riprova.')),
+            SnackBar(content: Text(l10n.msgVideoError)),
           );
           _preloadRewardedAd();
         }
@@ -333,6 +340,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
 
+    final l10n = AppLocalizations.of(context)!;
     final double width = MediaQuery.of(context).size.width;
     final int crossAxisCount = width > 1200 ? 6 : (width > 900 ? 5 : (width > 600 ? 4 : 2));
 
@@ -342,7 +350,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_unlockedCollections.isNotEmpty) ...[
-            _buildSectionTitle('Le mie Collezioni'),
+            _buildSectionTitle(l10n.homeMyCollections),
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -361,7 +369,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
             const SizedBox(height: 32),
           ],
           if (_availableCollections.isNotEmpty) ...[
-            _buildSectionTitle('Collezioni Disponibili'),
+            _buildSectionTitle(l10n.homeAvailableCollections),
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -491,21 +499,26 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                   left: 0,
                   right: 0,
                   child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.60),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'Prossimamente',
-                        style: TextStyle(
-                          color: AppColors.textHint,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
+                    child: Builder(
+                      builder: (context) {
+                        final l10n = AppLocalizations.of(context)!;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.60),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            l10n.homeComingSoon,
+                            style: const TextStyle(
+                              color: AppColors.textHint,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -549,6 +562,7 @@ class _UnlockBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     if (isFree) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -556,9 +570,9 @@ class _UnlockBadge extends StatelessWidget {
           color: AppColors.success.withValues(alpha: 0.85),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Text(
-          'GRATIS',
-          style: TextStyle(
+        child: Text(
+          l10n.homeUnlockFree,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 8,
             fontWeight: FontWeight.bold,

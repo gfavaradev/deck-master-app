@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -19,7 +20,7 @@ class SupportPage extends StatelessWidget {
     } catch (_) { // ignore: empty_catches
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nessun client email trovato')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgNoEmailClient)),
         );
       }
     }
@@ -31,7 +32,7 @@ class SupportPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Supporto'),
+        title: Text(AppLocalizations.of(context)!.supportTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: SafeArea(
@@ -88,8 +89,8 @@ class SupportPage extends StatelessWidget {
           _SupportTile(
             icon: Icons.bug_report_outlined,
             iconColor: Colors.orangeAccent,
-            title: 'Segnala un Problema',
-            subtitle: 'Hai riscontrato un bug o un comportamento inatteso?',
+            title: AppLocalizations.of(context)!.supportReportBugTitle,
+            subtitle: AppLocalizations.of(context)!.supportReportBugSubtitle,
             onTap: () => _sendEmail(
               context,
               subject: 'Segnalazione Problema - Deck Master',
@@ -103,8 +104,8 @@ class SupportPage extends StatelessWidget {
           _SupportTile(
             icon: Icons.style_outlined,
             iconColor: AppColors.blue,
-            title: 'Carte Mancanti',
-            subtitle: 'Segnala carte assenti o con dati errati nel catalogo.',
+            title: AppLocalizations.of(context)!.supportMissingCardsTitle,
+            subtitle: AppLocalizations.of(context)!.supportMissingCardsSubtitle,
             onTap: () => _sendEmail(
               context,
               subject: 'Carte Mancanti - Deck Master',
@@ -118,8 +119,8 @@ class SupportPage extends StatelessWidget {
           _SupportTile(
             icon: Icons.lightbulb_outline,
             iconColor: AppColors.gold,
-            title: 'Suggerimento',
-            subtitle: 'Hai un\'idea per migliorare l\'app? Scrivici!',
+            title: AppLocalizations.of(context)!.supportSuggestionTitle,
+            subtitle: AppLocalizations.of(context)!.supportSuggestionSubtitle,
             onTap: () => _sendEmail(
               context,
               subject: 'Suggerimento - Deck Master',
@@ -163,7 +164,7 @@ class _DonateCard extends StatelessWidget {
     } catch (_) { // ignore: empty_catches
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Impossibile aprire il link')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgCantOpenLink)),
         );
       }
     }
@@ -233,7 +234,7 @@ class _DonateCard extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: () => _openDonation(context),
               icon: const Icon(Icons.favorite, size: 16),
-              label: const Text('Supporta il progetto'),
+              label: Text(AppLocalizations.of(context)!.supportSupportProject),
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFFFF6B35),
                 foregroundColor: Colors.white,

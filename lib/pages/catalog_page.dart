@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -216,33 +217,36 @@ class _CatalogPageState extends State<CatalogPage> {
     _          => Icons.cloud_download_outlined,
   };
 
-  String _phaseMessage(String phase) => switch (widget.collectionKey) {
-    'yugioh' => switch (phase) {
-      'connecting'  => 'Connessione al Mondo delle Ombre...',
-      'downloading' => 'Maximillion Pegasus sta creando le carte...',
-      _             => 'Il Faraone sigilla le carte nel Dueling Book...',
-    },
-    'pokemon' => switch (phase) {
-      'connecting'  => 'Connessione al Lab. del Prof. Oak...',
-      'downloading' => 'Il Prof. Oak sta catalogando i Pokémon...',
-      _             => 'Archiviazione nel Pokédex Nazionale...',
-    },
-    'onepiece' => switch (phase) {
-      'connecting'  => 'Navigazione verso il Grand Line...',
-      'downloading' => 'Shanks sta distribuendo le carte...',
-      _             => 'Il Mugiwara Crew carica le carte...',
-    },
-    'magic' => switch (phase) {
-      'connecting'  => 'Connessione all\'Arxivio Arcano...',
-      'downloading' => 'Il Consiglio di Ravnica cataloga le carte...',
-      _             => 'Sigillatura nel Codex Magico...',
-    },
-    _ => switch (phase) {
-      'connecting'  => 'Connessione in corso...',
-      'downloading' => 'Download in corso...',
-      _             => 'Salvataggio in corso...',
-    },
-  };
+  String _phaseMessage(String phase) {
+    final l10n = AppLocalizations.of(context)!;
+    return switch (widget.collectionKey) {
+      'yugioh' => switch (phase) {
+        'connecting'  => l10n.downloadYugiohConnecting,
+        'downloading' => l10n.downloadYugiohDownloading,
+        _             => l10n.downloadYugiohSaving,
+      },
+      'pokemon' => switch (phase) {
+        'connecting'  => l10n.downloadPokemonConnecting,
+        'downloading' => l10n.downloadPokemonDownloading,
+        _             => l10n.downloadPokemonSaving,
+      },
+      'onepiece' => switch (phase) {
+        'connecting'  => l10n.downloadOnepieceConnecting,
+        'downloading' => l10n.downloadOnepieceDownloading,
+        _             => l10n.downloadOnepieceSaving,
+      },
+      'magic' => switch (phase) {
+        'connecting'  => l10n.downloadMagicConnecting,
+        'downloading' => l10n.downloadMagicDownloading,
+        _             => l10n.downloadMagicSaving,
+      },
+      _ => switch (phase) {
+        'connecting'  => l10n.downloadPhaseConnecting,
+        'downloading' => l10n.downloadPhaseDownloading,
+        _             => l10n.downloadPhaseSaving,
+      },
+    };
+  }
 
   /// Download del catalogo (solo per primo download da empty state).
   Future<void> _downloadUpdate() async {
@@ -293,8 +297,9 @@ class _CatalogPageState extends State<CatalogPage> {
           _isLoading = true;
           _catalogCards = [];
         });
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Catalogo scaricato con successo!')),
+          SnackBar(content: Text(l10n.catalogDownloaded)),
         );
         // Carica in parallelo: carte + album/owned
         await Future.wait([_loadPage(), _loadAlbumsAndOwned()]);
@@ -308,11 +313,12 @@ class _CatalogPageState extends State<CatalogPage> {
           _downloadProgress = null;
           // _isCatalogMissing rimane true → il bottone download rimane visibile
         });
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Un download è già in corso. Attendi il completamento.'),
+          SnackBar(
+            content: Text(l10n.catalogDownloadBusy),
             backgroundColor: Colors.orange,
-            duration: Duration(seconds: 4),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -323,9 +329,10 @@ class _CatalogPageState extends State<CatalogPage> {
           _downloadProgress = null;
           // _isCatalogMissing rimane true → il bottone download rimane visibile
         });
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Errore download: $e'),
+            content: Text(l10n.catalogDownloadError(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -427,7 +434,7 @@ class _CatalogPageState extends State<CatalogPage> {
     } catch (e) { // ignore: empty_catches
 
       _hasMoreCards = false;
-      if (mounted) setState(() => _loadError = 'Errore di caricamento. Controlla la connessione.');
+      if (mounted) setState(() => _loadError = AppLocalizations.of(context)!.catalogLoadError);
     }
   }
 
@@ -488,36 +495,39 @@ class _CatalogPageState extends State<CatalogPage> {
       // Album picker
       final selectedAlbum = await showDialog<AlbumModel>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Seleziona Album'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: sortedAlbums.isEmpty
-                ? const Text('Nessun album disponibile. Creane uno prima.')
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: sortedAlbums.length,
-                    itemBuilder: (context, index) {
-                      final album = sortedAlbums[index];
-                      final isLastUsed = album.id == _lastUsedAlbumId;
-                      return ListTile(
-                        leading: Icon(
-                          isLastUsed ? Icons.star : Icons.photo_album,
-                          color: isLastUsed ? Colors.amber : null,
-                        ),
-                        title: Text(album.name),
-                        subtitle: isLastUsed
-                            ? const Text('Ultimo usato', style: TextStyle(fontSize: 11, color: Colors.amber))
-                            : null,
-                        onTap: () => Navigator.pop(context, album),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-          ],
-        ),
+        builder: (context) {
+          final l10n = AppLocalizations.of(context)!;
+          return AlertDialog(
+            title: Text(l10n.catalogSelectAlbumTitle),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: sortedAlbums.isEmpty
+                  ? Text(l10n.catalogNoAlbumAvailable)
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: sortedAlbums.length,
+                      itemBuilder: (context, index) {
+                        final album = sortedAlbums[index];
+                        final isLastUsed = album.id == _lastUsedAlbumId;
+                        return ListTile(
+                          leading: Icon(
+                            isLastUsed ? Icons.star : Icons.photo_album,
+                            color: isLastUsed ? Colors.amber : null,
+                          ),
+                          title: Text(album.name),
+                          subtitle: isLastUsed
+                              ? Text(l10n.catalogLastUsed, style: const TextStyle(fontSize: 11, color: Colors.amber))
+                              : null,
+                          onTap: () => Navigator.pop(context, album),
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.btnCancel)),
+            ],
+          );
+        },
       );
       if (selectedAlbum == null) return;
 
@@ -526,8 +536,9 @@ class _CatalogPageState extends State<CatalogPage> {
       final remaining = selectedAlbum.maxCapacity - currentCount;
       if (remaining <= 0) {
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Album "${selectedAlbum.name}" è pieno ($currentCount/${selectedAlbum.maxCapacity}).'),
+            content: Text(l10n.catalogAlbumFull(selectedAlbum.name, currentCount, selectedAlbum.maxCapacity)),
             backgroundColor: Colors.red,
           ));
         }
@@ -537,8 +548,9 @@ class _CatalogPageState extends State<CatalogPage> {
           ? selectedCards.sublist(0, remaining)
           : selectedCards;
       if (limitedCards.length < selectedCards.length && mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Album quasi pieno: aggiunte solo ${limitedCards.length}/${selectedCards.length} carte.'),
+          content: Text(l10n.catalogAlbumNearlyFull(limitedCards.length, selectedCards.length)),
           backgroundColor: Colors.orange,
         ));
       }
@@ -550,23 +562,29 @@ class _CatalogPageState extends State<CatalogPage> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => PopScope(
-            canPop: false,
-            child: AlertDialog(
-              title: const Text('Aggiunta in corso...'),
-              content: ValueListenableBuilder<int>(
-                valueListenable: progressNotifier!,
-                builder: (context, progress, _) => Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    LinearProgressIndicator(value: limitedCards.isNotEmpty ? progress / limitedCards.length : null),
-                    const SizedBox(height: 12),
-                    Text('$progress / ${limitedCards.length} carte elaborate'),
-                  ],
+          builder: (context) {
+            final l10n = AppLocalizations.of(context)!;
+            return PopScope(
+              canPop: false,
+              child: AlertDialog(
+                title: Text(l10n.catalogAddingProgress),
+                content: ValueListenableBuilder<int>(
+                  valueListenable: progressNotifier!,
+                  builder: (context, progress, _) {
+                    final l10n = AppLocalizations.of(context)!;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        LinearProgressIndicator(value: limitedCards.isNotEmpty ? progress / limitedCards.length : null),
+                        const SizedBox(height: 12),
+                        Text(l10n.catalogCardsProgress(progress, limitedCards.length)),
+                      ],
+                    );
+                  },
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       }
 
@@ -582,16 +600,17 @@ class _CatalogPageState extends State<CatalogPage> {
       }
 
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         final added = result['added'] ?? 0;
         final updated = result['updated'] ?? 0;
         final doppioni = result['doppioni'] ?? 0;
         final parts = <String>[
-          if (added > 0) '$added aggiunte',
-          if (updated > 0) '$updated quantità aggiornate',
-          if (doppioni > 0) '$doppioni nei Doppioni',
+          if (added > 0) l10n.catalogAdded(added),
+          if (updated > 0) l10n.catalogUpdatedQty(updated),
+          if (doppioni > 0) l10n.catalogDoppioni(doppioni),
         ];
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(parts.isNotEmpty ? parts.join(', ') : 'Nessuna modifica'),
+          content: Text(parts.isNotEmpty ? parts.join(', ') : l10n.catalogNoChange),
           backgroundColor: Colors.green,
         ));
         final prefs = await SharedPreferences.getInstance();
@@ -608,6 +627,7 @@ class _CatalogPageState extends State<CatalogPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final sw = MediaQuery.of(context).size.width;
     final catalogCols = kIsWeb
         ? (sw > 1400 ? 7 : sw > 1100 ? 6 : sw > 820 ? 5 : 4)
@@ -625,7 +645,7 @@ class _CatalogPageState extends State<CatalogPage> {
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      labelText: 'Cerca per nome o seriale...',
+                      labelText: l10n.catalogSearchHint,
                       prefixIcon: const Icon(Icons.search),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -666,7 +686,7 @@ class _CatalogPageState extends State<CatalogPage> {
                               ElevatedButton.icon(
                                 onPressed: _loadCards,
                                 icon: const Icon(Icons.refresh),
-                                label: const Text('Riprova'),
+                                label: Text(l10n.btnRetry),
                               ),
                             ],
                           ),
@@ -675,7 +695,7 @@ class _CatalogPageState extends State<CatalogPage> {
                     : _catalogCards.isEmpty
                         ? _isCatalogMissing
                             ? _buildCatalogMissingState()
-                            : const Center(child: Text('Nessuna carta trovata'))
+                            : Center(child: Text(l10n.catalogNoCards))
                         : GridView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(8),
@@ -873,7 +893,7 @@ class _CatalogPageState extends State<CatalogPage> {
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                     )
                   : const Icon(Icons.add),
-              label: Text(_isAdding ? 'Aggiungendo...' : 'Aggiungi ${_selectedCardIds.length}'),
+              label: Text(_isAdding ? l10n.catalogAddingN : l10n.catalogAddN(_selectedCardIds.length)),
               backgroundColor: _isAdding ? Colors.grey : Colors.deepPurple,
             ),
           ),
@@ -1078,6 +1098,7 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 
   void _showLanguagePicker() {
+    final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.bgMedium,
@@ -1102,23 +1123,23 @@ class _CatalogPageState extends State<CatalogPage> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
             child: Text(
-              'Lingua Catalogo',
-              style: TextStyle(
+              l10n.catalogLanguageTitle,
+              style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
             child: Text(
-              'Le lingue grigie non sono ancora disponibili nel catalogo locale.',
+              l10n.catalogLanguageUnavailable,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
           ),
           Container(height: 0.5, color: AppColors.divider),
@@ -1164,9 +1185,9 @@ class _CatalogPageState extends State<CatalogPage> {
                               ),
                             ),
                             if (!isAvailable)
-                              const Text(
-                                'Non disponibile',
-                                style: TextStyle(color: AppColors.textHint, fontSize: 12),
+                              Text(
+                                l10n.catalogLanguageNotAvailable,
+                                style: const TextStyle(color: AppColors.textHint, fontSize: 12),
                               )
                             else if (isSelected)
                               const Icon(Icons.check, color: AppColors.blue, size: 20),
@@ -1199,60 +1220,64 @@ class _CatalogPageState extends State<CatalogPage> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.emoji_events, color: Colors.amber),
-              const SizedBox(width: 8),
-              Expanded(child: Text('Set completato!', style: const TextStyle(fontSize: 18))),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '"$setName" è completo ($total / $total carte).',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              const Text('Vuoi spostare tutte le carte di questo set in un album diverso?'),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                initialValue: selectedAlbumId,
-                decoration: const InputDecoration(labelText: 'Sposta in album', isDense: true),
-                hint: const Text('Mantieni album corrente'),
-                items: _availableAlbums.map((album) {
-                  return DropdownMenuItem<int>(
-                    value: album.id,
-                    child: Text('${album.name} (${album.currentCount}/${album.maxCapacity})'),
-                  );
-                }).toList(),
-                onChanged: (val) => setDialogState(() => selectedAlbumId = val),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Chiudi'),
+        builder: (ctx, setDialogState) {
+          final l10n = AppLocalizations.of(ctx)!;
+          return AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.emoji_events, color: Colors.amber),
+                const SizedBox(width: 8),
+                Expanded(child: Text(l10n.catalogSetCompleted, style: const TextStyle(fontSize: 18))),
+              ],
             ),
-            if (selectedAlbumId != null)
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  await _dbHelper.moveSetCardsToAlbum(widget.collectionKey, setIdentifier, selectedAlbumId!);
-                  await _loadAlbumsAndOwned();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Carte di "$setName" spostate!')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.catalogSetCompletedMsg(setName, total, total),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                Text(l10n.catalogMoveToAlbum),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: selectedAlbumId,
+                  decoration: InputDecoration(labelText: l10n.catalogMoveInAlbumLabel, isDense: true),
+                  hint: Text(l10n.catalogKeepCurrentAlbum),
+                  items: _availableAlbums.map((album) {
+                    return DropdownMenuItem<int>(
+                      value: album.id,
+                      child: Text('${album.name} (${album.currentCount}/${album.maxCapacity})'),
                     );
-                  }
-                },
-                child: const Text('Sposta'),
+                  }).toList(),
+                  onChanged: (val) => setDialogState(() => selectedAlbumId = val),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(l10n.btnClose),
               ),
-          ],
-        ),
+              if (selectedAlbumId != null)
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _dbHelper.moveSetCardsToAlbum(widget.collectionKey, setIdentifier, selectedAlbumId!);
+                    await _loadAlbumsAndOwned();
+                    if (mounted) {
+                      final l10n = AppLocalizations.of(context)!;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(l10n.catalogCardsMoved(setName))),
+                      );
+                    }
+                  },
+                  child: Text(l10n.btnMove),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1274,7 +1299,7 @@ class _CatalogPageState extends State<CatalogPage> {
         await _loadAlbumsAndOwned();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(catalogCard.isEmpty ? 'Carta aggiunta!' : '${catalogCard['localizedName'] ?? catalogCard['name']} aggiunta!')),
+          SnackBar(content: Text(catalogCard.isEmpty ? 'Carta aggiunta!' : '${catalogCard['localizedName'] ?? catalogCard['name']} aggiunta!')), // TODO: l10n
         );
         // Controlla se il set è stato completato al 100%
         final completion = await _dbHelper.checkSetCompletion(widget.collectionKey, serialNumber);
@@ -1298,6 +1323,7 @@ class _CatalogPageState extends State<CatalogPage> {
 
   /// Selection mode banner shown instead of AppBar
   Widget _buildSelectionBanner() {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       color: Colors.deepPurple,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1309,7 +1335,7 @@ class _CatalogPageState extends State<CatalogPage> {
           ),
           Expanded(
             child: Text(
-              '${_selectedCardIds.length} carte selezionate',
+              l10n.catalogCardsSelected(_selectedCardIds.length),
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
@@ -1327,7 +1353,7 @@ class _CatalogPageState extends State<CatalogPage> {
                 }
               });
             },
-            tooltip: 'Seleziona tutto',
+            tooltip: l10n.catalogSelectAll,
           ),
         ],
       ),
@@ -1336,6 +1362,7 @@ class _CatalogPageState extends State<CatalogPage> {
 
   /// Empty state quando il catalogo non è ancora stato scaricato
   Widget _buildCatalogMissingState() {
+    final l10n = AppLocalizations.of(context)!;
     final accent = _themeAccent;
 
     if (_isDownloadingUpdate) {
@@ -1367,8 +1394,8 @@ class _CatalogPageState extends State<CatalogPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Download',
-                          style: TextStyle(
+                          l10n.catalogDownloadLabel,
+                          style: const TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
                           ),
@@ -1421,7 +1448,7 @@ class _CatalogPageState extends State<CatalogPage> {
             Icon(_themeIcon, size: 64, color: accent),
             const SizedBox(height: 16),
             Text(
-              'Catalogo ${widget.collectionName} non è ancora stato scaricato',
+              l10n.catalogNoCatalogDownloaded(widget.collectionName),
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 16,
@@ -1430,16 +1457,16 @@ class _CatalogPageState extends State<CatalogPage> {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Scarica il catalogo per sfogliare e aggiungere carte alla tua collezione.',
+            Text(
+              l10n.catalogDownloadPrompt,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _downloadUpdate,
               icon: const Icon(Icons.download_rounded),
-              label: const Text('Scarica catalogo'),
+              label: Text(l10n.catalogDownloadBtn),
               style: FilledButton.styleFrom(
                 backgroundColor: accent,
                 foregroundColor: Colors.white,

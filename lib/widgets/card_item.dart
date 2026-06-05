@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
@@ -37,6 +38,7 @@ class _LivePriceTextState extends State<_LivePriceText> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final fs = widget.fontSize;
     return FutureBuilder<CardtraderPrice?>(
       key: ValueKey('price_${widget.card.id}_${widget.card.serialNumber}'),
@@ -56,7 +58,7 @@ class _LivePriceTextState extends State<_LivePriceText> {
             return Text('€${v.toStringAsFixed(2)}',
                 style: TextStyle(fontSize: fs, color: AppColors.textHint));
           }
-          return Text('N/D', style: TextStyle(fontSize: fs, color: AppColors.textHint));
+          return Text(l10n.cardItemNdLabel, style: TextStyle(fontSize: fs, color: AppColors.textHint));
         }
         final cents = price.bestPriceCents;
         if (cents == null) {
@@ -65,7 +67,7 @@ class _LivePriceTextState extends State<_LivePriceText> {
             return Text('€${v.toStringAsFixed(2)}',
                 style: TextStyle(fontSize: fs, color: AppColors.textHint));
           }
-          return Text('N/D', style: TextStyle(fontSize: fs, color: AppColors.textHint));
+          return Text(l10n.cardItemNdLabel, style: TextStyle(fontSize: fs, color: AppColors.textHint));
         }
         final priceStr = '€${(cents / 100).toStringAsFixed(2)}';
         final isCatalogFallback = price.blueprintId == 0;

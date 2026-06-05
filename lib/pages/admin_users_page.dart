@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:deck_master/models/user_model.dart';
 import 'package:deck_master/services/user_service.dart';
@@ -54,13 +55,13 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestione Utenti'),
+        title: Text(AppLocalizations.of(context)!.adminUsersTitle),
         backgroundColor: Colors.orange,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadUsers,
-            tooltip: 'Ricarica',
+            tooltip: AppLocalizations.of(context)!.adminUsersReloadTooltip,
           ),
         ],
       ),
@@ -75,13 +76,13 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _users.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.people_outline, size: 64, color: Colors.grey),
-                              SizedBox(height: 16),
-                              Text('Nessun utente trovato', style: TextStyle(color: Colors.grey)),
+                              const Icon(Icons.people_outline, size: 64, color: Colors.grey),
+                              const SizedBox(height: 16),
+                              Text(AppLocalizations.of(context)!.adminUsersNoUsers, style: const TextStyle(color: Colors.grey)),
                             ],
                           ),
                         )
@@ -98,10 +99,10 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const Text('Filtro: ', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(AppLocalizations.of(context)!.adminHomeFilterLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(width: 8),
           ChoiceChip(
-            label: const Text('Tutti'),
+            label: Text(AppLocalizations.of(context)!.adminUsersFilterAll),
             selected: _filterRole == 'all',
             onSelected: (selected) {
               if (selected) {
@@ -112,7 +113,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           ),
           const SizedBox(width: 8),
           ChoiceChip(
-            label: const Text('Admin'),
+            label: Text(AppLocalizations.of(context)!.adminUsersFilterAdmin),
             selected: _filterRole == 'administrator',
             selectedColor: Colors.orange.shade200,
             onSelected: (selected) {
@@ -124,7 +125,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           ),
           const SizedBox(width: 8),
           ChoiceChip(
-            label: const Text('Utenti'),
+            label: Text(AppLocalizations.of(context)!.adminUsersFilterUsers),
             selected: _filterRole == 'user',
             onSelected: (selected) {
               if (selected) {
@@ -321,21 +322,22 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
     final newRole = user.isAdmin ? UserRole.user : UserRole.administrator;
     final roleText = newRole == UserRole.administrator ? 'amministratore' : 'utente';
 
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Conferma cambio ruolo'),
+        title: Text(AppLocalizations.of(context)!.adminUsersConfirmRoleTitle),
         content: Text(
           'Vuoi cambiare il ruolo di ${user.displayName ?? user.email} a $roleText?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annulla'),
+            child: Text(AppLocalizations.of(context)!.btnCancel),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Conferma'),
+            child: Text(AppLocalizations.of(context)!.btnConfirm),
           ),
         ],
       ),
@@ -346,7 +348,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
         await _userService.updateUserRole(user.uid, newRole);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Ruolo aggiornato con successo')),
+            SnackBar(content: Text(l10n.adminUsersRoleUpdated)),
           );
           _loadUsers();
         }
@@ -374,14 +376,14 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annulla'),
+            child: Text(AppLocalizations.of(context)!.btnCancel),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: newStatus ? Colors.green : Colors.red,
             ),
-            child: const Text('Conferma'),
+            child: Text(AppLocalizations.of(context)!.btnConfirm),
           ),
         ],
       ),
@@ -392,7 +394,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
         await _userService.setUserActiveStatus(user.uid, newStatus);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Stato aggiornato: ${newStatus ? "Attivo" : "Disattivato"}')),
+            SnackBar(content: Text(AppLocalizations.of(context)!.adminUsersStatusUpdated(newStatus ? 'Attivo' : 'Disattivato'))),
           );
           _loadUsers();
         }
@@ -410,7 +412,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Conferma eliminazione'),
+        title: Text(AppLocalizations.of(context)!.adminUsersConfirmDeleteTitle),
         content: Text(
           'Sei sicuro di voler eliminare l\'utente ${user.displayName ?? user.email}?\n\n'
           'ATTENZIONE: Questa azione è irreversibile!',
@@ -418,12 +420,12 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annulla'),
+            child: Text(AppLocalizations.of(context)!.btnCancel),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Elimina'),
+            child: Text(AppLocalizations.of(context)!.btnDelete),
           ),
         ],
       ),
@@ -434,7 +436,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
         await _userService.deleteUser(user.uid);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Utente eliminato con successo')),
+            SnackBar(content: Text(AppLocalizations.of(context)!.adminUsersDeletedSuccess)),
           );
           _loadUsers();
         }

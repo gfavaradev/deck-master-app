@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import '../services/subscription_service.dart';
@@ -65,7 +66,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
     if (package == null) {
       // Prodotti non ancora configurati in RevenueCat
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Abbonamento non disponibile al momento.')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.proNotAvailable)),
       );
       return;
     }
@@ -77,8 +78,8 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Benvenuto nel piano Pro!'),
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.proWelcomeMsg),
           backgroundColor: AppColors.gold,
         ),
       );
@@ -91,9 +92,10 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
     final restored = await RevenueCatService().restorePurchases();
     if (!mounted) return;
     setState(() => _isPurchasing = false);
+    final l10n = AppLocalizations.of(context)!;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(restored ? 'Acquisti ripristinati!' : 'Nessun acquisto da ripristinare.'),
+        content: Text(restored ? l10n.proPurchasesRestored : l10n.proNoPurchasesToRestore),
       ),
     );
   }
@@ -255,12 +257,12 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
       child: Row(
         children: [
           _ToggleOption(
-            label: 'Mensile',
+            label: AppLocalizations.of(context)!.proMonthlyLabel,
             selected: !_annual,
             onTap: null,
           ),
           _ToggleOption(
-            label: 'Annuale',
+            label: AppLocalizations.of(context)!.proYearlyLabel,
             selected: _annual,
             onTap: null,
             badge: '-30%',
@@ -271,20 +273,21 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   }
 
   Widget _buildPricingCards() {
+    final l10n = AppLocalizations.of(context)!;
     if (_annual) {
       return _PricingCard(
-        title: 'Piano Annuale',
+        title: l10n.proYearlyTitle,
         price: _annualPrice,
-        period: 'anno',
-        subText: '€${_annualMonthly.toStringAsFixed(2)}/mese — risparmia il 30%',
+        period: 'anno', // TODO: l10n
+        subText: '€${_annualMonthly.toStringAsFixed(2)}/mese — risparmia il 30%', // TODO: l10n
         highlight: true,
       );
     }
     return _PricingCard(
-      title: 'Piano Mensile',
+      title: l10n.proMonthlyTitle,
       price: _monthlyPrice,
-      period: 'mese',
-      subText: 'Rinnovo automatico mensile',
+      period: 'mese', // TODO: l10n
+      subText: 'Rinnovo automatico mensile', // TODO: l10n
       highlight: false,
     );
   }

@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/subscription_model.dart';
@@ -62,7 +63,7 @@ class _DonationsPageState extends State<DonationsPage> {
     } catch (_) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Impossibile aprire il link')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.msgCantOpenLink)),
       );
     }
   }
@@ -72,7 +73,7 @@ class _DonationsPageState extends State<DonationsPage> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Supporta il Progetto'),
+        title: Text(AppLocalizations.of(context)!.donationsTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,

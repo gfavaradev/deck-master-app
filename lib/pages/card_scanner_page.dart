@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -107,10 +108,11 @@ class _CardScannerPageState extends State<CardScannerPage> {
   }
 
   void _showLimitDialog() {
+    final l10n = AppLocalizations.of(context)!;
     showDialog<void>(
       context: context,
       builder: (_) => AppDialog(
-        title: 'Limite scansioni raggiunto',
+        title: l10n.cardScannerLimitTitle,
         icon: Icons.document_scanner_outlined,
         iconColor: AppColors.gold,
         content: Column(
@@ -164,7 +166,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
               );
             },
             icon: const Icon(Icons.workspace_premium, size: 16),
-            label: const Text('Passa a Pro'),
+            label: Text(l10n.cardScannerGoToPro),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.gold,
               foregroundColor: Colors.black87,
@@ -236,7 +238,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
     if (albums.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Nessun album trovato per $collectionName'),
+          content: Text(AppLocalizations.of(context)!.cardScannerNoAlbum(collectionName)),
           backgroundColor: Colors.red.shade700,
         ),
       );
@@ -254,7 +256,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${result.cardName} aggiunta alla collezione!'),
+              content: Text(AppLocalizations.of(context)!.cardScannerCardAdded(result.cardName)),
               backgroundColor: Colors.green.shade700,
             ),
           );
@@ -272,7 +274,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Scansiona Carta'),
+        title: Text(AppLocalizations.of(context)!.cardScannerTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
         actions: [
@@ -509,7 +511,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
               child: ElevatedButton.icon(
                 onPressed: _addToCollection,
                 icon: const Icon(Icons.add),
-                label: const Text('Aggiungi a Collezione'),
+                label: Text(AppLocalizations.of(context)!.cardScannerAddToCollection),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green.shade700,
                   foregroundColor: Colors.white,
@@ -525,7 +527,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
             child: OutlinedButton.icon(
               onPressed: _scan,
               icon: const Icon(Icons.camera_alt_outlined),
-              label: const Text('Scansiona un\'altra carta'),
+              label: Text(AppLocalizations.of(context)!.cardScannerScanAnother),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.textSecondary,
                 side: BorderSide(color: AppColors.textHint.withValues(alpha: 0.4)),
@@ -568,7 +570,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
     return ElevatedButton.icon(
       onPressed: _scan,
       icon: const Icon(Icons.camera_alt),
-      label: const Text('Apri Fotocamera'),
+      label: Text(AppLocalizations.of(context)!.cardScannerOpenCamera),
       style: ElevatedButton.styleFrom(
         backgroundColor: AppColors.blue,
         foregroundColor: Colors.white,
@@ -624,9 +626,9 @@ class _ScanLimitWarning extends StatelessWidget {
           const SizedBox(width: 8),
           GestureDetector(
             onTap: onUpgrade,
-            child: const Text(
-              'Vai Pro',
-              style: TextStyle(
+            child: Text(
+              AppLocalizations.of(context)!.cardScannerGoToPro,
+              style: const TextStyle(
                 color: AppColors.gold,
                 fontSize: 12,
                 fontWeight: FontWeight.bold,

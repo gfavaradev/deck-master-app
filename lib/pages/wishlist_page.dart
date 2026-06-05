@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../models/wishlist_model.dart';
@@ -36,6 +37,7 @@ class _WishlistPageState extends State<WishlistPage> {
   }
 
   void _startPhase2Tutorial() {
+    final l10n = AppLocalizations.of(context)!;
     TutorialCoachMark(
       targets: [
         TargetFocus(
@@ -46,9 +48,9 @@ class _WishlistPageState extends State<WishlistPage> {
           contents: [
             TargetContent(
               align: ContentAlign.top,
-              child: const TutorialContentWidget(
-                title: 'Aggiungi alla Wishlist',
-                description: 'Tocca qui per aggiungere le carte che vuoi acquistare. Puoi impostare un prezzo obiettivo e ricevere un avviso quando viene raggiunto.',
+              child: TutorialContentWidget(
+                title: l10n.wishlistAddToWishlistTitle,
+                description: 'Tocca qui per aggiungere le carte che vuoi acquistare. Puoi impostare un prezzo obiettivo e ricevere un avviso quando viene raggiunto.', // TODO: l10n
               ),
             ),
           ],
@@ -56,7 +58,7 @@ class _WishlistPageState extends State<WishlistPage> {
       ],
       colorShadow: Colors.black,
       opacityShadow: 0.85,
-      textSkip: 'SALTA',
+      textSkip: l10n.tutorialSkip,
       onFinish: _onPhase2Done,
       onSkip: () { _onPhase2Done(); return true; },
     ).show(context: context);
@@ -81,11 +83,12 @@ class _WishlistPageState extends State<WishlistPage> {
     if (!mounted) return;
     setState(() => _items.removeWhere((e) => e.id == item.id));
     if (mounted) {
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${item.name} rimossa dalla Wishlist'),
+          content: Text(l10n.wishlistItemRemovedMsg(item.name)),
           action: SnackBarAction(
-            label: 'Annulla',
+            label: l10n.wishlistUndoRemove,
             onPressed: () async {
               final restored = WishlistModel(
                 catalogId: item.catalogId,
@@ -115,27 +118,28 @@ class _WishlistPageState extends State<WishlistPage> {
   }
 
   Future<void> _editTargetPrice(WishlistModel item) async {
+    final l10n = AppLocalizations.of(context)!;
     final ctrl = TextEditingController(
       text: item.targetPrice != null ? item.targetPrice!.toStringAsFixed(2) : '',
     );
     final result = await showDialog<double?>(
       context: context,
       builder: (ctx) => AppDialog(
-        title: 'Prezzo obiettivo',
+        title: l10n.dlgTargetPriceTitle,
         icon: Icons.flag_outlined,
         iconColor: AppColors.warning,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Imposta il prezzo obiettivo per ${item.name}',
+            Text(l10n.dlgTargetPriceMsg(item.name),
                 style: const TextStyle(color: AppColors.textSecondary)),
             const SizedBox(height: 16),
             TextField(
               controller: ctrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Prezzo (€)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.dlgTargetPriceLabel,
+                border: const OutlineInputBorder(),
                 prefixText: '€ ',
               ),
               autofocus: true,
@@ -145,19 +149,19 @@ class _WishlistPageState extends State<WishlistPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annulla'),
+            child: Text(l10n.btnCancel),
           ),
           if (item.targetPrice != null)
             TextButton(
               onPressed: () => Navigator.pop(ctx, -1.0),
-              child: const Text('Rimuovi', style: TextStyle(color: AppColors.error)),
+              child: Text(l10n.btnRemove, style: const TextStyle(color: AppColors.error)),
             ),
           FilledButton(
             onPressed: () {
               final val = double.tryParse(ctrl.text.replaceAll(',', '.'));
               Navigator.pop(ctx, val);
             },
-            child: const Text('Salva'),
+            child: Text(l10n.btnSave),
           ),
         ],
       ),
@@ -172,10 +176,11 @@ class _WishlistPageState extends State<WishlistPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Wishlist'),
+        title: Text(l10n.wishlistTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
@@ -185,7 +190,7 @@ class _WishlistPageState extends State<WishlistPage> {
         backgroundColor: AppColors.gold,
         foregroundColor: Colors.black,
         icon: const Icon(Icons.add),
-        label: const Text('Aggiungi carta'),
+        label: Text(l10n.wishlistAddCard),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -196,6 +201,7 @@ class _WishlistPageState extends State<WishlistPage> {
   }
 
   Widget _buildEmpty() {
+    final l10n = AppLocalizations.of(context)!;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -203,12 +209,12 @@ class _WishlistPageState extends State<WishlistPage> {
           Icon(Icons.favorite_border, size: 72, color: AppColors.textHint),
           const SizedBox(height: 16),
           const Text(
-            'La tua Wishlist è vuota',
+            'La tua Wishlist è vuota', // TODO: l10n
             style: TextStyle(color: AppColors.textSecondary, fontSize: 18),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Aggiungi le carte che vuoi acquistare\ne tieni traccia dei prezzi.',
+            'Aggiungi le carte che vuoi acquistare\ne tieni traccia dei prezzi.', // TODO: l10n
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textHint, fontSize: 14),
           ),
@@ -217,7 +223,7 @@ class _WishlistPageState extends State<WishlistPage> {
             onPressed: _openAdd,
             style: FilledButton.styleFrom(backgroundColor: AppColors.gold, foregroundColor: Colors.black),
             icon: const Icon(Icons.add),
-            label: const Text('Aggiungi carta'),
+            label: Text(l10n.wishlistAddCard),
           ),
         ],
       ),
@@ -289,20 +295,21 @@ class _WishlistPageState extends State<WishlistPage> {
         child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
       ),
       confirmDismiss: (_) async {
+        final l10n = AppLocalizations.of(context)!;
         return await showDialog<bool>(
           context: context,
           builder: (ctx) => AppDialog(
-            title: 'Rimuovi dalla Wishlist',
+            title: l10n.dlgRemoveWishlistTitle,
             icon: Icons.delete_outline,
             iconColor: AppColors.error,
-            content: Text('Rimuovere "${item.name}" dalla wishlist?',
+            content: Text(l10n.dlgRemoveWishlistMsg(item.name),
                 style: const TextStyle(color: AppColors.textSecondary)),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.btnCancel)),
               FilledButton(
                 style: FilledButton.styleFrom(backgroundColor: AppColors.error),
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Rimuovi'),
+                child: Text(l10n.btnRemove),
               ),
             ],
           ),
@@ -423,7 +430,7 @@ class _WishlistPageState extends State<WishlistPage> {
 
   Widget _buildPrice(double? ctPrice, double? targetPrice, bool isAboveTarget) {
     if (ctPrice == null) {
-      return const Text('N/D', style: TextStyle(color: AppColors.textHint, fontSize: 13));
+      return Text(AppLocalizations.of(context)!.wishlistNdLabel, style: const TextStyle(color: AppColors.textHint, fontSize: 13));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,

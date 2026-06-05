@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/update_service.dart';
@@ -21,6 +22,7 @@ class _UpdateDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final hasNotes = info.releaseNotes.isNotEmpty;
 
     return PopScope(
@@ -80,8 +82,8 @@ class _UpdateDialog extends StatelessWidget {
                       children: [
                         Text(
                           info.isForced
-                              ? 'Aggiornamento richiesto'
-                              : 'Nuova versione disponibile',
+                              ? l10n.updateDialogRequired
+                              : l10n.updateDialogAvailable,
                           style: const TextStyle(
                             color: AppColors.gold,
                             fontWeight: FontWeight.bold,
@@ -117,30 +119,30 @@ class _UpdateDialog extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.warning_amber_rounded, color: Colors.red, size: 16),
-                          SizedBox(width: 8),
+                          const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 16),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Questa versione non è più supportata. Aggiorna per continuare a usare l\'app.',
-                              style: TextStyle(color: Colors.red, fontSize: 12),
+                              l10n.updateDialogForcedMsg,
+                              style: const TextStyle(color: Colors.red, fontSize: 12),
                             ),
                           ),
                         ],
                       ),
                     )
                   else
-                    const Text(
-                      'È disponibile una nuova versione con miglioramenti e correzioni.',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                    Text(
+                      l10n.updateDialogOptionalMsg,
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
                     ),
 
                   if (hasNotes) ...[
                     const SizedBox(height: 14),
-                    const Text(
-                      'Novità',
-                      style: TextStyle(
+                    Text(
+                      l10n.updateDialogWhatsNew,
+                      style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
@@ -172,9 +174,9 @@ class _UpdateDialog extends StatelessWidget {
                         ),
                       ),
                       icon: const Icon(Icons.download_rounded, size: 18),
-                      label: const Text(
-                        'Aggiorna ora',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      label: Text(
+                        l10n.updateDialogUpdateNow,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       onPressed: () => _openStore(context),
                     ),
@@ -191,7 +193,7 @@ class _UpdateDialog extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(vertical: 10),
                         ),
                         onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Non ora', style: TextStyle(fontSize: 13)),
+                        child: Text(l10n.updateDialogNotNow, style: const TextStyle(fontSize: 13)),
                       ),
                     ),
                   ],

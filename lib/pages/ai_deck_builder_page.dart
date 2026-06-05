@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/claude_service.dart';
@@ -248,16 +249,18 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
         await _repo.addCardToDeck(deckId, card.ownedId!, card.quantity);
       }
       if (!mounted) return;
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Deck "${result.deckName}" salvato! (${ownedInMain.length} carte aggiunte)'),
+          content: Text(l10n.aiDeckBuilderDeckSaved(result.deckName, ownedInMain.length)),
           backgroundColor: AppColors.success,
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore nel salvare: $e'), backgroundColor: AppColors.error),
+        SnackBar(content: Text(AppLocalizations.of(context)!.aiDeckBuilderSaveError(e.toString())), backgroundColor: AppColors.error),
       );
     } finally {
       if (mounted) setState(() => _savingDeck = false);
@@ -269,7 +272,7 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('AI Deck Builder'),
+        title: Text(AppLocalizations.of(context)!.aiDeckBuilderTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
         actions: [
@@ -320,7 +323,7 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage())),
               style: FilledButton.styleFrom(backgroundColor: AppColors.gold, foregroundColor: Colors.black),
               icon: const Icon(Icons.star),
-              label: const Text('Passa a Pro'),
+              label: Text(AppLocalizations.of(context)!.aiDeckBuilderGoToPro),
             ),
           ],
         ),
@@ -387,15 +390,15 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const Text('Descrivi la tua strategia',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+        Text(AppLocalizations.of(context)!.aiDeckBuilderPromptLabel,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
         TextField(
           controller: _strategyCtrl,
           maxLines: 4,
           style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
           decoration: InputDecoration(
-            hintText: 'Es: "Un deck aggressivo Dragon con attacchi rapidi e fusioni potenti. Voglio usare i miei Blue-Eyes e un misto di carte di supporto."',
+            hintText: AppLocalizations.of(context)!.aiDeckBuilderPromptHint,
             hintStyle: const TextStyle(color: AppColors.textHint, fontSize: 12),
             filled: true,
             fillColor: AppColors.bgMedium,
@@ -437,7 +440,7 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
         icon: _generating
             ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
             : const Icon(Icons.auto_awesome, size: 20),
-        label: Text(_generating ? 'Analisi in corso…' : 'Genera Deck con AI', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        label: Builder(builder: (ctx) => Text(_generating ? AppLocalizations.of(ctx)!.aiDeckBuilderGenerating : AppLocalizations.of(ctx)!.aiDeckBuilderGenerateBtn, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold))),
       ),
     );
   }
@@ -494,11 +497,11 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
               const SizedBox(height: 10),
               Row(
                 children: [
-                  _StatChip(label: 'Main', value: '$mainTotal', color: AppColors.blue),
+                  _StatChip(label: AppLocalizations.of(context)!.aiDeckBuilderMainLabel, value: '$mainTotal', color: AppColors.blue),
                   const SizedBox(width: 8),
-                  if (extraTotal > 0) _StatChip(label: 'Extra', value: '$extraTotal', color: AppColors.purple),
+                  if (extraTotal > 0) _StatChip(label: AppLocalizations.of(context)!.aiDeckBuilderExtraLabel, value: '$extraTotal', color: AppColors.purple),
                   const Spacer(),
-                  _StatChip(label: 'Possedute', value: '$ownedCount/${result.mainDeck.length}', color: AppColors.success),
+                  _StatChip(label: AppLocalizations.of(context)!.aiDeckBuilderOwnedLabel, value: '$ownedCount/${result.mainDeck.length}', color: AppColors.success),
                 ],
               ),
             ],
@@ -519,7 +522,7 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
             icon: _savingDeck
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.save_outlined, size: 18),
-            label: const Text('Salva Deck', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: Text(AppLocalizations.of(context)!.aiDeckBuilderSaveBtn, style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),
         const SizedBox(height: 16),
@@ -618,7 +621,7 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
               if (isOwned && !hasEnough)
                 Text('hai ${card.ownedQuantity}', style: const TextStyle(color: AppColors.warning, fontSize: 10)),
               if (!isOwned)
-                const Text('non posseduta', style: TextStyle(color: AppColors.error, fontSize: 10)),
+                Text(AppLocalizations.of(context)!.aiDeckBuilderNotOwned, style: const TextStyle(color: AppColors.error, fontSize: 10)),
             ],
           ),
         ],

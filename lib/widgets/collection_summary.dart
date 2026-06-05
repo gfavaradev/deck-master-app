@@ -17,6 +17,7 @@ class CollectionSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // TODO: l10n — 'Uniche', 'Doppioni', 'Totali', 'Valore' not in ARB
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       color: AppColors.glowBlue,
