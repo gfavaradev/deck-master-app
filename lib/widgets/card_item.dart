@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
 import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/currency_formatter.dart';
 import '../utils/extensions.dart';
 import 'op_lang_badge.dart';
 
@@ -55,7 +56,7 @@ class _LivePriceTextState extends State<_LivePriceText> {
           // Fallback to catalog price when CT table has no data for this card
           final v = widget.card.cardtraderValue;
           if (v != null && v > 0) {
-            return Text('€${v.toStringAsFixed(2)}',
+            return Text(CurrencyFormatter.format(v),
                 style: TextStyle(fontSize: fs, color: AppColors.textHint));
           }
           return Text(l10n.cardItemNdLabel, style: TextStyle(fontSize: fs, color: AppColors.textHint));
@@ -64,12 +65,12 @@ class _LivePriceTextState extends State<_LivePriceText> {
         if (cents == null) {
           final v = widget.card.cardtraderValue;
           if (v != null && v > 0) {
-            return Text('€${v.toStringAsFixed(2)}',
+            return Text(CurrencyFormatter.format(v),
                 style: TextStyle(fontSize: fs, color: AppColors.textHint));
           }
           return Text(l10n.cardItemNdLabel, style: TextStyle(fontSize: fs, color: AppColors.textHint));
         }
-        final priceStr = '€${(cents / 100).toStringAsFixed(2)}';
+        final priceStr = CurrencyFormatter.formatCents(cents);
         final isCatalogFallback = price.blueprintId == 0;
         final isHistorical = !isCatalogFallback && price.listingCount == 0;
         final color = isHistorical ? Colors.orange.shade700 : const Color(0xFF1A9B8A);

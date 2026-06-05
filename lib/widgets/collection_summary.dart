@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
+import '../utils/currency_formatter.dart';
 
 class CollectionSummary extends StatelessWidget {
   final int uniqueCards;
@@ -27,7 +28,7 @@ class CollectionSummary extends StatelessWidget {
           _buildStat('Uniche', uniqueCards.toString(), AppColors.blue),
           _buildStat('Doppioni', duplicates.toString(), AppColors.gold),
           _buildStat('Totali', totalCards.toString(), AppColors.purple),
-          _buildStat('Valore', '€${totalValue.toStringAsFixed(2)}', AppColors.gold),
+          _buildStat('Valore', CurrencyFormatter.format(totalValue), AppColors.gold),
         ],
       ),
     );

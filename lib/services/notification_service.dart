@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/currency_formatter.dart';
 
 // SharedPreferences keys
 const _kEnabled = 'notifications_enabled';
@@ -392,7 +393,7 @@ class NotificationService {
     await _local.show(
       id: _priceAlertBaseId + id,
       title: '🎯 Prezzo obiettivo raggiunto!',
-      body: '$cardName è a €${currentPrice.toStringAsFixed(2)} — sotto il tuo obiettivo di €${targetPrice.toStringAsFixed(2)}',
+      body: '$cardName è a ${CurrencyFormatter.format(currentPrice)} — sotto il tuo obiettivo di ${CurrencyFormatter.format(targetPrice)}',
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _priceAlertChannel,

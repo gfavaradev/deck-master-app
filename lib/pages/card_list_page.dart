@@ -209,7 +209,7 @@ class _CardListPageState extends State<CardListPage> {
               mainAxisSize: MainAxisSize.min,
               children: _availableAlbums.map((album) => ListTile(
                 title: Text(album.name, style: const TextStyle(color: AppColors.textPrimary)),
-                subtitle: Text('${album.currentCount}/${album.maxCapacity} carte', style: const TextStyle(color: AppColors.textHint, fontSize: 12)), // TODO: l10n "carte"
+                subtitle: Text('${album.currentCount}/${album.maxCapacity} ${AppLocalizations.of(ctx)!.nounCards}', style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
                 onTap: () => Navigator.pop(ctx, album.id),
               )).toList(),
             ),
@@ -380,7 +380,7 @@ class _CardListPageState extends State<CardListPage> {
           children: _availableAlbums.map((album) => ListTile(
             title: Text(album.name, style: const TextStyle(color: AppColors.textPrimary)),
             subtitle: Text(
-              '${album.currentCount}/${album.maxCapacity} carte', // TODO: l10n
+              '${album.currentCount}/${album.maxCapacity} ${AppLocalizations.of(ctx)!.nounCards}',
               style: const TextStyle(color: AppColors.textHint, fontSize: 12),
             ),
             onTap: () => Navigator.pop(ctx, album.id),
@@ -616,7 +616,7 @@ class _CardListPageState extends State<CardListPage> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              '${_allCards.length} carte', // TODO: l10n
+              l10n.statsCardsCount(_allCards.length),
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,

@@ -923,6 +923,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setDetailRetry => 'Retry';
 
   @override
+  String get setDetailTabAll => 'All';
+
+  @override
+  String get setDetailTabOwned => 'Owned';
+
+  @override
+  String get setDetailTabMissing => 'Missing';
+
+  @override
+  String get setDetailLoadError => 'Loading error';
+
+  @override
+  String get nounCards => 'cards';
+
+  @override
   String setCompletionTitle(String name) {
     return 'Expansions — $name';
   }

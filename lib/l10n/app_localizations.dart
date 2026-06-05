@@ -1712,6 +1712,36 @@ abstract class AppLocalizations {
   /// **'Riprova'**
   String get setDetailRetry;
 
+  /// Set detail tab — all cards
+  ///
+  /// In it, this message translates to:
+  /// **'Tutte'**
+  String get setDetailTabAll;
+
+  /// Set detail tab — owned cards
+  ///
+  /// In it, this message translates to:
+  /// **'Possedute'**
+  String get setDetailTabOwned;
+
+  /// Set detail tab — missing cards
+  ///
+  /// In it, this message translates to:
+  /// **'Mancanti'**
+  String get setDetailTabMissing;
+
+  /// Set detail load error label
+  ///
+  /// In it, this message translates to:
+  /// **'Errore nel caricamento'**
+  String get setDetailLoadError;
+
+  /// Plural noun for cards (used in capacity labels)
+  ///
+  /// In it, this message translates to:
+  /// **'carte'**
+  String get nounCards;
+
   /// Set completion page title
   ///
   /// In it, this message translates to:

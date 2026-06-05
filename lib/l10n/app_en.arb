@@ -290,6 +290,11 @@
 
   "setDetailNoCards": "No cards.",
   "setDetailRetry": "Retry",
+  "setDetailTabAll": "All",
+  "setDetailTabOwned": "Owned",
+  "setDetailTabMissing": "Missing",
+  "setDetailLoadError": "Loading error",
+  "nounCards": "cards",
 
   "setCompletionTitle": "Expansions — {name}",
   "setCompletionSearchHint": "Search expansion...",

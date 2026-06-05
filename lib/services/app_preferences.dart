@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'exchange_rate_service.dart';
 
 class AppPreferences {
   static AppPreferences? _instance;
@@ -22,6 +23,7 @@ class AppPreferences {
     _instance = AppPreferences._();
     localeNotifier.value = Locale(_instance!.languageCode);
     currencyNotifier.value = _instance!.currencyCode;
+    await ExchangeRateService.instance.init();
     return _instance!;
   }
 

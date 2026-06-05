@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
+import '../utils/currency_formatter.dart';
 
 // ─── Period ────────────────────────────────────────────────────────────────────
 
@@ -238,7 +239,7 @@ class _Chart extends StatelessWidget {
               reservedSize: 48,
               interval: _niceInterval(chartMinY, chartMaxY),
               getTitlesWidget: (v, _) => Text(
-                '€${v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}k' : v.toStringAsFixed(0)}',
+                _formatAxisLabel(v),
                 style:
                     const TextStyle(fontSize: 8, color: AppColors.textHint),
               ),
@@ -295,7 +296,7 @@ class _Chart extends StatelessWidget {
             tooltipRoundedRadius: 6,
             getTooltipItems: (spots) => spots
                 .map((s) => LineTooltipItem(
-                      '€${s.y.toStringAsFixed(2)}',
+                      CurrencyFormatter.format(s.y),
                       TextStyle(
                         color: lineColor,
                         fontWeight: FontWeight.bold,
@@ -307,6 +308,15 @@ class _Chart extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  static String _formatAxisLabel(double euros) {
+    final converted = CurrencyFormatter.fromEuros(euros);
+    final sym = CurrencyFormatter.symbol;
+    if (converted >= 1000) {
+      return '$sym${(converted / 1000).toStringAsFixed(1)}k';
+    }
+    return '$sym${converted.toStringAsFixed(0)}';
   }
 
   static double _niceInterval(double minY, double maxY) {

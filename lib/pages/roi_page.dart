@@ -1,9 +1,11 @@
 import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
+import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/currency_formatter.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/collection_value_chart.dart';
 import '../widgets/tutorial_content_widget.dart';
@@ -25,10 +27,13 @@ class _RoiPageState extends State<RoiPage> {
 
   final _kpiKey = GlobalKey();
 
+  void _onCurrencyChanged() => setState(() {});
+
   @override
   void initState() {
     super.initState();
     _load();
+    AppPreferences.currencyNotifier.addListener(_onCurrencyChanged);
     if (TutorialService.instance.isActive && TutorialService.instance.phase == 3) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await Future.delayed(const Duration(milliseconds: 450));
@@ -90,6 +95,12 @@ class _RoiPageState extends State<RoiPage> {
     }
   }
 
+  @override
+  void dispose() {
+    AppPreferences.currencyNotifier.removeListener(_onCurrencyChanged);
+    super.dispose();
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _loading = true);
@@ -106,10 +117,12 @@ class _RoiPageState extends State<RoiPage> {
   }
 
   Future<void> _editPurchasePrice(Map<String, dynamic> card) async {
-    final currentPrice = (card['purchase_price'] as num?)?.toDouble();
-    final ctrl = TextEditingController(
-      text: currentPrice != null ? currentPrice.toStringAsFixed(2) : '',
-    );
+    final currentPriceEur = (card['purchase_price'] as num?)?.toDouble();
+    // Pre-fill in the user's selected currency
+    final displayPrice = currentPriceEur != null
+        ? CurrencyFormatter.fromEuros(currentPriceEur).toStringAsFixed(2)
+        : '';
+    final ctrl = TextEditingController(text: displayPrice);
 
     final l10n = AppLocalizations.of(context)!;
     final result = await showDialog<double?>(
@@ -138,7 +151,7 @@ class _RoiPageState extends State<RoiPage> {
               decoration: InputDecoration(
                 labelText: l10n.roiPurchasePriceLabel,
                 border: const OutlineInputBorder(),
-                prefixText: '€ ',
+                prefixText: CurrencyFormatter.prefixText,
                 helperText: 'Inserisci il prezzo per singola copia', // TODO: l10n
               ),
               autofocus: true,
@@ -150,7 +163,7 @@ class _RoiPageState extends State<RoiPage> {
             onPressed: () => Navigator.pop(ctx),
             child: Text(l10n.btnCancel),
           ),
-          if (currentPrice != null)
+          if (currentPriceEur != null)
             TextButton(
               onPressed: () => Navigator.pop(ctx, -1.0),
               child: Text(l10n.btnDelete, style: const TextStyle(color: AppColors.error)),
@@ -168,8 +181,9 @@ class _RoiPageState extends State<RoiPage> {
 
     ctrl.dispose();
     if (result == null) return;
-    final price = result < 0 ? null : result;
-    await _repo.updateCardPurchasePrice(card['id'] as int, price);
+    // Convert from selected currency back to EUR for storage
+    final priceEur = result < 0 ? null : CurrencyFormatter.toEuros(result);
+    await _repo.updateCardPurchasePrice(card['id'] as int, priceEur);
     _load();
   }
 
@@ -225,7 +239,7 @@ class _RoiPageState extends State<RoiPage> {
               Expanded(
                 child: _KpiCard(
                   label: AppLocalizations.of(context)!.roiTotalValue,
-                  value: '€${currentValue.toStringAsFixed(2)}',
+                  value: CurrencyFormatter.format(currentValue),
                   color: AppColors.gold,
                   icon: Icons.account_balance_wallet_outlined,
                 ),
@@ -260,9 +274,9 @@ class _RoiPageState extends State<RoiPage> {
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _KpiCard(label: AppLocalizations.of(context)!.roiInvested, value: '€${invested.toStringAsFixed(2)}', color: AppColors.blue, icon: Icons.payments_outlined)),
+              Expanded(child: _KpiCard(label: AppLocalizations.of(context)!.roiInvested, value: CurrencyFormatter.format(invested), color: AppColors.blue, icon: Icons.payments_outlined)),
               const SizedBox(width: 8),
-              Expanded(child: _KpiCard(label: AppLocalizations.of(context)!.roiValueCt, value: '€${ownedValue.toStringAsFixed(2)}', color: AppColors.cardtraderTeal, icon: Icons.trending_up)),
+              Expanded(child: _KpiCard(label: AppLocalizations.of(context)!.roiValueCt, value: CurrencyFormatter.format(ownedValue), color: AppColors.cardtraderTeal, icon: Icons.trending_up)),
             ],
           ),
           const SizedBox(height: 8),
@@ -270,7 +284,7 @@ class _RoiPageState extends State<RoiPage> {
             children: [
               Expanded(child: _KpiCard(
                 label: AppLocalizations.of(context)!.roiGain,
-                value: '${gain >= 0 ? '+' : ''}€${gain.toStringAsFixed(2)}',
+                value: CurrencyFormatter.formatSigned(gain),
                 color: gainColor,
                 icon: gain >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
               )),
@@ -423,10 +437,10 @@ class _RoiPageState extends State<RoiPage> {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Text('Pagato: €${purchasePrice.toStringAsFixed(2)}',
+                        Text('Pagato: ${CurrencyFormatter.format(purchasePrice)}',
                             style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
                         const SizedBox(width: 8),
-                        Text('CT: €${currentPrice.toStringAsFixed(2)}',
+                        Text('CT: ${CurrencyFormatter.format(currentPrice)}',
                             style: const TextStyle(color: AppColors.cardtraderTeal, fontSize: 11)),
                         if (quantity > 1) ...[
                           const SizedBox(width: 6),
@@ -442,7 +456,7 @@ class _RoiPageState extends State<RoiPage> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '${gainEuros >= 0 ? '+' : ''}€${gainEuros.toStringAsFixed(2)}',
+                    CurrencyFormatter.formatSigned(gainEuros),
                     style: TextStyle(color: gainColor, fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                   Text(

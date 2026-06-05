@@ -935,6 +935,21 @@ class AppLocalizationsIt extends AppLocalizations {
   String get setDetailRetry => 'Riprova';
 
   @override
+  String get setDetailTabAll => 'Tutte';
+
+  @override
+  String get setDetailTabOwned => 'Possedute';
+
+  @override
+  String get setDetailTabMissing => 'Mancanti';
+
+  @override
+  String get setDetailLoadError => 'Errore nel caricamento';
+
+  @override
+  String get nounCards => 'carte';
+
+  @override
   String setCompletionTitle(String name) {
     return 'Espansioni — $name';
   }

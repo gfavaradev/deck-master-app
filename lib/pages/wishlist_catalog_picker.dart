@@ -5,6 +5,7 @@ import '../models/wishlist_model.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/currency_formatter.dart';
 
 class WishlistCatalogPicker extends StatefulWidget {
   const WishlistCatalogPicker({super.key});
@@ -26,7 +27,10 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
 
   String _selectedCollection = 'yugioh';
   List<Map<String, dynamic>> _results = [];
+  // IDs added this session
   final Set<String> _addedIds = {};
+  // IDs already in wishlist from previous sessions
+  final Set<String> _existingIds = {};
   bool _searching = false;
   bool _adding = false;
 
@@ -34,6 +38,15 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
   void initState() {
     super.initState();
     _searchCtrl.addListener(_onQueryChanged);
+    _loadExistingIds();
+  }
+
+  Future<void> _loadExistingIds() async {
+    final items = await _repo.getWishlistItems();
+    if (!mounted) return;
+    setState(() {
+      _existingIds.addAll(items.map((e) => e.catalogId));
+    });
   }
 
   @override
@@ -66,10 +79,13 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
     setState(() { _results = results; _searching = false; });
   }
 
+  bool _isAdded(String catalogId) =>
+      _addedIds.contains(catalogId) || _existingIds.contains(catalogId);
+
   Future<void> _add(Map<String, dynamic> card) async {
     if (_adding) return;
     final catalogId = (card['id'] ?? '').toString();
-    if (_addedIds.contains(catalogId)) return;
+    if (_isAdded(catalogId)) return;
 
     setState(() => _adding = true);
     final item = WishlistModel(
@@ -92,6 +108,15 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _remove(String catalogId) async {
+    await _repo.removeFromWishlistByCatalogId(catalogId);
+    if (!mounted) return;
+    setState(() {
+      _addedIds.remove(catalogId);
+      _existingIds.remove(catalogId);
+    });
   }
 
   @override
@@ -211,7 +236,7 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
 
   Widget _buildResultTile(Map<String, dynamic> card) {
     final catalogId = (card['id'] ?? '').toString();
-    final alreadyAdded = _addedIds.contains(catalogId);
+    final alreadyAdded = _isAdded(catalogId);
     final name = (card['localizedName'] ?? card['name'] ?? '').toString();
     final setCode = (card['localizedSetCode'] ?? card['setCode'] ?? '').toString();
     final rarity = (card['localizedRarity'] ?? card['setRarity'] ?? card['rarity'] ?? '').toString();
@@ -258,19 +283,28 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
           children: [
             if (price != null)
               Padding(
-                padding: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.only(right: 4),
                 child: Text(
-                  '€${price.toStringAsFixed(2)}',
+                  CurrencyFormatter.format(price.toDouble()),
                   style: const TextStyle(color: AppColors.cardtraderTeal, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
-            alreadyAdded
-                ? const Icon(Icons.check_circle, color: AppColors.success, size: 28)
-                : IconButton(
-                    icon: const Icon(Icons.favorite_border, color: AppColors.gold),
-                    onPressed: () => _add(card),
-                    tooltip: AppLocalizations.of(context)!.wishlistAddToWishlistTooltip,
-                  ),
+            IconButton(
+              icon: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+                child: Icon(
+                  alreadyAdded ? Icons.favorite : Icons.favorite_border,
+                  key: ValueKey(alreadyAdded),
+                  color: alreadyAdded ? Colors.red.shade400 : AppColors.textHint,
+                  size: 26,
+                ),
+              ),
+              onPressed: alreadyAdded ? () => _remove(catalogId) : () => _add(card),
+              tooltip: alreadyAdded
+                  ? 'Rimuovi dai preferiti'
+                  : AppLocalizations.of(context)!.wishlistAddToWishlistTooltip,
+            ),
           ],
         ),
         isThreeLine: rarity.isNotEmpty && setCode.isNotEmpty,

@@ -1,9 +1,11 @@
 import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/currency_formatter.dart';
 import '../widgets/collection_value_chart.dart';
 import 'set_completion_page.dart';
 
@@ -27,10 +29,13 @@ class _StatsPageState extends State<StatsPage> {
   bool _chartGlobal = false;
   StreamSubscription<String>? _syncSub;
 
+  void _onCurrencyChanged() => setState(() {});
+
   @override
   void initState() {
     super.initState();
     _loadStats();
+    AppPreferences.currencyNotifier.addListener(_onCurrencyChanged);
     _syncSub = SyncService().onRemoteChange.listen((_) {
       if (mounted) _loadStats();
     });
@@ -38,6 +43,7 @@ class _StatsPageState extends State<StatsPage> {
 
   @override
   void dispose() {
+    AppPreferences.currencyNotifier.removeListener(_onCurrencyChanged);
     _syncSub?.cancel();
     super.dispose();
   }
@@ -91,7 +97,7 @@ class _StatsPageState extends State<StatsPage> {
                   children: [
                     _buildStatCard('Carte Totali', _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
                     _buildStatCard('Carte Uniche', _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
-                    _buildStatCard('Valore Stimato', '€${(_stats?['totalValue'] as double? ?? 0.0).toStringAsFixed(2)}', Icons.euro, Colors.green),
+                    _buildStatCard('Valore Stimato', CurrencyFormatter.format(_stats?['totalValue'] as double? ?? 0.0), Icons.euro, Colors.green),
                     _buildValueChart(),
                     if (_collectionStats.isNotEmpty) _buildCollectionBreakdown(),
                     if (_rarityStats.isNotEmpty) _buildRarityBreakdown(),
@@ -204,7 +210,7 @@ class _StatsPageState extends State<StatsPage> {
                     Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
                     Text(AppLocalizations.of(context)!.statsCardsCount(cards), style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                     const SizedBox(width: 12),
-                    Text('€${value.toStringAsFixed(2)}',
+                    Text(CurrencyFormatter.format(value),
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
                   ],
                 ),
@@ -257,7 +263,7 @@ class _StatsPageState extends State<StatsPage> {
                         Expanded(
                           child: Text(rarity, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
                         ),
-                        Text('$count  •  €${value.toStringAsFixed(2)}',
+                        Text('$count  •  ${CurrencyFormatter.format(value)}',
                             style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       ],
                     ),

@@ -97,7 +97,7 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
           children: [
             Text(widget.setName, style: const TextStyle(fontSize: 16)),
             Text(
-              '$owned / $total carte  •  ${(pct * 100).toStringAsFixed(0)}%',
+              '$owned / $total ${l10n.nounCards}  •  ${(pct * 100).toStringAsFixed(0)}%',
               style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ],
@@ -109,9 +109,9 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
           unselectedLabelColor: AppColors.textSecondary,
           indicatorColor: AppColors.gold,
           tabs: [
-            Tab(text: 'Tutte (${_allCards.length})'), // TODO: l10n
-            Tab(text: 'Possedute (${_ownedCards.length})'), // TODO: l10n
-            Tab(text: 'Mancanti (${_missingCards.length})'), // TODO: l10n
+            Tab(text: '${l10n.setDetailTabAll} (${_allCards.length})'),
+            Tab(text: '${l10n.setDetailTabOwned} (${_ownedCards.length})'),
+            Tab(text: '${l10n.setDetailTabMissing} (${_missingCards.length})'),
           ],
         ),
       ),
@@ -130,7 +130,7 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
                           const Icon(Icons.error_outline, size: 48, color: AppColors.error),
                           const SizedBox(height: 12),
                           Text(
-                            'Errore nel caricamento', // TODO: l10n
+                            l10n.setDetailLoadError,
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                           ),
                           const SizedBox(height: 8),

@@ -61,6 +61,7 @@ class _CatalogPageState extends State<CatalogPage> {
 
   Timer? _debounce;
   String _lastQuery = '';
+  DateTime? _lastProgressTime;
   StreamSubscription<String>? _syncSub;
   StreamSubscription<String>? _langSub;
 
@@ -183,14 +184,15 @@ class _CatalogPageState extends State<CatalogPage> {
   Future<void> _applySilentCatalogUpdate() async {
     final info = _pendingUpdateInfo;
     if (info == null) return;
-    if (mounted) setState(() => _pendingUpdateInfo = null);
     try {
       await _dbHelper.downloadCollectionCatalog(
         widget.collectionKey,
         updateInfo: info,
       );
+      // Only clear pending info and reload after a successful download
       if (!mounted) return;
       setState(() {
+        _pendingUpdateInfo = null;
         _currentOffset = 0;
         _catalogCards = [];
         _hasMoreCards = true;
@@ -203,18 +205,23 @@ class _CatalogPageState extends State<CatalogPage> {
     } catch (_) {}
   }
 
-  Color get _themeAccent => switch (widget.collectionKey) {
-    'yugioh'   => const Color(0xFF9B59B6),
-    'pokemon'  => const Color(0xFFFFCB05),
-    'onepiece' => const Color(0xFFE74C3C),
-    _          => AppColors.gold,
-  };
+  Color get _themeAccent => AppColors.forCollection(widget.collectionKey);
 
   IconData get _themeIcon => switch (widget.collectionKey) {
-    'yugioh'   => Icons.auto_fix_high_rounded,
-    'pokemon'  => Icons.catching_pokemon_rounded,
-    'onepiece' => Icons.sailing_rounded,
-    _          => Icons.cloud_download_outlined,
+    'yugioh'            => Icons.auto_fix_high_rounded,
+    'pokemon'           => Icons.catching_pokemon_rounded,
+    'onepiece'          => Icons.sailing_rounded,
+    'magic'             => Icons.auto_awesome,
+    'digimon'           => Icons.device_hub,
+    'dragon-ball-super' => Icons.electric_bolt,
+    'lorcana'           => Icons.castle,
+    'flesh-and-blood'   => Icons.shield_outlined,
+    'vanguard'          => Icons.military_tech,
+    'star-wars'         => Icons.star_outlined,
+    'riftbound'         => Icons.blur_on,
+    'gundam'            => Icons.smart_toy,
+    'union-arena'       => Icons.sports_kabaddi,
+    _                   => Icons.style_outlined,
   };
 
   String _phaseMessage(String phase) {
@@ -257,34 +264,40 @@ class _CatalogPageState extends State<CatalogPage> {
     });
     // Phase advances forward only: connecting → downloading → saving
     String currentPhase = 'connecting';
+    _lastProgressTime = null;
     try {
       await _dbHelper.downloadCollectionCatalog(
         widget.collectionKey,
         onProgress: (current, total) {
           if (!mounted) return;
+          final now = DateTime.now();
+          final phaseChanged = currentPhase == 'connecting';
+          final throttled = !phaseChanged &&
+              _lastProgressTime != null &&
+              now.difference(_lastProgressTime!).inMilliseconds < 100;
+          if (throttled) return;
+          _lastProgressTime = now;
           final progress = total > 0 ? current / total : null;
-          if (currentPhase == 'connecting') {
-            currentPhase = 'downloading';
-            setState(() {
-              _downloadProgress = progress;
-              _downloadMessage = _phaseMessage('downloading');
-            });
-          } else {
-            setState(() => _downloadProgress = progress);
-          }
+          if (phaseChanged) currentPhase = 'downloading';
+          setState(() {
+            _downloadProgress = progress;
+            if (phaseChanged) _downloadMessage = _phaseMessage('downloading');
+          });
         },
         onSaveProgress: (progress) {
           if (!mounted) return;
-          // Switch to "saving" only near the end to avoid rapid cycling
-          if (currentPhase != 'saving' && progress >= 0.85) {
-            currentPhase = 'saving';
-            setState(() {
-              _downloadProgress = progress;
-              _downloadMessage = _phaseMessage('saving');
-            });
-          } else {
-            setState(() => _downloadProgress = progress);
-          }
+          final now = DateTime.now();
+          final phaseChanged = currentPhase != 'saving' && progress >= 0.85;
+          final throttled = !phaseChanged &&
+              _lastProgressTime != null &&
+              now.difference(_lastProgressTime!).inMilliseconds < 100;
+          if (throttled) return;
+          _lastProgressTime = now;
+          if (phaseChanged) currentPhase = 'saving';
+          setState(() {
+            _downloadProgress = progress;
+            if (phaseChanged) _downloadMessage = _phaseMessage('saving');
+          });
         },
       );
       if (mounted) {

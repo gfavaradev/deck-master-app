@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import '../config/app_secrets.dart';
+import '../utils/currency_formatter.dart';
 import 'admin_catalog_service.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
@@ -951,11 +952,7 @@ class CardtraderPrice {
   int? get bestPriceCents => minPriceNmCents ?? minPriceAnyCents;
 
   /// Formatted price string for display (e.g. "€3.50").
-  String get displayPrice {
-    final c = bestPriceCents;
-    if (c == null) return '—';
-    return '€${(c / 100).toStringAsFixed(2)}';
-  }
+  String get displayPrice => CurrencyFormatter.formatCents(bestPriceCents);
 
   /// Whether NM price is available.
   bool get hasNmPrice => minPriceNmCents != null;

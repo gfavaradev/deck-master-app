@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/card_model.dart';
 import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/currency_formatter.dart';
 
 // ─── Data model ───────────────────────────────────────────────────────────────
 
@@ -257,7 +258,7 @@ class _Chart extends StatelessWidget {
               reservedSize: 42,
               interval: _niceInterval(chartMinY, chartMaxY),
               getTitlesWidget: (v, _) => Text(
-                '€${v.toStringAsFixed(2)}',
+                CurrencyFormatter.format(v),
                 style: const TextStyle(
                     fontSize: 8, color: AppColors.textHint),
               ),
@@ -314,7 +315,7 @@ class _Chart extends StatelessWidget {
             tooltipRoundedRadius: 6,
             getTooltipItems: (spots) => spots
                 .map((s) => LineTooltipItem(
-                      '€${s.y.toStringAsFixed(2)}',
+                      CurrencyFormatter.format(s.y),
                       const TextStyle(
                         color: AppColors.cardtraderTeal,
                         fontWeight: FontWeight.bold,

@@ -81,6 +81,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   String? _currentDownloadingKey;
   int _currentDownloadingIndex = 0;
   _DownloadPhase _downloadPhase = _DownloadPhase.connecting;
+  DateTime? _lastProgressTime;
   OverlayEntry? _popoverEntry;
 
   // Tutorial GlobalKeys — assigned to AppBar buttons
@@ -469,6 +470,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   Future<void> _startCatalogDownload() async {
     final updates = List<Map<String, dynamic>>.from(_pendingUpdates);
     if (updates.isEmpty) return;
+    _lastProgressTime = null;
     setState(() {
       _isCatalogDownloading = true;
       _hasPendingCatalogUpdate = false;
@@ -501,32 +503,40 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             key,
             updateInfo: info,
             onProgress: (current, colTotal) {
-              if (mounted) {
-                setState(() {
-                  _catalogDownloadProgress = (i + current / colTotal) / total;
-                  // Advance to downloading only once; never cycle back
-                  if (_downloadPhase == _DownloadPhase.connecting) {
-                    _downloadPhase = _DownloadPhase.downloading;
-                  }
-                });
-                _popoverEntry?.markNeedsBuild();
-              }
               final pct = colTotal > 0 ? ((current / colTotal) * 100).toInt() : 0;
               BackgroundDownloadService.updateStatus(
                 total > 1 ? 'Collezione ${i + 1}/$total: $name ($pct%)' : '$name ($pct%)',
               );
+              if (!mounted) return;
+              final now = DateTime.now();
+              final phaseChanged = _downloadPhase == _DownloadPhase.connecting;
+              final throttled = !phaseChanged &&
+                  _lastProgressTime != null &&
+                  now.difference(_lastProgressTime!).inMilliseconds < 100;
+              if (throttled) return;
+              _lastProgressTime = now;
+              setState(() {
+                _catalogDownloadProgress = colTotal > 0
+                    ? (i + current / colTotal) / total
+                    : i / total;
+                if (phaseChanged) _downloadPhase = _DownloadPhase.downloading;
+              });
+              _popoverEntry?.markNeedsBuild();
             },
             onSaveProgress: (progress) {
-              if (mounted) {
-                setState(() {
-                  _catalogDownloadProgress = (i + progress) / total;
-                  // Switch to saving only near the end to avoid rapid cycling
-                  if (_downloadPhase != _DownloadPhase.saving && progress >= 0.85) {
-                    _downloadPhase = _DownloadPhase.saving;
-                  }
-                });
-                _popoverEntry?.markNeedsBuild();
-              }
+              if (!mounted) return;
+              final now = DateTime.now();
+              final phaseChanged = _downloadPhase != _DownloadPhase.saving && progress >= 0.85;
+              final throttled = !phaseChanged &&
+                  _lastProgressTime != null &&
+                  now.difference(_lastProgressTime!).inMilliseconds < 100;
+              if (throttled) return;
+              _lastProgressTime = now;
+              setState(() {
+                _catalogDownloadProgress = (i + progress) / total;
+                if (phaseChanged) _downloadPhase = _DownloadPhase.saving;
+              });
+              _popoverEntry?.markNeedsBuild();
             },
           );
           successCount++;
@@ -573,6 +583,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             : ['yugioh', 'pokemon', 'onepiece'])
         : [collectionKey];
 
+    _lastProgressTime = null;
     setState(() {
       _isCatalogDownloading = true;
       _catalogDownloadProgress = null;
@@ -606,26 +617,34 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           BackgroundDownloadService.updateStatus(total > 1 ? 'Ripristino ${i + 1}/$total: $name' : name);
 
           void onProg(int cur, int tot) {
-            if (mounted) {
-              setState(() {
-                _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total;
-                if (_downloadPhase == _DownloadPhase.connecting) {
-                  _downloadPhase = _DownloadPhase.downloading;
-                }
-              });
-              _popoverEntry?.markNeedsBuild();
-            }
+            if (!mounted) return;
+            final now = DateTime.now();
+            final phaseChanged = _downloadPhase == _DownloadPhase.connecting;
+            final throttled = !phaseChanged &&
+                _lastProgressTime != null &&
+                now.difference(_lastProgressTime!).inMilliseconds < 100;
+            if (throttled) return;
+            _lastProgressTime = now;
+            setState(() {
+              _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total;
+              if (phaseChanged) _downloadPhase = _DownloadPhase.downloading;
+            });
+            _popoverEntry?.markNeedsBuild();
           }
           void onSave(double p) {
-            if (mounted) {
-              setState(() {
-                _catalogDownloadProgress = (i + p) / total;
-                if (_downloadPhase != _DownloadPhase.saving && p >= 0.85) {
-                  _downloadPhase = _DownloadPhase.saving;
-                }
-              });
-              _popoverEntry?.markNeedsBuild();
-            }
+            if (!mounted) return;
+            final now = DateTime.now();
+            final phaseChanged = _downloadPhase != _DownloadPhase.saving && p >= 0.85;
+            final throttled = !phaseChanged &&
+                _lastProgressTime != null &&
+                now.difference(_lastProgressTime!).inMilliseconds < 100;
+            if (throttled) return;
+            _lastProgressTime = now;
+            setState(() {
+              _catalogDownloadProgress = (i + p) / total;
+              if (phaseChanged) _downloadPhase = _DownloadPhase.saving;
+            });
+            _popoverEntry?.markNeedsBuild();
           }
 
           try {

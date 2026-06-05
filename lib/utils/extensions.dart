@@ -1,20 +1,20 @@
 // Dart 3 extension methods for common operations in DeckMaster.
 // Centralises repeated patterns to reduce boilerplate and improve consistency.
 
+import 'currency_formatter.dart';
+
 /// Price formatting for CardTrader prices (stored as euro cents).
 extension PriceCentsExt on int {
-  /// Formats cents to a Euro string, e.g. 350 → "€3.50"
-  String get euroDisplay => '€${(this / 100).toStringAsFixed(2)}';
+  String get euroDisplay => CurrencyFormatter.formatCents(this);
 }
 
 extension NullablePriceCentsExt on int? {
-  /// Returns "—" if null, otherwise formats as euro.
-  String get euroDisplayOrDash => this == null ? '—' : '€${(this! / 100).toStringAsFixed(2)}';
+  String get euroDisplayOrDash => CurrencyFormatter.formatCents(this);
 }
 
 extension NullableDoubleExt on double? {
-  /// Formats a nullable price double, e.g. 3.5 → "€3.50", null → "—"
-  String get euroDisplayOrDash => this == null || this! <= 0 ? '—' : '€${this!.toStringAsFixed(2)}';
+  String get euroDisplayOrDash =>
+      this == null || this! <= 0 ? '—' : CurrencyFormatter.format(this!);
 }
 
 /// Common string helpers used throughout the app.

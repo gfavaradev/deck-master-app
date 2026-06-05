@@ -910,6 +910,21 @@
   "setDetailRetry": "Riprova",
   "@setDetailRetry": { "description": "Retry button in set detail" },
 
+  "setDetailTabAll": "Tutte",
+  "@setDetailTabAll": { "description": "Set detail tab — all cards" },
+
+  "setDetailTabOwned": "Possedute",
+  "@setDetailTabOwned": { "description": "Set detail tab — owned cards" },
+
+  "setDetailTabMissing": "Mancanti",
+  "@setDetailTabMissing": { "description": "Set detail tab — missing cards" },
+
+  "setDetailLoadError": "Errore nel caricamento",
+  "@setDetailLoadError": { "description": "Set detail load error label" },
+
+  "nounCards": "carte",
+  "@nounCards": { "description": "Plural noun for cards (used in capacity labels)" },
+
   "setCompletionTitle": "Espansioni — {name}",
   "@setCompletionTitle": {
     "description": "Set completion page title",

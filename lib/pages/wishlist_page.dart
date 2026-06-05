@@ -6,6 +6,7 @@ import '../services/data_repository.dart';
 import '../services/price_alert_service.dart';
 import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/currency_formatter.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/tutorial_content_widget.dart';
 import 'wishlist_catalog_picker.dart';
@@ -110,18 +111,20 @@ class _WishlistPageState extends State<WishlistPage> {
   }
 
   Future<void> _openAdd() async {
-    final added = await Navigator.push<bool>(
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const WishlistCatalogPicker()),
     );
-    if (added == true) _load();
+    _load();
   }
 
   Future<void> _editTargetPrice(WishlistModel item) async {
     final l10n = AppLocalizations.of(context)!;
-    final ctrl = TextEditingController(
-      text: item.targetPrice != null ? item.targetPrice!.toStringAsFixed(2) : '',
-    );
+    // Pre-fill converted from EUR to selected currency
+    final displayPrice = item.targetPrice != null
+        ? CurrencyFormatter.fromEuros(item.targetPrice!).toStringAsFixed(2)
+        : '';
+    final ctrl = TextEditingController(text: displayPrice);
     final result = await showDialog<double?>(
       context: context,
       builder: (ctx) => AppDialog(
@@ -140,7 +143,7 @@ class _WishlistPageState extends State<WishlistPage> {
               decoration: InputDecoration(
                 labelText: l10n.dlgTargetPriceLabel,
                 border: const OutlineInputBorder(),
-                prefixText: '€ ',
+                prefixText: CurrencyFormatter.prefixText,
               ),
               autofocus: true,
             ),
@@ -168,7 +171,8 @@ class _WishlistPageState extends State<WishlistPage> {
     );
     ctrl.dispose();
     if (result == null) return;
-    final price = result < 0 ? null : result;
+    // Convert from selected currency back to EUR for storage
+    final price = result < 0 ? null : CurrencyFormatter.toEuros(result);
     await _repo.updateWishlistTargetPrice(item.id!, price);
     if (!mounted) return;
     _load();
@@ -415,7 +419,7 @@ class _WishlistPageState extends State<WishlistPage> {
               ),
               const SizedBox(width: 2),
               Text(
-                'Obiettivo: €${targetPrice.toStringAsFixed(2)}',
+                'Obiettivo: ${CurrencyFormatter.format(targetPrice)}',
                 style: TextStyle(
                   color: isAboveTarget ? AppColors.success : AppColors.warning,
                   fontSize: 10,
@@ -436,7 +440,7 @@ class _WishlistPageState extends State<WishlistPage> {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          '€${ctPrice.toStringAsFixed(2)}',
+          CurrencyFormatter.format(ctPrice),
           style: TextStyle(
             color: isAboveTarget ? AppColors.success : AppColors.cardtraderTeal,
             fontSize: 15,
