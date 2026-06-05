@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
@@ -13,7 +14,7 @@ class TutorialPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Guida all\'App'),
+        title: Text(AppLocalizations.of(context)!.tutorialPageTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
@@ -73,7 +74,7 @@ class TutorialPage extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: () => _startTutorial(context),
                   icon: const Icon(Icons.play_arrow_rounded),
-                  label: const Text('Inizia il Tutorial'),
+                  label: Text(AppLocalizations.of(context)!.tutorialStartBtn),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.gold,
                     foregroundColor: Colors.black,
@@ -91,7 +92,7 @@ class TutorialPage extends StatelessWidget {
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 style: TextButton.styleFrom(foregroundColor: AppColors.textHint),
-                child: const Text('Forse dopo'),
+                child: Text(AppLocalizations.of(context)!.tutorialMaybeLater),
               ),
             ],
           ),

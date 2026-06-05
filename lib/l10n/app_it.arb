@@ -1,0 +1,1662 @@
+{
+  "@@locale": "it",
+
+  "appName": "Deck Master",
+  "@appName": { "description": "Application name" },
+
+  "btnContinue": "Continua",
+  "@btnContinue": { "description": "Continue button" },
+
+  "btnStart": "Inizia",
+  "@btnStart": { "description": "Start button" },
+
+  "btnCancel": "Annulla",
+  "@btnCancel": { "description": "Cancel button" },
+
+  "btnConfirm": "Conferma",
+  "@btnConfirm": { "description": "Confirm button" },
+
+  "btnSave": "Salva",
+  "@btnSave": { "description": "Save button" },
+
+  "btnDelete": "Elimina",
+  "@btnDelete": { "description": "Delete button" },
+
+  "btnClose": "Chiudi",
+  "@btnClose": { "description": "Close button" },
+
+  "btnRetry": "Riprova",
+  "@btnRetry": { "description": "Retry button" },
+
+  "btnAdd": "Aggiungi",
+  "@btnAdd": { "description": "Add button" },
+
+  "btnCreate": "Crea",
+  "@btnCreate": { "description": "Create button" },
+
+  "btnEdit": "Modifica",
+  "@btnEdit": { "description": "Edit button" },
+
+  "btnPublish": "Pubblica",
+  "@btnPublish": { "description": "Publish button" },
+
+  "btnLogout": "Logout",
+  "@btnLogout": { "description": "Logout button" },
+
+  "btnLogin": "Accedi",
+  "@btnLogin": { "description": "Login button" },
+
+  "btnRegister": "Registrati",
+  "@btnRegister": { "description": "Register button" },
+
+  "btnGoPro": "Vai Pro",
+  "@btnGoPro": { "description": "Go Pro button" },
+
+  "btnMove": "Sposta",
+  "@btnMove": { "description": "Move button" },
+
+  "btnSearch": "Cerca",
+  "@btnSearch": { "description": "Search button" },
+
+  "btnApply": "Applica",
+  "@btnApply": { "description": "Apply button" },
+
+  "btnStart2": "Avvia",
+  "@btnStart2": { "description": "Start/launch button" },
+
+  "btnOk": "OK",
+  "@btnOk": { "description": "OK button" },
+
+  "splashWelcomeFirst": "Benvenuto,",
+  "@splashWelcomeFirst": { "description": "Greeting for first login" },
+
+  "splashWelcomeBack": "Bentornato,",
+  "@splashWelcomeBack": { "description": "Greeting for returning user" },
+
+  "splashFirstLoginSubtitle": "La tua avventura da collezionista inizia ora. 🎴",
+  "@splashFirstLoginSubtitle": { "description": "Subtitle shown on first login" },
+
+  "splashTapToContinue": "Tocca per continuare",
+  "@splashTapToContinue": { "description": "Prompt to tap to continue on splash" },
+
+  "splashReturning1": "Le tue carte ti stavano aspettando.",
+  "@splashReturning1": { "description": "Returning user message 1" },
+
+  "splashReturning2": "Il tuo mazzo è pronto per l'azione.",
+  "@splashReturning2": { "description": "Returning user message 2" },
+
+  "splashReturning3": "La collezione chiama, il collezionista risponde.",
+  "@splashReturning3": { "description": "Returning user message 3" },
+
+  "splashReturning4": "Ogni carta ha una storia. Qual è la tua di oggi?",
+  "@splashReturning4": { "description": "Returning user message 4" },
+
+  "onboardingSelectLanguageTitle": "Seleziona la lingua",
+  "@onboardingSelectLanguageTitle": { "description": "Onboarding step 1 title - language selection" },
+
+  "onboardingSelectLanguageSubtitle": "Choose your language",
+  "@onboardingSelectLanguageSubtitle": { "description": "Onboarding step 1 subtitle in English" },
+
+  "onboardingSelectCurrencyTitle": "Seleziona la valuta",
+  "@onboardingSelectCurrencyTitle": { "description": "Onboarding step 2 title - currency selection" },
+
+  "onboardingSelectCurrencySubtitle": "Select your preferred currency",
+  "@onboardingSelectCurrencySubtitle": { "description": "Onboarding step 2 subtitle in English" },
+
+  "onboardingStep1of2": "1 / 2",
+  "@onboardingStep1of2": { "description": "Step indicator 1 of 2" },
+
+  "onboardingStep2of2": "2 / 2",
+  "@onboardingStep2of2": { "description": "Step indicator 2 of 2" },
+
+  "loginSubtitle": "La tua collezione di carte",
+  "@loginSubtitle": { "description": "Login page subtitle" },
+
+  "loginAccessToContinue": "Accedi per continuare",
+  "@loginAccessToContinue": { "description": "Login prompt" },
+
+  "loginEmailPlaceholder": "Email",
+  "@loginEmailPlaceholder": { "description": "Email field placeholder" },
+
+  "loginPasswordPlaceholder": "Password",
+  "@loginPasswordPlaceholder": { "description": "Password field placeholder" },
+
+  "loginBtnAccedi": "ACCEDI",
+  "@loginBtnAccedi": { "description": "Login button uppercase" },
+
+  "loginBtnRegistrati": "REGISTRATI",
+  "@loginBtnRegistrati": { "description": "Register button uppercase" },
+
+  "loginNoAccount": "Non hai un account? Registrati",
+  "@loginNoAccount": { "description": "No account link" },
+
+  "loginHasAccount": "Hai già un account? Accedi",
+  "@loginHasAccount": { "description": "Already have account link" },
+
+  "loginOrContinueWith": "Oppure continua con",
+  "@loginOrContinueWith": { "description": "Or continue with divider text" },
+
+  "loginContinueOfflineTooltip": "Continua senza connessione",
+  "@loginContinueOfflineTooltip": { "description": "Offline button tooltip" },
+
+  "msgLoginCancelled": "Accesso annullato o non riuscito",
+  "@msgLoginCancelled": { "description": "Login cancelled snackbar" },
+
+  "msgUserNotFound": "Utente non trovato",
+  "@msgUserNotFound": { "description": "User not found error" },
+
+  "msgInvalidCredentials": "Credenziali non valide",
+  "@msgInvalidCredentials": { "description": "Invalid credentials error" },
+
+  "msgEmailInUse": "Email già in uso",
+  "@msgEmailInUse": { "description": "Email already in use error" },
+
+  "msgLoginCancelledShort": "Accesso annullato",
+  "@msgLoginCancelledShort": { "description": "Login cancelled short message" },
+
+  "msgPopupBlocked": "Popup bloccato dal browser. Consenti i popup per questo sito.",
+  "@msgPopupBlocked": { "description": "Popup blocked error" },
+
+  "msgUnauthorizedDomain": "Dominio non autorizzato in Firebase Console",
+  "@msgUnauthorizedDomain": { "description": "Unauthorized domain error" },
+
+  "msgNetworkError": "Errore di rete. Controlla la connessione.",
+  "@msgNetworkError": { "description": "Network error message" },
+
+  "msgErrorGeneric": "Errore: {error}",
+  "@msgErrorGeneric": {
+    "description": "Generic error with details",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "msgInsertEmailPassword": "Inserisci email e password",
+  "@msgInsertEmailPassword": { "description": "Missing email/password snackbar" },
+
+  "navHome": "Home",
+  "@navHome": { "description": "Home navigation label" },
+
+  "navCards": "Carte",
+  "@navCards": { "description": "Cards navigation label" },
+
+  "navCatalog": "Catalogo",
+  "@navCatalog": { "description": "Catalog navigation label" },
+
+  "navCollection": "Raccolta",
+  "@navCollection": { "description": "Collection navigation label" },
+
+  "navNews": "News",
+  "@navNews": { "description": "News navigation label" },
+
+  "navMyCards": "Le mie Carte",
+  "@navMyCards": { "description": "My cards label in app bar" },
+
+  "menuProfile": "Profilo",
+  "@menuProfile": { "description": "Profile menu item" },
+
+  "menuSettings": "Impostazioni",
+  "@menuSettings": { "description": "Settings menu item" },
+
+  "menuCheckUpdates": "Controlla aggiornamenti",
+  "@menuCheckUpdates": { "description": "Check for updates menu item" },
+
+  "menuDonations": "Offrimi un caffè",
+  "@menuDonations": { "description": "Donations menu item" },
+
+  "menuSupport": "Supporto",
+  "@menuSupport": { "description": "Support menu item" },
+
+  "tooltipBackToHome": "Torna alla Home",
+  "@tooltipBackToHome": { "description": "Back to home tooltip" },
+
+  "tooltipScanCard": "Scansiona carta",
+  "@tooltipScanCard": { "description": "Scan card tooltip" },
+
+  "tooltipWishlist": "Wishlist",
+  "@tooltipWishlist": { "description": "Wishlist tooltip" },
+
+  "tooltipRoi": "Analisi ROI",
+  "@tooltipRoi": { "description": "ROI analysis tooltip" },
+
+  "tooltipNotifications": "Notifiche",
+  "@tooltipNotifications": { "description": "Notifications tooltip" },
+
+  "tooltipCatalogUpdate": "Aggiornamento catalogo disponibile — tocca per scaricare",
+  "@tooltipCatalogUpdate": { "description": "Catalog update tooltip" },
+
+  "tooltipStats": "Statistiche",
+  "@tooltipStats": { "description": "Statistics tooltip" },
+
+  "tooltipUserMenu": "Menu utente",
+  "@tooltipUserMenu": { "description": "User menu tooltip" },
+
+  "msgAppUpdated": "App aggiornata alla versione {version}",
+  "@msgAppUpdated": {
+    "description": "App updated snackbar",
+    "placeholders": { "version": { "type": "String" } }
+  },
+
+  "msgAlreadyLatestVersion": "Sei già all'ultima versione disponibile.",
+  "@msgAlreadyLatestVersion": { "description": "Already on latest version snackbar" },
+
+  "msgCatalogUpdatedSuccess": "Catalogo aggiornato con successo!",
+  "@msgCatalogUpdatedSuccess": { "description": "Catalog updated successfully snackbar" },
+
+  "msgCatalogRestoredSuccess": "Catalogo ripristinato con successo!",
+  "@msgCatalogRestoredSuccess": { "description": "Catalog restored successfully snackbar" },
+
+  "msgCatalogRestoreFailed": "Ripristino fallito: {error}",
+  "@msgCatalogRestoreFailed": {
+    "description": "Catalog restore failed snackbar",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "msgErrorUpdateCollection": "Errore aggiornamento {name}: {error}",
+  "@msgErrorUpdateCollection": {
+    "description": "Error updating collection",
+    "placeholders": { "name": { "type": "String" }, "error": { "type": "String" } }
+  },
+
+  "msgErrorRestoreCollection": "Errore ripristino {name}: {error}",
+  "@msgErrorRestoreCollection": {
+    "description": "Error restoring collection",
+    "placeholders": { "name": { "type": "String" }, "error": { "type": "String" } }
+  },
+
+  "msgLevelUp": "Sei salito al livello {level}! 🎉",
+  "@msgLevelUp": {
+    "description": "Level up snackbar",
+    "placeholders": { "level": { "type": "int" } }
+  },
+
+  "popoverTapToClose": "Tocca fuori per chiudere",
+  "@popoverTapToClose": { "description": "Download popover tap to close hint" },
+
+  "downloadPhaseConnecting": "Connessione in corso...",
+  "@downloadPhaseConnecting": { "description": "Generic connecting phase message" },
+
+  "downloadPhaseDownloading": "Download in corso...",
+  "@downloadPhaseDownloading": { "description": "Generic downloading phase message" },
+
+  "downloadPhaseSaving": "Salvataggio in corso...",
+  "@downloadPhaseSaving": { "description": "Generic saving phase message" },
+
+  "downloadYugiohConnecting": "Connessione al Mondo delle Ombre...",
+  "@downloadYugiohConnecting": { "description": "YuGiOh connecting message" },
+
+  "downloadYugiohDownloading": "Maximillion Pegasus sta creando le carte...",
+  "@downloadYugiohDownloading": { "description": "YuGiOh downloading message" },
+
+  "downloadYugiohSaving": "Il Faraone sigilla le carte nel Dueling Book...",
+  "@downloadYugiohSaving": { "description": "YuGiOh saving message" },
+
+  "downloadPokemonConnecting": "Connessione al Lab. del Prof. Oak...",
+  "@downloadPokemonConnecting": { "description": "Pokemon connecting message" },
+
+  "downloadPokemonDownloading": "Il Prof. Oak sta catalogando i Pokémon...",
+  "@downloadPokemonDownloading": { "description": "Pokemon downloading message" },
+
+  "downloadPokemonSaving": "Archiviazione nel Pokédex Nazionale...",
+  "@downloadPokemonSaving": { "description": "Pokemon saving message" },
+
+  "downloadOnepieceConnecting": "Navigazione verso il Grand Line...",
+  "@downloadOnepieceConnecting": { "description": "One Piece connecting message" },
+
+  "downloadOnepieceDownloading": "Shanks sta distribuendo le carte...",
+  "@downloadOnepieceDownloading": { "description": "One Piece downloading message" },
+
+  "downloadOnepieceSaving": "Il Mugiwara Crew carica le carte...",
+  "@downloadOnepieceSaving": { "description": "One Piece saving message" },
+
+  "downloadMagicConnecting": "Connessione all'Arxivio Arcano...",
+  "@downloadMagicConnecting": { "description": "Magic connecting message" },
+
+  "downloadMagicDownloading": "Il Consiglio di Ravnica cataloga le carte...",
+  "@downloadMagicDownloading": { "description": "Magic downloading message" },
+
+  "downloadMagicSaving": "Sigillatura nel Codex Magico...",
+  "@downloadMagicSaving": { "description": "Magic saving message" },
+
+  "adminCatalogTitle": "Admin — Gestione Catalogo",
+  "@adminCatalogTitle": { "description": "Admin catalog appbar title" },
+
+  "homeMyCollections": "Le mie Collezioni",
+  "@homeMyCollections": { "description": "My collections section title" },
+
+  "homeAvailableCollections": "Collezioni Disponibili",
+  "@homeAvailableCollections": { "description": "Available collections section title" },
+
+  "homeComingSoon": "Prossimamente",
+  "@homeComingSoon": { "description": "Coming soon badge on locked collections" },
+
+  "homeUnlockTitle": "Sblocca {name}",
+  "@homeUnlockTitle": {
+    "description": "Unlock collection dialog title",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "homeUnlockFirstMsg": "Vuoi aggiungere {name} come tua prima collezione? È completamente gratuita!",
+  "@homeUnlockFirstMsg": {
+    "description": "First unlock dialog message",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "homeUnlockProMsg": "Con il piano Pro sblocchi tutte le collezioni senza pubblicità.",
+  "@homeUnlockProMsg": { "description": "Pro unlock dialog message" },
+
+  "homeUnlockFree": "GRATIS",
+  "@homeUnlockFree": { "description": "Free badge on collection" },
+
+  "homeUnlockBtn": "Sblocca",
+  "@homeUnlockBtn": { "description": "Unlock button label" },
+
+  "homeWatchVideoTitle": "Sblocca {name}",
+  "@homeWatchVideoTitle": {
+    "description": "Watch video to unlock dialog title",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "homeWatchVideoMsg": "Guarda un breve video per sbloccare questa collezione gratuitamente.",
+  "@homeWatchVideoMsg": { "description": "Watch video dialog message" },
+
+  "homeWatchVideoProNote": "Con il piano Pro sblocchi tutto senza pubblicità.",
+  "@homeWatchVideoProNote": { "description": "Pro note in watch video dialog" },
+
+  "homeWatchVideoBtn": "Guarda Video",
+  "@homeWatchVideoBtn": { "description": "Watch video button" },
+
+  "msgVideoNotAvailable": "Video non disponibile al momento. Riprova tra qualche secondo.",
+  "@msgVideoNotAvailable": { "description": "Video not available snackbar" },
+
+  "msgCollectionUnlocked": "{name} sbloccata!",
+  "@msgCollectionUnlocked": {
+    "description": "Collection unlocked snackbar",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "msgVideoError": "Errore durante il video. Riprova.",
+  "@msgVideoError": { "description": "Video error snackbar" },
+
+  "tutorialCollectionTitle": "La tua Collezione",
+  "@tutorialCollectionTitle": { "description": "Tutorial phase 0 unlocked title" },
+
+  "tutorialUnlockCollectionTitle": "Sblocca una Collezione",
+  "@tutorialUnlockCollectionTitle": { "description": "Tutorial phase 0 locked title" },
+
+  "tutorialCollectionDesc": "Tocca questa card per aprire la tua collezione e iniziare ad aggiungere le tue carte!",
+  "@tutorialCollectionDesc": { "description": "Tutorial phase 0 unlocked description" },
+
+  "tutorialUnlockCollectionDesc": "Tocca questa card per sbloccare la tua prima collezione. È completamente gratuita!",
+  "@tutorialUnlockCollectionDesc": { "description": "Tutorial phase 0 locked description" },
+
+  "tutorialScannerTitle": "Scanner Carta",
+  "@tutorialScannerTitle": { "description": "Tutorial scanner title" },
+
+  "tutorialScannerDesc": "Scansiona le tue carte fisiche con la fotocamera per aggiungerle automaticamente alla collezione.",
+  "@tutorialScannerDesc": { "description": "Tutorial scanner description" },
+
+  "tutorialWishlistTitle": "Wishlist",
+  "@tutorialWishlistTitle": { "description": "Tutorial wishlist title" },
+
+  "tutorialWishlistDesc": "Aggiungi le carte che vuoi acquistare e imposta un prezzo obiettivo. Riceverai un avviso quando il prezzo scende.",
+  "@tutorialWishlistDesc": { "description": "Tutorial wishlist description" },
+
+  "tutorialRoiTitle": "Analisi ROI",
+  "@tutorialRoiTitle": { "description": "Tutorial ROI title" },
+
+  "tutorialRoiDesc": "Inserisci il prezzo pagato per ogni carta e scopri quanto vale il tuo investimento nel tempo.",
+  "@tutorialRoiDesc": { "description": "Tutorial ROI description" },
+
+  "tutorialSkip": "SALTA",
+  "@tutorialSkip": { "description": "Tutorial skip button text" },
+
+  "settingsTitle": "Impostazioni",
+  "@settingsTitle": { "description": "Settings page title" },
+
+  "settingsOfflineMode": "Modalità Offline",
+  "@settingsOfflineMode": { "description": "Offline mode label" },
+
+  "settingsOfflineSubtitle": "I dati non sono sincronizzati sul cloud",
+  "@settingsOfflineSubtitle": { "description": "Offline mode subtitle" },
+
+  "settingsSignInOnline": "Accedi e torna online",
+  "@settingsSignInOnline": { "description": "Sign in and go online button" },
+
+  "settingsUserNotLogged": "Utente non loggato",
+  "@settingsUserNotLogged": { "description": "User not logged label" },
+
+  "settingsViewProfile": "Vedi Profilo",
+  "@settingsViewProfile": { "description": "View profile link" },
+
+  "settingsSectionAdmin": "Amministrazione",
+  "@settingsSectionAdmin": { "description": "Admin section header" },
+
+  "settingsManageUsers": "Gestisci Utenti",
+  "@settingsManageUsers": { "description": "Manage users tile" },
+
+  "settingsManageUsersSubtitle": "Visualizza e modifica ruoli utenti",
+  "@settingsManageUsersSubtitle": { "description": "Manage users subtitle" },
+
+  "settingsManageCatalog": "Gestisci Catalogo",
+  "@settingsManageCatalog": { "description": "Manage catalog tile" },
+
+  "settingsManageCatalogSubtitle": "Aggiungi/Modifica carte nel catalogo",
+  "@settingsManageCatalogSubtitle": { "description": "Manage catalog subtitle" },
+
+  "settingsSectionCatalogRestore": "Ripristino Catalogo",
+  "@settingsSectionCatalogRestore": { "description": "Catalog restore section header" },
+
+  "settingsRestoreCatalog": "Ripristina Catalogo",
+  "@settingsRestoreCatalog": { "description": "Restore catalog tile" },
+
+  "settingsRestoreCatalogSubtitle": "Riscarica dal server e aggiorna il catalogo locale",
+  "@settingsRestoreCatalogSubtitle": { "description": "Restore catalog subtitle" },
+
+  "settingsRestoreDialogTitle": "Ripristina Catalogo",
+  "@settingsRestoreDialogTitle": { "description": "Restore catalog bottom sheet title" },
+
+  "settingsRestoreDialogSubtitle": "Il catalogo locale verrà cancellato e riscaricato dal server.",
+  "@settingsRestoreDialogSubtitle": { "description": "Restore catalog bottom sheet subtitle" },
+
+  "settingsRestoreAllCatalogs": "Tutti i Cataloghi",
+  "@settingsRestoreAllCatalogs": { "description": "Restore all catalogs option" },
+
+  "settingsSectionExport": "Esporta Collezione",
+  "@settingsSectionExport": { "description": "Export section header" },
+
+  "settingsExportCsv": "Esporta come CSV",
+  "@settingsExportCsv": { "description": "Export as CSV tile" },
+
+  "settingsExportCsvSubtitle": "Copia negli appunti — richiede Pro",
+  "@settingsExportCsvSubtitle": { "description": "Export CSV subtitle" },
+
+  "settingsExportJson": "Esporta come JSON",
+  "@settingsExportJson": { "description": "Export as JSON tile" },
+
+  "settingsExportJsonSubtitle": "Copia negli appunti — richiede Pro",
+  "@settingsExportJsonSubtitle": { "description": "Export JSON subtitle" },
+
+  "msgCardsExported": "{count} carte esportate come {format} (negli appunti)",
+  "@msgCardsExported": {
+    "description": "Cards exported snackbar",
+    "placeholders": { "count": { "type": "int" }, "format": { "type": "String" } }
+  },
+
+  "msgExportProRequired": "Funzione disponibile a breve",
+  "@msgExportProRequired": { "description": "Export pro required snackbar" },
+
+  "msgExportError": "Errore esportazione: {error}",
+  "@msgExportError": {
+    "description": "Export error snackbar",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "settingsSectionSync": "Sincronizzazione",
+  "@settingsSectionSync": { "description": "Sync section header" },
+
+  "settingsResetSync": "Ripristina Sincronizzazione",
+  "@settingsResetSync": { "description": "Reset sync tile" },
+
+  "settingsResetSyncSubtitle": "Risolve elementi duplicati nel cloud",
+  "@settingsResetSyncSubtitle": { "description": "Reset sync subtitle" },
+
+  "dlgResetSyncTitle": "Ripristina Sincronizzazione",
+  "@dlgResetSyncTitle": { "description": "Reset sync dialog title" },
+
+  "dlgResetSyncMsg": "Questa operazione deduplicerà le carte/album/deck presenti due volte, ripulirà il cloud e ricaricherà i dati corretti.\n\nProcedi solo se vedi elementi duplicati.",
+  "@dlgResetSyncMsg": { "description": "Reset sync dialog message" },
+
+  "msgSyncRestoredSuccess": "Sincronizzazione ripristinata con successo!",
+  "@msgSyncRestoredSuccess": { "description": "Sync restored successfully snackbar" },
+
+  "msgSyncStarting": "Avvio...",
+  "@msgSyncStarting": { "description": "Sync starting status" },
+
+  "settingsSectionGeneral": "Generale",
+  "@settingsSectionGeneral": { "description": "General section header" },
+
+  "settingsPushNotifications": "Notifiche Push",
+  "@settingsPushNotifications": { "description": "Push notifications toggle tile" },
+
+  "settingsPushNotificationsSubtitle": "Ricevi notifiche dall'app",
+  "@settingsPushNotificationsSubtitle": { "description": "Push notifications subtitle" },
+
+  "settingsNotifAppUpdates": "Aggiornamenti App",
+  "@settingsNotifAppUpdates": { "description": "App updates notification toggle" },
+
+  "settingsNotifAppUpdatesSubtitle": "Nuove versioni disponibili",
+  "@settingsNotifAppUpdatesSubtitle": { "description": "App updates notification subtitle" },
+
+  "settingsNotifCatalogUpdates": "Aggiornamenti Catalogo",
+  "@settingsNotifCatalogUpdates": { "description": "Catalog updates notification toggle" },
+
+  "settingsNotifCatalogUpdatesSubtitle": "Nuove carte e aggiornamenti prezzi",
+  "@settingsNotifCatalogUpdatesSubtitle": { "description": "Catalog updates notification subtitle" },
+
+  "settingsLanguage": "Lingua App",
+  "@settingsLanguage": { "description": "App language tile" },
+
+  "settingsLanguageDialogTitle": "Lingua App",
+  "@settingsLanguageDialogTitle": { "description": "Language picker sheet title" },
+
+  "settingsCurrency": "Valuta",
+  "@settingsCurrency": { "description": "Currency tile" },
+
+  "settingsCurrencyDialogTitle": "Valuta",
+  "@settingsCurrencyDialogTitle": { "description": "Currency picker sheet title" },
+
+  "settingsAppGuide": "Guida all'App",
+  "@settingsAppGuide": { "description": "App guide tile" },
+
+  "settingsAppGuideSubtitle": "Rivedi il tutorial introduttivo",
+  "@settingsAppGuideSubtitle": { "description": "App guide subtitle" },
+
+  "settingsSectionDanger": "Zona Pericolosa",
+  "@settingsSectionDanger": { "description": "Danger zone section header" },
+
+  "settingsDeleteAccount": "Elimina Account",
+  "@settingsDeleteAccount": { "description": "Delete account tile" },
+
+  "settingsDeleteAccountSubtitle": "Elimina definitivamente il tuo account e tutti i dati",
+  "@settingsDeleteAccountSubtitle": { "description": "Delete account subtitle" },
+
+  "dlgDeleteAccountTitle": "Elimina Account",
+  "@dlgDeleteAccountTitle": { "description": "Delete account dialog title" },
+
+  "dlgDeleteAccountMsg": "Questa azione è irreversibile.\n\nIl tuo account e tutti i dati associati verranno eliminati definitivamente.",
+  "@dlgDeleteAccountMsg": { "description": "Delete account dialog message" },
+
+  "msgNotifPermissionDenied": "Permesso notifiche negato. Abilitalo nelle impostazioni di sistema.",
+  "@msgNotifPermissionDenied": { "description": "Notification permission denied snackbar" },
+
+  "msgNoCollectionToRestore": "Nessuna collezione sbloccata da ripristinare.",
+  "@msgNoCollectionToRestore": { "description": "No collection to restore snackbar" },
+
+  "msgDeleteAccountRelogin": "Per sicurezza, esci e accedi di nuovo prima di eliminare l'account.",
+  "@msgDeleteAccountRelogin": { "description": "Requires recent login for delete account" },
+
+  "profileTitle": "Profilo",
+  "@profileTitle": { "description": "Profile page title" },
+
+  "profileNickname": "Nickname",
+  "@profileNickname": { "description": "Nickname label" },
+
+  "profileNicknameHint": "Il tuo nome visualizzato",
+  "@profileNicknameHint": { "description": "Nickname hint text" },
+
+  "profileSaveNickname": "Salva Nickname",
+  "@profileSaveNickname": { "description": "Save nickname button" },
+
+  "profileAvatarSection": "Avatar",
+  "@profileAvatarSection": { "description": "Avatar section header" },
+
+  "profileAvatarSubtitle": "Sblocca avatar collezionando carte. Ogni collezione ha i suoi avatar esclusivi.",
+  "@profileAvatarSubtitle": { "description": "Avatar section subtitle" },
+
+  "profileGlobalAvatars": "Avatar Globali",
+  "@profileGlobalAvatars": { "description": "Global avatars section" },
+
+  "profileLevelLabel": "Livello {level}",
+  "@profileLevelLabel": {
+    "description": "Level label",
+    "placeholders": { "level": { "type": "int" } }
+  },
+
+  "profileLevelMax": "Livello MAX",
+  "@profileLevelMax": { "description": "Max level reached label" },
+
+  "profileMaxLevelReached": "Hai raggiunto il livello massimo!",
+  "@profileMaxLevelReached": { "description": "Max level reached message" },
+
+  "profileXpInfo": "{xp} XP totali · ancora {xpToNext} XP al prossimo livello",
+  "@profileXpInfo": {
+    "description": "XP info text",
+    "placeholders": { "xp": { "type": "int" }, "xpToNext": { "type": "int" } }
+  },
+
+  "msgNicknameSaved": "Nickname aggiornato!",
+  "@msgNicknameSaved": { "description": "Nickname saved snackbar" },
+
+  "msgNicknameEmpty": "Il nickname non può essere vuoto",
+  "@msgNicknameEmpty": { "description": "Nickname empty snackbar" },
+
+  "catalogTitle": "Catalogo",
+  "@catalogTitle": { "description": "Catalog page title" },
+
+  "catalogSearchHint": "Cerca per nome o seriale...",
+  "@catalogSearchHint": { "description": "Catalog search hint" },
+
+  "catalogLanguageTitle": "Lingua Catalogo",
+  "@catalogLanguageTitle": { "description": "Catalog language picker title" },
+
+  "catalogLanguageUnavailable": "Le lingue grigie non sono ancora disponibili nel catalogo locale.",
+  "@catalogLanguageUnavailable": { "description": "Catalog language unavailable hint" },
+
+  "catalogLanguageNotAvailable": "Non disponibile",
+  "@catalogLanguageNotAvailable": { "description": "Language not available label" },
+
+  "catalogNoCatalogDownloaded": "Catalogo {name} non è ancora stato scaricato",
+  "@catalogNoCatalogDownloaded": {
+    "description": "Catalog not downloaded title",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "catalogDownloadPrompt": "Scarica il catalogo per sfogliare e aggiungere carte alla tua collezione.",
+  "@catalogDownloadPrompt": { "description": "Catalog download prompt" },
+
+  "catalogDownloadBtn": "Scarica catalogo",
+  "@catalogDownloadBtn": { "description": "Download catalog button" },
+
+  "catalogDownloaded": "Catalogo scaricato con successo!",
+  "@catalogDownloaded": { "description": "Catalog downloaded snackbar" },
+
+  "catalogDownloadBusy": "Un download è già in corso. Attendi il completamento.",
+  "@catalogDownloadBusy": { "description": "Download busy snackbar" },
+
+  "catalogDownloadError": "Errore download: {error}",
+  "@catalogDownloadError": {
+    "description": "Catalog download error",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "catalogLoadError": "Errore di caricamento. Controlla la connessione.",
+  "@catalogLoadError": { "description": "Catalog load error" },
+
+  "catalogNoCards": "Nessuna carta trovata",
+  "@catalogNoCards": { "description": "No cards found in catalog" },
+
+  "catalogDownloadLabel": "Download",
+  "@catalogDownloadLabel": { "description": "Download label in catalog missing state" },
+
+  "catalogSelectAlbumTitle": "Seleziona Album",
+  "@catalogSelectAlbumTitle": { "description": "Select album dialog title" },
+
+  "catalogNoAlbumAvailable": "Nessun album disponibile. Creane uno prima.",
+  "@catalogNoAlbumAvailable": { "description": "No album available message" },
+
+  "catalogLastUsed": "Ultimo usato",
+  "@catalogLastUsed": { "description": "Last used album label" },
+
+  "catalogAddingProgress": "Aggiunta in corso...",
+  "@catalogAddingProgress": { "description": "Adding cards in progress dialog title" },
+
+  "catalogCardsProgress": "{done} / {total} carte elaborate",
+  "@catalogCardsProgress": {
+    "description": "Cards progress text",
+    "placeholders": { "done": { "type": "int" }, "total": { "type": "int" } }
+  },
+
+  "catalogAlbumFull": "Album \"{name}\" è pieno ({current}/{max}).",
+  "@catalogAlbumFull": {
+    "description": "Album full snackbar",
+    "placeholders": { "name": { "type": "String" }, "current": { "type": "int" }, "max": { "type": "int" } }
+  },
+
+  "catalogAlbumNearlyFull": "Album quasi pieno: aggiunte solo {added}/{total} carte.",
+  "@catalogAlbumNearlyFull": {
+    "description": "Album nearly full snackbar",
+    "placeholders": { "added": { "type": "int" }, "total": { "type": "int" } }
+  },
+
+  "catalogAddResult": "{added} aggiunte, {updated} quantità aggiornate, {doppioni} nei Doppioni",
+  "@catalogAddResult": {
+    "description": "Add result snackbar — actually built dynamically, used as reference",
+    "placeholders": { "added": { "type": "int" }, "updated": { "type": "int" }, "doppioni": { "type": "int" } }
+  },
+
+  "catalogNoChange": "Nessuna modifica",
+  "@catalogNoChange": { "description": "No change result" },
+
+  "catalogAdded": "{n} aggiunte",
+  "@catalogAdded": {
+    "description": "N cards added",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "catalogUpdatedQty": "{n} quantità aggiornate",
+  "@catalogUpdatedQty": {
+    "description": "N quantities updated",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "catalogDoppioni": "{n} nei Doppioni",
+  "@catalogDoppioni": {
+    "description": "N duplicates",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "catalogSelectAll": "Seleziona tutto",
+  "@catalogSelectAll": { "description": "Select all tooltip" },
+
+  "catalogCardsSelected": "{n} carte selezionate",
+  "@catalogCardsSelected": {
+    "description": "N cards selected banner",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "catalogAddingN": "Aggiungendo...",
+  "@catalogAddingN": { "description": "Adding in progress FAB label" },
+
+  "catalogAddN": "Aggiungi {n}",
+  "@catalogAddN": {
+    "description": "Add N cards FAB label",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "catalogSetCompleted": "Set completato!",
+  "@catalogSetCompleted": { "description": "Set completed dialog title" },
+
+  "catalogSetCompletedMsg": "\"{setName}\" è completo ({total} / {total2} carte).",
+  "@catalogSetCompletedMsg": {
+    "description": "Set completed dialog message",
+    "placeholders": { "setName": { "type": "String" }, "total": { "type": "int" }, "total2": { "type": "int" } }
+  },
+
+  "catalogMoveToAlbum": "Vuoi spostare tutte le carte di questo set in un album diverso?",
+  "@catalogMoveToAlbum": { "description": "Move to album prompt" },
+
+  "catalogMoveInAlbumLabel": "Sposta in album",
+  "@catalogMoveInAlbumLabel": { "description": "Move in album dropdown label" },
+
+  "catalogKeepCurrentAlbum": "Mantieni album corrente",
+  "@catalogKeepCurrentAlbum": { "description": "Keep current album hint" },
+
+  "catalogCardsMoved": "Carte di \"{setName}\" spostate!",
+  "@catalogCardsMoved": {
+    "description": "Cards moved snackbar",
+    "placeholders": { "setName": { "type": "String" } }
+  },
+
+  "cardListSearchHint": "Cerca per nome, seriale o rarità...",
+  "@cardListSearchHint": { "description": "Card list search hint" },
+
+  "cardListViewTooltipList": "Vista Lista",
+  "@cardListViewTooltipList": { "description": "List view tooltip" },
+
+  "cardListViewTooltipGrid": "Vista Griglia",
+  "@cardListViewTooltipGrid": { "description": "Grid view tooltip" },
+
+  "cardListAlbumOnly": "Stai visualizzando solo le carte di questo album",
+  "@cardListAlbumOnly": { "description": "Album filter banner subtitle" },
+
+  "cardListEmptyAlbum": "Non hai ancora aggiunto carte a questo album.\nAggiungi carte dal Catalogo selezionando questo album.",
+  "@cardListEmptyAlbum": { "description": "Empty state for album view" },
+
+  "cardListEmptyCollection": "Non hai ancora aggiunto carte.\nUsa il Catalogo per aggiungere carte.",
+  "@cardListEmptyCollection": { "description": "Empty state for collection view" },
+
+  "cardListNotInCollection": "Non in collezione — trovata nel catalogo",
+  "@cardListNotInCollection": { "description": "Catalog suggestion header" },
+
+  "cardListNotInCatalog": "Carta non disponibile nel catalogo",
+  "@cardListNotInCatalog": { "description": "Card not in catalog title" },
+
+  "cardListNotInCatalogMsg": "Questa carta non è ancora presente nel nostro catalogo. Puoi segnalarcela e la aggiungeremo il prima possibile.",
+  "@cardListNotInCatalogMsg": { "description": "Card not in catalog message" },
+
+  "cardListReportMissing": "Segnala carta mancante",
+  "@cardListReportMissing": { "description": "Report missing card button" },
+
+  "cardListDoppioneAdded": "Doppione aggiunto all'album \"Doppioni\"",
+  "@cardListDoppioneAdded": { "description": "Doppione added snackbar" },
+
+  "cardListAlbumCatalog": "Catalogo",
+  "@cardListAlbumCatalog": { "description": "Catalog album label" },
+
+  "cardListAlbumUnknown": "Sconosciuto",
+  "@cardListAlbumUnknown": { "description": "Unknown album label" },
+
+  "selectionSelectCards": "Seleziona carte",
+  "@selectionSelectCards": { "description": "Selection mode header - no selection" },
+
+  "selectionNSelected": "{n} selezionate",
+  "@selectionNSelected": {
+    "description": "N cards selected",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "selectionSelectAll": "Seleziona tutto",
+  "@selectionSelectAll": { "description": "Select all button" },
+
+  "selectionDeselectAll": "Deseleziona tutto",
+  "@selectionDeselectAll": { "description": "Deselect all button" },
+
+  "selectionAlbumBtn": "Album",
+  "@selectionAlbumBtn": { "description": "Album button in selection bar" },
+
+  "selectionDeckBtn": "Deck",
+  "@selectionDeckBtn": { "description": "Deck button in selection bar" },
+
+  "selectionDeleteBtn": "Elimina",
+  "@selectionDeleteBtn": { "description": "Delete button in selection bar" },
+
+  "dlgDeleteNCardsTitle": "Elimina {n} carte",
+  "@dlgDeleteNCardsTitle": {
+    "description": "Delete N cards dialog title",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "dlgDeleteNCardsMsg": "Vuoi eliminare le {n} carte selezionate?",
+  "@dlgDeleteNCardsMsg": {
+    "description": "Delete N cards dialog message",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "msgNCardsDeleted": "{n} carte eliminate",
+  "@msgNCardsDeleted": {
+    "description": "N cards deleted snackbar",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "dlgMoveToAlbumTitle": "Sposta in Album",
+  "@dlgMoveToAlbumTitle": { "description": "Move to album dialog title" },
+
+  "dlgAddToDeckTitle": "Aggiungi a Deck",
+  "@dlgAddToDeckTitle": { "description": "Add to deck dialog title" },
+
+  "msgNCardsAddedToDeck": "{n} carte aggiunte al deck",
+  "@msgNCardsAddedToDeck": {
+    "description": "N cards added to deck snackbar",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "msgNoDeckAvailable": "Nessun deck disponibile. Crea prima un deck.",
+  "@msgNoDeckAvailable": { "description": "No deck available snackbar" },
+
+  "dlgCapacityExceededTitle": "Capacità Superata",
+  "@dlgCapacityExceededTitle": { "description": "Capacity exceeded dialog title" },
+
+  "dlgCapacityExceededMsg": "Supererà la capacità massima ({current}/{max}). Procedere?",
+  "@dlgCapacityExceededMsg": {
+    "description": "Capacity exceeded dialog message",
+    "placeholders": { "current": { "type": "int" }, "max": { "type": "int" } }
+  },
+
+  "btnProceed": "Procedi",
+  "@btnProceed": { "description": "Proceed button" },
+
+  "cardDetailDeleteTitle": "Elimina carta",
+  "@cardDetailDeleteTitle": { "description": "Delete card dialog title" },
+
+  "cardDetailDeleteMsg": "Eliminare \"{name}\" dalla collezione?",
+  "@cardDetailDeleteMsg": {
+    "description": "Delete card dialog message",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "cardDetailTooltipDelete": "Elimina",
+  "@cardDetailTooltipDelete": { "description": "Delete tooltip on card detail" },
+
+  "cardDetailPriceHistory": "ANDAMENTO PREZZI",
+  "@cardDetailPriceHistory": { "description": "Price history section title" },
+
+  "cardDetailAlbumSection": "ALBUM",
+  "@cardDetailAlbumSection": { "description": "Album section title on card detail" },
+
+  "cardDetailMarketValue": "VALORE DI MERCATO",
+  "@cardDetailMarketValue": { "description": "Market value section title" },
+
+  "cardDetailDeckSection": "DECK",
+  "@cardDetailDeckSection": { "description": "Deck section title on card detail" },
+
+  "cardDetailDescription": "DESCRIZIONE",
+  "@cardDetailDescription": { "description": "Description section title on card detail" },
+
+  "cardDetailViewOnCardtrader": "Vedi su CardTrader",
+  "@cardDetailViewOnCardtrader": { "description": "View on CardTrader button" },
+
+  "setDetailNoCards": "Nessuna carta.",
+  "@setDetailNoCards": { "description": "No cards in set detail" },
+
+  "setDetailRetry": "Riprova",
+  "@setDetailRetry": { "description": "Retry button in set detail" },
+
+  "setCompletionTitle": "Espansioni — {name}",
+  "@setCompletionTitle": {
+    "description": "Set completion page title",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "setCompletionSearchHint": "Cerca espansione...",
+  "@setCompletionSearchHint": { "description": "Set completion search hint" },
+
+  "deckListNewDeckTitle": "Nuovo Deck",
+  "@deckListNewDeckTitle": { "description": "New deck dialog title" },
+
+  "deckListNewDeckHint": "Es. MazzoAttacco",
+  "@deckListNewDeckHint": { "description": "New deck name hint" },
+
+  "deckListNoDecks": "Nessun deck creato.",
+  "@deckListNoDecks": { "description": "No decks created empty state" },
+
+  "dlgDeleteDeckTitle": "Elimina Deck",
+  "@dlgDeleteDeckTitle": { "description": "Delete deck dialog title" },
+
+  "dlgDeleteDeckMsg": "Sei sicuro di voler eliminare \"{name}\"?",
+  "@dlgDeleteDeckMsg": {
+    "description": "Delete deck dialog message",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "msgDeckDeleted": "Deck \"{name}\" eliminato",
+  "@msgDeckDeleted": {
+    "description": "Deck deleted snackbar",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "albumListNoAlbums": "Nessun album creato.",
+  "@albumListNoAlbums": { "description": "No albums created empty state" },
+
+  "dlgDeleteAlbumTitle": "Elimina Album",
+  "@dlgDeleteAlbumTitle": { "description": "Delete album dialog title" },
+
+  "msgAlbumDeleted": "Album \"{name}\" eliminato",
+  "@msgAlbumDeleted": {
+    "description": "Album deleted snackbar",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "albumNewAlbumHint": "Es. CollezioneBase",
+  "@albumNewAlbumHint": { "description": "New album name hint" },
+
+  "albumCapacityHint": "100",
+  "@albumCapacityHint": { "description": "Album capacity hint" },
+
+  "albumDeckPageNoAlbums": "Nessun album creato.",
+  "@albumDeckPageNoAlbums": { "description": "No albums in album/deck page" },
+
+  "albumDeckPageNoDecks": "Nessun deck creato.",
+  "@albumDeckPageNoDecks": { "description": "No decks in album/deck page" },
+
+  "albumDeckPageAiDeckBuilder": "AI Deck Builder",
+  "@albumDeckPageAiDeckBuilder": { "description": "AI Deck Builder button label" },
+
+  "albumDeckPageNewDeck": "Nuovo Deck",
+  "@albumDeckPageNewDeck": { "description": "New deck button label" },
+
+  "albumDeckPageNewAlbum": "Nuovo Album",
+  "@albumDeckPageNewAlbum": { "description": "New album button label" },
+
+  "deckDetailSharePro": "Condivisione Pro",
+  "@deckDetailSharePro": { "description": "Share deck pro dialog title" },
+
+  "deckDetailShareProMsg": "La condivisione del deck è disponibile solo per gli utenti Pro.",
+  "@deckDetailShareProMsg": { "description": "Share deck pro message" },
+
+  "deckDetailShareTooltip": "Condividi Deck",
+  "@deckDetailShareTooltip": { "description": "Share deck tooltip" },
+
+  "deckDetailShareTooltipPro": "Condividi Deck (Pro)",
+  "@deckDetailShareTooltipPro": { "description": "Share deck pro tooltip" },
+
+  "deckDetailAddBeforeShare": "Aggiungi carte al deck prima di condividerlo",
+  "@deckDetailAddBeforeShare": { "description": "Add cards before sharing snackbar" },
+
+  "deckDetailSharedTitle": "Deck Condiviso!",
+  "@deckDetailSharedTitle": { "description": "Deck shared dialog title" },
+
+  "deckDetailCodeCopied": "Codice copiato!",
+  "@deckDetailCodeCopied": { "description": "Code copied snackbar" },
+
+  "deckDetailInDeck": "Nel Deck",
+  "@deckDetailInDeck": { "description": "In deck label" },
+
+  "deckDetailInDeckHint": "Dettaglio • − per rimuovere",
+  "@deckDetailInDeckHint": { "description": "In deck hint" },
+
+  "deckDetailOwned": "Possedute",
+  "@deckDetailOwned": { "description": "Owned cards label" },
+
+  "deckDetailOwnedHint": "Tocca per aggiungere",
+  "@deckDetailOwnedHint": { "description": "Owned cards hint" },
+
+  "deckDetailSearchHint": "Cerca carta...",
+  "@deckDetailSearchHint": { "description": "Deck detail search hint" },
+
+  "wishlistTitle": "Wishlist",
+  "@wishlistTitle": { "description": "Wishlist page title" },
+
+  "wishlistAddCard": "Aggiungi carta",
+  "@wishlistAddCard": { "description": "Add card to wishlist button" },
+
+  "wishlistAddToWishlistTitle": "Aggiungi alla Wishlist",
+  "@wishlistAddToWishlistTitle": { "description": "Add to wishlist dialog title" },
+
+  "wishlistItemRemovedMsg": "{name} rimossa dalla Wishlist",
+  "@wishlistItemRemovedMsg": {
+    "description": "Item removed from wishlist snackbar",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "wishlistUndoRemove": "Annulla",
+  "@wishlistUndoRemove": { "description": "Undo remove from wishlist" },
+
+  "dlgTargetPriceTitle": "Prezzo obiettivo",
+  "@dlgTargetPriceTitle": { "description": "Target price dialog title" },
+
+  "dlgTargetPriceMsg": "Imposta il prezzo obiettivo per {name}",
+  "@dlgTargetPriceMsg": {
+    "description": "Target price dialog message",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "dlgTargetPriceLabel": "Prezzo (€)",
+  "@dlgTargetPriceLabel": { "description": "Target price input label" },
+
+  "dlgRemoveWishlistTitle": "Rimuovi dalla Wishlist",
+  "@dlgRemoveWishlistTitle": { "description": "Remove from wishlist dialog title" },
+
+  "dlgRemoveWishlistMsg": "Rimuovere \"{name}\" dalla wishlist?",
+  "@dlgRemoveWishlistMsg": {
+    "description": "Remove from wishlist dialog message",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "btnRemove": "Rimuovi",
+  "@btnRemove": { "description": "Remove button" },
+
+  "wishlistNdLabel": "N/D",
+  "@wishlistNdLabel": { "description": "N/A label in wishlist" },
+
+  "wishlistCatalogSearchTitle": "Cerca nel catalogo",
+  "@wishlistCatalogSearchTitle": { "description": "Wishlist catalog picker title" },
+
+  "wishlistCatalogSearchHint": "Cerca per nome o codice set...",
+  "@wishlistCatalogSearchHint": { "description": "Wishlist catalog search hint" },
+
+  "wishlistItemAddedMsg": "{name} aggiunta alla Wishlist",
+  "@wishlistItemAddedMsg": {
+    "description": "Item added to wishlist snackbar",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "wishlistAddToWishlistTooltip": "Aggiungi alla Wishlist",
+  "@wishlistAddToWishlistTooltip": { "description": "Add to wishlist tooltip" },
+
+  "wishlistNoResults": "Nessun risultato trovato",
+  "@wishlistNoResults": { "description": "No results in wishlist catalog search" },
+
+  "statsTitle": "Statistiche",
+  "@statsTitle": { "description": "Stats page title" },
+
+  "statsPerCollection": "Per Collezione",
+  "@statsPerCollection": { "description": "Stats by collection section" },
+
+  "statsCardsCount": "{n} carte",
+  "@statsCardsCount": {
+    "description": "Cards count in stats",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "statsPerRarity": "Per Rarità (top 10)",
+  "@statsPerRarity": { "description": "Stats by rarity section" },
+
+  "statsSetsSection": "Espansioni",
+  "@statsSetsSection": { "description": "Sets section in stats" },
+
+  "statsTabCollection": "Collezione",
+  "@statsTabCollection": { "description": "Collection tab in stats" },
+
+  "statsTabGlobal": "Globale",
+  "@statsTabGlobal": { "description": "Global tab in stats" },
+
+  "roiTitle": "Analisi ROI",
+  "@roiTitle": { "description": "ROI page title" },
+
+  "roiPortfolio": "Portafoglio",
+  "@roiPortfolio": { "description": "Portfolio section in ROI" },
+
+  "roiTotalValue": "Valore totale",
+  "@roiTotalValue": { "description": "Total value label in ROI" },
+
+  "roiSection": "ROI",
+  "@roiSection": { "description": "ROI section title" },
+
+  "roiInvested": "Investito",
+  "@roiInvested": { "description": "Invested label in ROI" },
+
+  "roiValueCt": "Valore CT",
+  "@roiValueCt": { "description": "CT value label in ROI" },
+
+  "roiGain": "Guadagno",
+  "@roiGain": { "description": "Gain label in ROI" },
+
+  "roiPercent": "ROI %",
+  "@roiPercent": { "description": "ROI % label" },
+
+  "roiTrackedCards": "Carte tracciate",
+  "@roiTrackedCards": { "description": "Tracked cards section" },
+
+  "roiPortfolioTitle": "Valore Portfolio",
+  "@roiPortfolioTitle": { "description": "Portfolio value dialog title" },
+
+  "roiPurchasePriceTitle": "Prezzo d'acquisto",
+  "@roiPurchasePriceTitle": { "description": "Purchase price dialog title" },
+
+  "roiPurchasePriceLabel": "Prezzo pagato per copia (€)",
+  "@roiPurchasePriceLabel": { "description": "Purchase price label" },
+
+  "roiAddPricesBtn": "Aggiungi prezzi {label}",
+  "@roiAddPricesBtn": {
+    "description": "Add prices button in ROI",
+    "placeholders": { "label": { "type": "String" } }
+  },
+
+  "notificationsTitle": "Notifiche",
+  "@notificationsTitle": { "description": "Notifications page title" },
+
+  "notifClearAllTitle": "Cancella tutto",
+  "@notifClearAllTitle": { "description": "Clear all notifications dialog title" },
+
+  "notifClearAllMsg": "Vuoi eliminare tutte le notifiche?",
+  "@notifClearAllMsg": { "description": "Clear all notifications dialog message" },
+
+  "notifClearAllTooltip": "Cancella tutto",
+  "@notifClearAllTooltip": { "description": "Clear all tooltip" },
+
+  "notifDownloadBtn": "Scarica",
+  "@notifDownloadBtn": { "description": "Download button in notifications" },
+
+  "newsTitle": "News",
+  "@newsTitle": { "description": "News page title" },
+
+  "newsNetworkError": "Errore di rete",
+  "@newsNetworkError": { "description": "Network error title in news" },
+
+  "newsNetworkErrorSubtitle": "Controlla la connessione e riprova.",
+  "@newsNetworkErrorSubtitle": { "description": "Network error subtitle in news" },
+
+  "newsNoNews": "Nessuna news",
+  "@newsNoNews": { "description": "No news title" },
+
+  "newsNoNewsSubtitle": "Non ci sono aggiornamenti per le tue collezioni.",
+  "@newsNoNewsSubtitle": { "description": "No news subtitle" },
+
+  "newsRefreshTooltip": "Aggiorna",
+  "@newsRefreshTooltip": { "description": "Refresh tooltip in news" },
+
+  "newsHighlight": "IN EVIDENZA",
+  "@newsHighlight": { "description": "Featured badge in news" },
+
+  "newsReadMore": "Leggi di più",
+  "@newsReadMore": { "description": "Read more link in news" },
+
+  "cardScannerTitle": "Scansiona Carta",
+  "@cardScannerTitle": { "description": "Card scanner page title" },
+
+  "cardScannerLimitTitle": "Limite scansioni raggiunto",
+  "@cardScannerLimitTitle": { "description": "Scanner limit dialog title" },
+
+  "cardScannerNoAlbum": "Nessun album trovato per {collection}",
+  "@cardScannerNoAlbum": {
+    "description": "No album found for collection",
+    "placeholders": { "collection": { "type": "String" } }
+  },
+
+  "cardScannerCardAdded": "{name} aggiunta alla collezione!",
+  "@cardScannerCardAdded": {
+    "description": "Card added to collection snackbar",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "cardScannerAddToCollection": "Aggiungi a Collezione",
+  "@cardScannerAddToCollection": { "description": "Add to collection button in scanner" },
+
+  "cardScannerScanAnother": "Scansiona un'altra carta",
+  "@cardScannerScanAnother": { "description": "Scan another card button" },
+
+  "cardScannerOpenCamera": "Apri Fotocamera",
+  "@cardScannerOpenCamera": { "description": "Open camera button" },
+
+  "cardScannerGoToPro": "Passa a Pro",
+  "@cardScannerGoToPro": { "description": "Go to Pro button in scanner limit" },
+
+  "aiDeckBuilderTitle": "AI Deck Builder",
+  "@aiDeckBuilderTitle": { "description": "AI Deck Builder page title" },
+
+  "aiDeckBuilderPromptLabel": "Descrivi la tua strategia",
+  "@aiDeckBuilderPromptLabel": { "description": "AI prompt label" },
+
+  "aiDeckBuilderPromptHint": "Es: \"Un deck aggressivo Dragon con attacchi rapidi e fusioni potenti. Voglio usare i miei Blue-Eyes e un misto di carte di supporto.\"",
+  "@aiDeckBuilderPromptHint": { "description": "AI prompt hint text" },
+
+  "aiDeckBuilderGenerateBtn": "Genera Deck con AI",
+  "@aiDeckBuilderGenerateBtn": { "description": "Generate deck with AI button" },
+
+  "aiDeckBuilderGenerating": "Analisi in corso…",
+  "@aiDeckBuilderGenerating": { "description": "AI generating in progress label" },
+
+  "aiDeckBuilderSaveBtn": "Salva Deck",
+  "@aiDeckBuilderSaveBtn": { "description": "Save deck button in AI builder" },
+
+  "aiDeckBuilderDeckSaved": "Deck \"{name}\" salvato! ({n} carte aggiunte)",
+  "@aiDeckBuilderDeckSaved": {
+    "description": "Deck saved snackbar",
+    "placeholders": { "name": { "type": "String" }, "n": { "type": "int" } }
+  },
+
+  "aiDeckBuilderSaveError": "Errore nel salvare: {error}",
+  "@aiDeckBuilderSaveError": {
+    "description": "Save error snackbar",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "aiDeckBuilderMainLabel": "Main",
+  "@aiDeckBuilderMainLabel": { "description": "Main deck label" },
+
+  "aiDeckBuilderExtraLabel": "Extra",
+  "@aiDeckBuilderExtraLabel": { "description": "Extra deck label" },
+
+  "aiDeckBuilderOwnedLabel": "Possedute",
+  "@aiDeckBuilderOwnedLabel": { "description": "Owned cards label in AI builder" },
+
+  "aiDeckBuilderGoToPro": "Passa a Pro",
+  "@aiDeckBuilderGoToPro": { "description": "Go to Pro button in AI builder" },
+
+  "aiDeckBuilderNotOwned": "non posseduta",
+  "@aiDeckBuilderNotOwned": { "description": "Card not owned label in AI builder" },
+
+  "proTitle": "Pro",
+  "@proTitle": { "description": "Pro page reference" },
+
+  "proNotAvailable": "Abbonamento non disponibile al momento.",
+  "@proNotAvailable": { "description": "Pro subscription not available snackbar" },
+
+  "proWelcomeMsg": "Benvenuto nel piano Pro!",
+  "@proWelcomeMsg": { "description": "Pro welcome snackbar" },
+
+  "proPurchasesRestored": "Acquisti ripristinati!",
+  "@proPurchasesRestored": { "description": "Purchases restored snackbar" },
+
+  "proNoPurchasesToRestore": "Nessun acquisto da ripristinare.",
+  "@proNoPurchasesToRestore": { "description": "No purchases to restore snackbar" },
+
+  "proMonthlyLabel": "Mensile",
+  "@proMonthlyLabel": { "description": "Monthly plan label" },
+
+  "proYearlyLabel": "Annuale",
+  "@proYearlyLabel": { "description": "Yearly plan label" },
+
+  "proYearlyTitle": "Piano Annuale",
+  "@proYearlyTitle": { "description": "Yearly plan title" },
+
+  "proMonthlyTitle": "Piano Mensile",
+  "@proMonthlyTitle": { "description": "Monthly plan title" },
+
+  "donationsTitle": "Supporta il Progetto",
+  "@donationsTitle": { "description": "Donations page title" },
+
+  "msgCantOpenLink": "Impossibile aprire il link",
+  "@msgCantOpenLink": { "description": "Cannot open link snackbar" },
+
+  "supportTitle": "Supporto",
+  "@supportTitle": { "description": "Support page title" },
+
+  "supportReportBugTitle": "Segnala un Problema",
+  "@supportReportBugTitle": { "description": "Report bug section title" },
+
+  "supportReportBugSubtitle": "Hai riscontrato un bug o un comportamento inatteso?",
+  "@supportReportBugSubtitle": { "description": "Report bug section subtitle" },
+
+  "supportMissingCardsTitle": "Carte Mancanti",
+  "@supportMissingCardsTitle": { "description": "Missing cards section title" },
+
+  "supportMissingCardsSubtitle": "Segnala carte assenti o con dati errati nel catalogo.",
+  "@supportMissingCardsSubtitle": { "description": "Missing cards section subtitle" },
+
+  "supportSuggestionTitle": "Suggerimento",
+  "@supportSuggestionTitle": { "description": "Suggestion section title" },
+
+  "supportSuggestionSubtitle": "Hai un'idea per migliorare l'app? Scrivici!",
+  "@supportSuggestionSubtitle": { "description": "Suggestion section subtitle" },
+
+  "supportSupportProject": "Supporta il progetto",
+  "@supportSupportProject": { "description": "Support project button" },
+
+  "msgNoEmailClient": "Nessun client email trovato",
+  "@msgNoEmailClient": { "description": "No email client snackbar" },
+
+  "tutorialPageTitle": "Guida all'App",
+  "@tutorialPageTitle": { "description": "Tutorial page title" },
+
+  "tutorialStartBtn": "Inizia il Tutorial",
+  "@tutorialStartBtn": { "description": "Start tutorial button" },
+
+  "tutorialMaybeLater": "Forse dopo",
+  "@tutorialMaybeLater": { "description": "Maybe later button on tutorial page" },
+
+  "sharedDeckTitle": "Deck Condiviso",
+  "@sharedDeckTitle": { "description": "Shared deck view page title" },
+
+  "sharedDeckNoCards": "Non possiedi nessuna carta di questo deck",
+  "@sharedDeckNoCards": { "description": "No cards owned from shared deck" },
+
+  "sharedDeckImported": "Deck importato! ({n} carte aggiunte)",
+  "@sharedDeckImported": {
+    "description": "Deck imported snackbar",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "sharedDeckCodeHint": "XXXXXX",
+  "@sharedDeckCodeHint": { "description": "Shared deck code hint" },
+
+  "sharedDeckCodeCopied": "Codice copiato!",
+  "@sharedDeckCodeCopied": { "description": "Code copied snackbar in shared deck" },
+
+  "sharedDeckByOwner": "di {owner} · {collection} · {total} carte",
+  "@sharedDeckByOwner": {
+    "description": "Shared deck info line",
+    "placeholders": { "owner": { "type": "String" }, "collection": { "type": "String" }, "total": { "type": "int" } }
+  },
+
+  "adminHomeCatalogTitle": "Gestione Catalogo",
+  "@adminHomeCatalogTitle": { "description": "Admin catalog page title" },
+
+  "adminHomePublishTooltip": "Pubblica modifiche",
+  "@adminHomePublishTooltip": { "description": "Publish changes tooltip" },
+
+  "adminHomeReloadTooltip": "Ricarica",
+  "@adminHomeReloadTooltip": { "description": "Reload tooltip" },
+
+  "adminHomeNewCard": "Nuova Carta",
+  "@adminHomeNewCard": { "description": "New card button in admin" },
+
+  "adminHomeSearchHint": "Cerca carta (nome, archetipo, ID)...",
+  "@adminHomeSearchHint": { "description": "Search hint in admin catalog" },
+
+  "adminHomeViewBtn": "Visualizza",
+  "@adminHomeViewBtn": { "description": "View button in admin catalog" },
+
+  "adminHomeSearchPrompt": "Cerca una carta o aggiungi una nuova",
+  "@adminHomeSearchPrompt": { "description": "Search prompt in admin catalog" },
+
+  "adminCardAdded": "Carta aggiunta alle modifiche",
+  "@adminCardAdded": { "description": "Card added to changes snackbar" },
+
+  "adminEditAdded": "Modifica aggiunta",
+  "@adminEditAdded": { "description": "Edit added to changes snackbar" },
+
+  "adminDeleteConfirmTitle": "Conferma eliminazione",
+  "@adminDeleteConfirmTitle": { "description": "Confirm deletion dialog title in admin" },
+
+  "adminDeleteConfirmMsg": "Vuoi eliminare \"{name}\"?\nLa carta sarà rimossa al prossimo aggiornamento.",
+  "@adminDeleteConfirmMsg": {
+    "description": "Confirm deletion dialog message in admin",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "adminDeleteAdded": "Eliminazione aggiunta alle modifiche",
+  "@adminDeleteAdded": { "description": "Deletion added to changes snackbar" },
+
+  "adminPendingChangesTitle": "Modifiche in sospeso",
+  "@adminPendingChangesTitle": { "description": "Pending changes dialog title" },
+
+  "adminPublishTitle": "Pubblica modifiche",
+  "@adminPublishTitle": { "description": "Publish changes dialog title" },
+
+  "adminPublishedSuccess": "Pubblicato con successo",
+  "@adminPublishedSuccess": { "description": "Published successfully snackbar" },
+
+  "adminCollectionTitle": "Pubblica Modifiche",
+  "@adminCollectionTitle": { "description": "Admin collection publish dialog title" },
+
+  "adminCollectionPublishMsg": "Pubblicare {n} modifiche su Firestore?",
+  "@adminCollectionPublishMsg": {
+    "description": "Publish N changes message",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "adminCollectionPublishSuccess": "Modifiche pubblicate con successo!",
+  "@adminCollectionPublishSuccess": { "description": "Changes published successfully snackbar" },
+
+  "adminCollectionSearchHint": "Cerca per nome, ID o archetipo...",
+  "@adminCollectionSearchHint": { "description": "Search hint in admin collection" },
+
+  "adminCollectionNoCards": "Nessuna carta trovata",
+  "@adminCollectionNoCards": { "description": "No cards found in admin collection" },
+
+  "adminCollectionPublishTooltip": "Pubblica modifiche",
+  "@adminCollectionPublishTooltip": { "description": "Publish changes tooltip in admin collection" },
+
+  "adminCollectionReloadTooltip": "Ricarica da Firestore",
+  "@adminCollectionReloadTooltip": { "description": "Reload from Firestore tooltip" },
+
+  "adminCollectionDeleteMsg": "Eliminare \"{name}\" dal catalogo?",
+  "@adminCollectionDeleteMsg": {
+    "description": "Delete card from catalog dialog message",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "adminCollectionCardEditedPending": "Modifica in attesa di pubblicazione",
+  "@adminCollectionCardEditedPending": { "description": "Card edit pending snackbar" },
+
+  "adminCollectionCardAddedPending": "Carta aggiunta — in attesa di pubblicazione",
+  "@adminCollectionCardAddedPending": { "description": "Card added pending snackbar" },
+
+  "adminExcelTitle": "Export / Import Excel",
+  "@adminExcelTitle": { "description": "Admin Excel page title" },
+
+  "adminExcelImportConfirmTitle": "Conferma importazione",
+  "@adminExcelImportConfirmTitle": { "description": "Import confirmation dialog title" },
+
+  "adminExcelExportTitle": "Esporta in Excel",
+  "@adminExcelExportTitle": { "description": "Export to Excel section title" },
+
+  "adminExcelExportSubtitle": "Genera un file .xlsx con due fogli:\n",
+  "@adminExcelExportSubtitle": { "description": "Export to Excel subtitle" },
+
+  "adminExcelExportBtn": "Esporta e Condividi",
+  "@adminExcelExportBtn": { "description": "Export and share button" },
+
+  "adminExcelImportTitle": "Importa da Excel",
+  "@adminExcelImportTitle": { "description": "Import from Excel section title" },
+
+  "adminExcelImportSubtitle": "Seleziona un file .xlsx esportato da questa app con le ",
+  "@adminExcelImportSubtitle": { "description": "Import from Excel subtitle" },
+
+  "adminExcelSelectFileBtn": "Seleziona file .xlsx",
+  "@adminExcelSelectFileBtn": { "description": "Select xlsx file button" },
+
+  "adminExcelApplyBtn": "Applica {n} modifiche su Firestore",
+  "@adminExcelApplyBtn": {
+    "description": "Apply N changes button",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "adminSetsTitle": "Espansioni & Rarità",
+  "@adminSetsTitle": { "description": "Admin sets & rarities page title" },
+
+  "adminSetsSyncTooltip": "Sincronizza su Firestore",
+  "@adminSetsSyncTooltip": { "description": "Sync to Firestore tooltip" },
+
+  "adminSetsSynced": "Traduzioni sincronizzate su Firestore",
+  "@adminSetsSynced": { "description": "Translations synced snackbar" },
+
+  "adminSetsEditTooltip": "Modifica traduzioni",
+  "@adminSetsEditTooltip": { "description": "Edit translations tooltip" },
+
+  "adminUsersTitle": "Gestione Utenti",
+  "@adminUsersTitle": { "description": "Admin users page title" },
+
+  "adminUsersReloadTooltip": "Ricarica",
+  "@adminUsersReloadTooltip": { "description": "Reload tooltip in admin users" },
+
+  "adminUsersNoUsers": "Nessun utente trovato",
+  "@adminUsersNoUsers": { "description": "No users found label" },
+
+  "adminUsersFilterAll": "Tutti",
+  "@adminUsersFilterAll": { "description": "Filter all label" },
+
+  "adminUsersFilterAdmin": "Admin",
+  "@adminUsersFilterAdmin": { "description": "Filter admin label" },
+
+  "adminUsersFilterUsers": "Utenti",
+  "@adminUsersFilterUsers": { "description": "Filter users label" },
+
+  "adminUsersRoleUpdated": "Ruolo aggiornato con successo",
+  "@adminUsersRoleUpdated": { "description": "Role updated snackbar" },
+
+  "adminUsersStatusUpdated": "Stato aggiornato: {status}",
+  "@adminUsersStatusUpdated": {
+    "description": "Status updated snackbar",
+    "placeholders": { "status": { "type": "String" } }
+  },
+
+  "adminUsersDeletedSuccess": "Utente eliminato con successo",
+  "@adminUsersDeletedSuccess": { "description": "User deleted successfully snackbar" },
+
+  "adminUsersConfirmRoleTitle": "Conferma cambio ruolo",
+  "@adminUsersConfirmRoleTitle": { "description": "Confirm role change dialog title" },
+
+  "adminUsersConfirmDeleteTitle": "Conferma eliminazione",
+  "@adminUsersConfirmDeleteTitle": { "description": "Confirm delete user dialog title" },
+
+  "updateDialogRequired": "Aggiornamento richiesto",
+  "@updateDialogRequired": { "description": "Forced update title" },
+
+  "updateDialogAvailable": "Nuova versione disponibile",
+  "@updateDialogAvailable": { "description": "Update available title" },
+
+  "updateDialogForcedMsg": "Questa versione non è più supportata. Aggiorna per continuare a usare l'app.",
+  "@updateDialogForcedMsg": { "description": "Forced update message" },
+
+  "updateDialogOptionalMsg": "È disponibile una nuova versione con miglioramenti e correzioni.",
+  "@updateDialogOptionalMsg": { "description": "Optional update message" },
+
+  "updateDialogWhatsNew": "Novità",
+  "@updateDialogWhatsNew": { "description": "What's new section title in update dialog" },
+
+  "updateDialogUpdateNow": "Aggiorna ora",
+  "@updateDialogUpdateNow": { "description": "Update now button" },
+
+  "updateDialogNotNow": "Non ora",
+  "@updateDialogNotNow": { "description": "Not now button" },
+
+  "cardDialogSelectAlbumLabel": "Seleziona Album",
+  "@cardDialogSelectAlbumLabel": { "description": "Select album dropdown label in card dialog" },
+
+  "cardDialogDeck": "Deck",
+  "@cardDialogDeck": { "description": "Deck label in card dialog" },
+
+  "cardDialogDescription": "Descrizione",
+  "@cardDialogDescription": { "description": "Description label in card dialog" },
+
+  "cardDialogDeleteBtn": "Elimina",
+  "@cardDialogDeleteBtn": { "description": "Delete button in card dialog" },
+
+  "cardDialogCloseBtn": "Chiudi",
+  "@cardDialogCloseBtn": { "description": "Close button in card dialog" },
+
+  "cardDialogSaveBtn": "Salva",
+  "@cardDialogSaveBtn": { "description": "Save button in card dialog" },
+
+  "cardDialogAddToTitle": "Aggiungi a {collection}",
+  "@cardDialogAddToTitle": {
+    "description": "Add to collection dialog title",
+    "placeholders": { "collection": { "type": "String" } }
+  },
+
+  "cardDialogNoAlbumTitle": "Nessun Album",
+  "@cardDialogNoAlbumTitle": { "description": "No album dialog title" },
+
+  "cardDialogNoAlbumMsg": "Non hai ancora creato un album per questa collezione. Crea un album dalla sezione Raccolta.",
+  "@cardDialogNoAlbumMsg": { "description": "No album dialog message" },
+
+  "cardDialogManageAlbum": "Gestisci Album",
+  "@cardDialogManageAlbum": { "description": "Manage album button in card dialog" },
+
+  "cardDialogSelectFromCatalog": "Seleziona una carta dal catalogo",
+  "@cardDialogSelectFromCatalog": { "description": "Select from catalog snackbar" },
+
+  "cardDialogSelectAlbum": "Seleziona un album",
+  "@cardDialogSelectAlbum": { "description": "Select an album snackbar" },
+
+  "cardDialogNameEmpty": "Il nome della carta non può essere vuoto.",
+  "@cardDialogNameEmpty": { "description": "Card name empty snackbar" },
+
+  "cardDialogQtyMin": "La quantità deve essere almeno 1.",
+  "@cardDialogQtyMin": { "description": "Quantity min snackbar" },
+
+  "cardDialogAlbumFullTitle": "Album pieno",
+  "@cardDialogAlbumFullTitle": { "description": "Album full dialog title in card dialog" },
+
+  "cardDialogDoppionAdded": "Carta già presente nella collezione → aggiunta ai Doppioni",
+  "@cardDialogDoppionAdded": { "description": "Card added to doppioni snackbar" },
+
+  "cardItemNdLabel": "N/D",
+  "@cardItemNdLabel": { "description": "N/A value label in card item" },
+
+  "undoBarUndo": "Annulla",
+  "@undoBarUndo": { "description": "Undo button in top undo bar" },
+
+  "adminCardEditSaveBtn": "Salva Carta",
+  "@adminCardEditSaveBtn": { "description": "Save card button in admin edit dialog" },
+
+  "adminCardEditImageHint": "Carica dal dispositivo →",
+  "@adminCardEditImageHint": { "description": "Image URL hint in admin card edit" },
+
+  "adminCardEditImageTooltip": "Carica dal dispositivo",
+  "@adminCardEditImageTooltip": { "description": "Upload from device tooltip" },
+
+  "adminCardEditUploadFailed": "Upload non riuscito o timeout",
+  "@adminCardEditUploadFailed": { "description": "Upload failed snackbar" },
+
+  "adminCardEditStatsNA": "Statistiche non applicabili per questa collezione.",
+  "@adminCardEditStatsNA": { "description": "Stats not applicable message" },
+
+  "adminCardEditSpellTrapNA": "Le Spell e Trap non hanno statistiche mostro",
+  "@adminCardEditSpellTrapNA": { "description": "Spell/trap no stats message" },
+
+  "adminCardEditNoAttacks": "Nessun attacco.",
+  "@adminCardEditNoAttacks": { "description": "No attacks label" },
+
+  "adminCardEditNoAbilities": "Nessuna abilità.",
+  "@adminCardEditNoAbilities": { "description": "No abilities label" },
+
+  "adminCardEditSetsNoData": "Nessun set per questa lingua.",
+  "@adminCardEditSetsNoData": { "description": "No sets for this language" },
+
+  "adminCardEditAddSetTooltip": "Aggiungi set",
+  "@adminCardEditAddSetTooltip": { "description": "Add set tooltip" },
+
+  "adminCardEditNewAttackTitle": "Nuovo Attacco",
+  "@adminCardEditNewAttackTitle": { "description": "New attack dialog title" },
+
+  "adminCardEditEditAttackTitle": "Modifica Attacco",
+  "@adminCardEditEditAttackTitle": { "description": "Edit attack dialog title" },
+
+  "adminCardEditNewAbilityTitle": "Nuova Abilità",
+  "@adminCardEditNewAbilityTitle": { "description": "New ability dialog title" },
+
+  "adminCardEditEditAbilityTitle": "Modifica Abilità",
+  "@adminCardEditEditAbilityTitle": { "description": "Edit ability dialog title" },
+
+  "adminCardEditGenerateFromEn": "Genera da EN",
+  "@adminCardEditGenerateFromEn": { "description": "Generate from EN button" },
+
+  "adminHomeSessions": "Sessione scaduta. Fai il logout e accedi di nuovo.",
+  "@adminHomeSessions": { "description": "Session expired message" },
+
+  "adminHomeOperationCancelled": "Operazione annullata.",
+  "@adminHomeOperationCancelled": { "description": "Operation cancelled snackbar" },
+
+  "adminHomeManageProUsers": "Gestisci Utenti Pro",
+  "@adminHomeManageProUsers": { "description": "Manage Pro users button" },
+
+  "adminHomeCtData": "Catalogo",
+  "@adminHomeCtData": { "description": "Catalog column header in CT data" },
+
+  "adminHomeCtBlueprint": "CT blueprint",
+  "@adminHomeCtBlueprint": { "description": "CT blueprint column header" },
+
+  "adminHomeCtWithPrice": "Con prezzo",
+  "@adminHomeCtWithPrice": { "description": "With price column header" },
+
+  "adminHomeCtDiff": "Diff.",
+  "@adminHomeCtDiff": { "description": "Difference column header" },
+
+  "adminHomeCtNoData": "Nessun dato CT in cache locale.",
+  "@adminHomeCtNoData": { "description": "No CT data in local cache" },
+
+  "adminHomeFilterLabel": "Filtro: ",
+  "@adminHomeFilterLabel": { "description": "Filter label in admin users" }
+}

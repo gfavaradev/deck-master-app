@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -68,6 +69,7 @@ class _AlbumListPageState extends State<AlbumListPage> {
 
   Future<void> _saveAlbum(AlbumModel newAlbum, {required bool isEdit}) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context)!;
     try {
       if (isEdit) {
         await _dbHelper.updateAlbum(newAlbum);
@@ -77,7 +79,7 @@ class _AlbumListPageState extends State<AlbumListPage> {
       if (mounted) _refreshAlbums();
     } catch (e) {
       messenger.showSnackBar(SnackBar(
-        content: Text('Errore: $e'),
+        content: Text(l10n.msgErrorGeneric(e.toString())),
         backgroundColor: AppColors.error,
       ));
     }
@@ -85,17 +87,18 @@ class _AlbumListPageState extends State<AlbumListPage> {
 
   void _showDeleteConfirmation(AlbumModel album) {
     final pageContext = context;
+    final l10n = AppLocalizations.of(context)!;
     showDialog<bool>(
       context: pageContext,
       builder: (_) => AppConfirmDialog(
-        title: 'Elimina Album',
+        title: l10n.dlgDeleteAlbumTitle,
         icon: Icons.delete_outline,
         message: album.currentCount > 0
-            ? 'Sei sicuro di voler eliminare "${album.name}"?\n\n'
+            ? 'Sei sicuro di voler eliminare "${album.name}"?\n\n' // TODO: l10n
                 'Verranno eliminate anche tutte le ${album.currentCount} carte contenute in questo album.\n\n'
                 'Questa azione non può essere annullata.'
-            : 'Sei sicuro di voler eliminare "${album.name}"?',
-        confirmLabel: 'Elimina',
+            : 'Sei sicuro di voler eliminare "${album.name}"?', // TODO: l10n
+        confirmLabel: l10n.btnDelete,
       ),
     ).then((confirmed) async {
       if (confirmed != true) return;
@@ -104,18 +107,19 @@ class _AlbumListPageState extends State<AlbumListPage> {
       _refreshAlbums();
       TopUndoBar.show(
         context: pageContext,
-        message: 'Album "${album.name}" eliminato',
+        message: l10n.msgAlbumDeleted(album.name),
       );
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     Widget body;
     if (_loading) {
       body = const Center(child: CircularProgressIndicator());
     } else if (_albums.isEmpty) {
-      body = const Center(child: Text('Nessun album creato.'));
+      body = Center(child: Text(l10n.albumListNoAlbums));
     } else {
       body = ListView.builder(
         itemCount: _albums.length,
@@ -236,6 +240,7 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final isEdit = widget.album != null;
 
     return Dialog(
@@ -283,7 +288,7 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    isEdit ? 'Modifica Album' : 'Nuovo Album',
+                    isEdit ? l10n.btnEdit : l10n.albumDeckPageNewAlbum,
                     style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 17,
@@ -328,7 +333,7 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
                       ],
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                       decoration: InputDecoration(
-                        hintText: 'Es. CollezioneBase',
+                        hintText: l10n.albumNewAlbumHint,
                         hintStyle: const TextStyle(color: AppColors.textHint),
                         errorText: _nameError,
                         prefixIcon: const Icon(Icons.book_outlined, color: AppColors.blue, size: 20),
@@ -375,7 +380,7 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
                         FilteringTextInputFormatter.digitsOnly,
                       ],
                       decoration: InputDecoration(
-                        hintText: '100',
+                        hintText: l10n.albumCapacityHint,
                         hintStyle: const TextStyle(color: AppColors.textHint),
                         prefixIcon: const Icon(Icons.layers_outlined, color: AppColors.blue, size: 20),
                         suffixText: 'carte',
@@ -421,7 +426,7 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      child: const Text('Annulla'),
+                      child: Text(l10n.btnCancel),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -433,7 +438,7 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      child: Text(isEdit ? 'Salva' : 'Crea Album'),
+                      child: Text(isEdit ? l10n.btnSave : l10n.btnCreate),
                     ),
                   ),
                 ],

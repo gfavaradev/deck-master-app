@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/data_repository.dart';
@@ -160,7 +161,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(
-            pct > 0 ? '$owned / $total' : '$total carte',
+            pct > 0 ? '$owned / $total' : '$total carte', // TODO: l10n
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
           ),
           Text(
@@ -222,7 +223,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$totalSets espansioni totali',
+                  '$totalSets espansioni totali', // TODO: l10n
                   style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 6),
@@ -247,11 +248,11 @@ class _SetCompletionPageState extends State<SetCompletionPage>
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               Text(
-                '$completedSets completate · $inProgressSets in corso',
+                '$completedSets completate · $inProgressSets in corso', // TODO: l10n
                 style: TextStyle(fontSize: 11, color: completedSets == totalSets && totalSets > 0 ? Colors.green : AppColors.textSecondary),
               ),
               Text(
-                'su $totalSets espansioni',
+                'su $totalSets espansioni', // TODO: l10n
                 style: const TextStyle(fontSize: 10, color: AppColors.textHint),
               ),
             ],
@@ -263,18 +264,19 @@ class _SetCompletionPageState extends State<SetCompletionPage>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Espansioni — ${widget.collectionName}'),
+        title: Text(l10n.setCompletionTitle(widget.collectionName)),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         bottom: _isLoading || _allSets.isEmpty
             ? null
             : TabBar(
                 controller: _tabController,
                 tabs: [
-                  Tab(text: 'In corso (${_inProgress.length})'),
-                  Tab(text: 'Completate (${_completed.length})'),
-                  Tab(text: 'Disponibili (${_available.length})'),
+                  Tab(text: 'In corso (${_inProgress.length})'), // TODO: l10n
+                  Tab(text: 'Completate (${_completed.length})'), // TODO: l10n
+                  Tab(text: 'Disponibili (${_available.length})'), // TODO: l10n
                 ],
               ),
       ),
@@ -290,7 +292,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Cerca espansione...',
+                    hintText: l10n.setCompletionSearchHint,
                     prefixIcon: const Icon(Icons.search),
                     isDense: true,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -302,16 +304,16 @@ class _SetCompletionPageState extends State<SetCompletionPage>
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _allSets.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.inventory_2_outlined, size: 64, color: AppColors.textHint),
-                              SizedBox(height: 16),
+                              const Icon(Icons.inventory_2_outlined, size: 64, color: AppColors.textHint),
+                              const SizedBox(height: 16),
                               Text(
-                                'Catalogo non ancora scaricato.\nScarica il catalogo dalle Impostazioni.',
+                                'Catalogo non ancora scaricato.\nScarica il catalogo dalle Impostazioni.', // TODO: l10n
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: AppColors.textHint),
+                                style: const TextStyle(color: AppColors.textHint),
                               ),
                             ],
                           ),
@@ -319,9 +321,9 @@ class _SetCompletionPageState extends State<SetCompletionPage>
                       : TabBarView(
                           controller: _tabController,
                           children: [
-                            _buildList(_inProgress, 'Nessuna espansione in corso.'),
-                            _buildList(_completed, 'Nessuna espansione completata.'),
-                            _buildList(_available, 'Nessuna espansione disponibile.'),
+                            _buildList(_inProgress, 'Nessuna espansione in corso.'), // TODO: l10n
+                            _buildList(_completed, 'Nessuna espansione completata.'), // TODO: l10n
+                            _buildList(_available, 'Nessuna espansione disponibile.'), // TODO: l10n
                           ],
                         ),
           ),

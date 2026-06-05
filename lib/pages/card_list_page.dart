@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -198,19 +199,22 @@ class _CardListPageState extends State<CardListPage> {
       if (delta <= 0) return;
       final int? selectedId = await showDialog<int>(
         context: context,
-        builder: (ctx) => AppDialog(
-          title: 'Seleziona Album',
-          icon: Icons.book_outlined,
-          contentPadding: EdgeInsets.zero,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: _availableAlbums.map((album) => ListTile(
-              title: Text(album.name, style: const TextStyle(color: AppColors.textPrimary)),
-              subtitle: Text('${album.currentCount}/${album.maxCapacity} carte', style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
-              onTap: () => Navigator.pop(ctx, album.id),
-            )).toList(),
-          ),
-        ),
+        builder: (ctx) {
+          final l10n = AppLocalizations.of(ctx)!;
+          return AppDialog(
+            title: l10n.catalogSelectAlbumTitle,
+            icon: Icons.book_outlined,
+            contentPadding: EdgeInsets.zero,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: _availableAlbums.map((album) => ListTile(
+                title: Text(album.name, style: const TextStyle(color: AppColors.textPrimary)),
+                subtitle: Text('${album.currentCount}/${album.maxCapacity} carte', style: const TextStyle(color: AppColors.textHint, fontSize: 12)), // TODO: l10n "carte"
+                onTap: () => Navigator.pop(ctx, album.id),
+              )).toList(),
+            ),
+          );
+        },
       );
       if (!context.mounted || selectedId == null) return;
       await _repo.insertCard(card.copyWith(resetId: true, albumId: selectedId, quantity: delta));
@@ -230,14 +234,15 @@ class _CardListPageState extends State<CardListPage> {
       final freshCount = await _repo.getCardCountByAlbum(album.id!);
       if (freshCount + delta > album.maxCapacity) {
         if (!mounted) return;
+        final l10n = AppLocalizations.of(context)!;
         final proceed = await showDialog<bool>(
           context: context,
           builder: (_) => AppConfirmDialog(
-            title: 'Capacità Superata',
+            title: l10n.dlgCapacityExceededTitle,
             icon: Icons.warning_amber_rounded,
             iconColor: AppColors.warning,
-            message: 'Supererà la capacità massima ($freshCount/${album.maxCapacity}). Procedere?',
-            confirmLabel: 'Procedi',
+            message: l10n.dlgCapacityExceededMsg(freshCount, album.maxCapacity),
+            confirmLabel: l10n.btnProceed,
             confirmColor: AppColors.warning,
           ),
         );
@@ -254,8 +259,9 @@ class _CardListPageState extends State<CardListPage> {
     );
     if (!mounted) return;
     if (willAddToDoppioni) {
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Doppione aggiunto all\'album "Doppioni"'), duration: Duration(seconds: 1)),
+        SnackBar(content: Text(l10n.cardListDoppioneAdded), duration: const Duration(seconds: 1)),
       );
     }
     _refreshCards();
@@ -332,6 +338,7 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Future<void> _batchDelete() async {
+    final l10n = AppLocalizations.of(context)!;
     final selected = _filteredCards
         .where((c) => c.id != null && _selectedIds.contains(c.id))
         .toList();
@@ -339,11 +346,11 @@ class _CardListPageState extends State<CardListPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AppConfirmDialog(
-        title: 'Elimina $count carte',
+        title: l10n.dlgDeleteNCardsTitle(count),
         icon: Icons.delete_outline,
         iconColor: AppColors.error,
-        message: 'Vuoi eliminare le $count carte selezionate?',
-        confirmLabel: 'Elimina',
+        message: l10n.dlgDeleteNCardsMsg(count),
+        confirmLabel: l10n.btnDelete,
         confirmColor: AppColors.error,
       ),
     );
@@ -356,15 +363,16 @@ class _CardListPageState extends State<CardListPage> {
     _refreshCards();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$count carte eliminate'), duration: const Duration(seconds: 2)),
+      SnackBar(content: Text(l10n.msgNCardsDeleted(count)), duration: const Duration(seconds: 2)),
     );
   }
 
   Future<void> _batchChangeAlbum() async {
+    final l10n = AppLocalizations.of(context)!;
     final albumId = await showDialog<int>(
       context: context,
       builder: (ctx) => AppDialog(
-        title: 'Sposta in Album',
+        title: l10n.dlgMoveToAlbumTitle,
         icon: Icons.drive_file_move_outlined,
         contentPadding: EdgeInsets.zero,
         content: Column(
@@ -372,7 +380,7 @@ class _CardListPageState extends State<CardListPage> {
           children: _availableAlbums.map((album) => ListTile(
             title: Text(album.name, style: const TextStyle(color: AppColors.textPrimary)),
             subtitle: Text(
-              '${album.currentCount}/${album.maxCapacity} carte',
+              '${album.currentCount}/${album.maxCapacity} carte', // TODO: l10n
               style: const TextStyle(color: AppColors.textHint, fontSize: 12),
             ),
             onTap: () => Navigator.pop(ctx, album.id),
@@ -390,13 +398,14 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Future<void> _batchAddToDeck() async {
+    final l10n = AppLocalizations.of(context)!;
     final decks = await _repo.getDecksByCollection(widget.collectionKey);
     if (!mounted) return;
     if (decks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nessun deck disponibile. Crea prima un deck.'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(l10n.msgNoDeckAvailable),
+          duration: const Duration(seconds: 2),
         ),
       );
       return;
@@ -404,7 +413,7 @@ class _CardListPageState extends State<CardListPage> {
     final deckId = await showDialog<int>(
       context: context,
       builder: (ctx) => AppDialog(
-        title: 'Aggiungi a Deck',
+        title: l10n.dlgAddToDeckTitle,
         icon: Icons.layers_outlined,
         contentPadding: EdgeInsets.zero,
         content: Column(
@@ -428,13 +437,14 @@ class _CardListPageState extends State<CardListPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${selected.length} carte aggiunte al deck'),
+        content: Text(l10n.msgNCardsAddedToDeck(selected.length)),
         duration: const Duration(seconds: 2),
       ),
     );
   }
 
   Widget _buildSelectionHeader() {
+    final l10n = AppLocalizations.of(context)!;
     final count = _selectedIds.length;
     final total = _filteredCards.length;
     final allSelected = count == total && total > 0;
@@ -449,7 +459,7 @@ class _CardListPageState extends State<CardListPage> {
           const SizedBox(width: 4),
           Expanded(
             child: Text(
-              count == 0 ? 'Seleziona carte' : '$count selezionate',
+              count == 0 ? l10n.selectionSelectCards : l10n.selectionNSelected(count),
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -459,7 +469,7 @@ class _CardListPageState extends State<CardListPage> {
           ),
           TextButton.icon(
             icon: Icon(allSelected ? Icons.deselect : Icons.select_all, size: 18),
-            label: Text(allSelected ? 'Deseleziona tutto' : 'Seleziona tutto'),
+            label: Text(allSelected ? l10n.selectionDeselectAll : l10n.selectionSelectAll),
             style: TextButton.styleFrom(foregroundColor: AppColors.blue),
             onPressed: allSelected ? _deselectAll : _selectAll,
           ),
@@ -469,6 +479,7 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Widget _buildSelectionBar() {
+    final l10n = AppLocalizations.of(context)!;
     final count = _selectedIds.length;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
@@ -481,7 +492,7 @@ class _CardListPageState extends State<CardListPage> {
           Expanded(
             child: FilledButton.icon(
               icon: const Icon(Icons.drive_file_move_outlined, size: 18),
-              label: const Text('Album'),
+              label: Text(l10n.selectionAlbumBtn),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.blue,
                 padding: const EdgeInsets.symmetric(vertical: 10),
@@ -493,7 +504,7 @@ class _CardListPageState extends State<CardListPage> {
           Expanded(
             child: FilledButton.icon(
               icon: const Icon(Icons.layers_outlined, size: 18),
-              label: const Text('Deck'),
+              label: Text(l10n.selectionDeckBtn),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.purple,
                 padding: const EdgeInsets.symmetric(vertical: 10),
@@ -505,7 +516,7 @@ class _CardListPageState extends State<CardListPage> {
           Expanded(
             child: FilledButton.icon(
               icon: const Icon(Icons.delete_outline, size: 18),
-              label: const Text('Elimina'),
+              label: Text(l10n.selectionDeleteBtn),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.error,
                 padding: const EdgeInsets.symmetric(vertical: 10),
@@ -553,11 +564,13 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   String _getAlbumName(int albumId) {
-    if (albumId == -1) return 'Catalogo';
-    return _availableAlbums.firstWhere((a) => a.id == albumId, orElse: () => AlbumModel(name: 'Sconosciuto', collection: '', maxCapacity: 0)).name;
+    final l10n = AppLocalizations.of(context)!;
+    if (albumId == -1) return l10n.cardListAlbumCatalog;
+    return _availableAlbums.firstWhere((a) => a.id == albumId, orElse: () => AlbumModel(name: l10n.cardListAlbumUnknown, collection: '', maxCapacity: 0)).name;
   }
 
   Widget _buildAlbumBanner() {
+    final l10n = AppLocalizations.of(context)!;
     final album = _availableAlbums.firstWhere(
       (a) => a.id == widget.albumId,
       orElse: () => AlbumModel(name: 'Album', collection: '', maxCapacity: 0),
@@ -586,9 +599,9 @@ class _CardListPageState extends State<CardListPage> {
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const Text(
-                  'Stai visualizzando solo le carte di questo album',
-                  style: TextStyle(
+                Text(
+                  l10n.cardListAlbumOnly,
+                  style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
                   ),
@@ -603,7 +616,7 @@ class _CardListPageState extends State<CardListPage> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              '${_allCards.length} carte',
+              '${_allCards.length} carte', // TODO: l10n
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -618,6 +631,7 @@ class _CardListPageState extends State<CardListPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final mainCount = _filteredCards.fold(0, (sum, item) => sum + item.quantity);
     final mainValue = _filteredCards.fold(0.0, (sum, item) {
       final effectivePrice = _getEffectiveValue(item);
@@ -652,7 +666,7 @@ class _CardListPageState extends State<CardListPage> {
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'Cerca per nome, seriale o rarità...',
+                      hintText: l10n.cardListSearchHint,
                       prefixIcon: const Icon(Icons.search),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     ),
@@ -670,13 +684,13 @@ class _CardListPageState extends State<CardListPage> {
                       IconButton(
                         icon: Icon(Icons.list, color: !_isGridView ? AppColors.purple : AppColors.textHint),
                         onPressed: () => setState(() => _isGridView = false),
-                        tooltip: 'Vista Lista',
+                        tooltip: l10n.cardListViewTooltipList,
                       ),
                       Container(width: 1, height: 24, color: AppColors.textHint.withValues(alpha: 0.3)),
                       IconButton(
                         icon: Icon(Icons.grid_view, color: _isGridView ? AppColors.purple : AppColors.textHint),
                         onPressed: () => setState(() => _isGridView = true),
-                        tooltip: 'Vista Griglia',
+                        tooltip: l10n.cardListViewTooltipGrid,
                       ),
                     ],
                   ),
@@ -735,6 +749,7 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Widget _buildEmptyState() {
+    final l10n = AppLocalizations.of(context)!;
     final hasQuery = _searchController.text.trim().isNotEmpty;
 
     // Nessuna ricerca attiva
@@ -747,8 +762,8 @@ class _CardListPageState extends State<CardListPage> {
             const SizedBox(height: 16),
             Text(
               widget.albumId != null
-                  ? 'Non hai ancora aggiunto carte a questo album.\nAggiungi carte dal Catalogo selezionando questo album.'
-                  : 'Non hai ancora aggiunto carte.\nUsa il Catalogo per aggiungere carte.',
+                  ? l10n.cardListEmptyAlbum
+                  : l10n.cardListEmptyCollection,
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.textHint),
             ),
@@ -773,7 +788,7 @@ class _CardListPageState extends State<CardListPage> {
                 const Icon(Icons.search, size: 16, color: AppColors.textSecondary),
                 const SizedBox(width: 6),
                 Text(
-                  'Non in collezione — trovata nel catalogo',
+                  l10n.cardListNotInCollection,
                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
               ],
@@ -792,7 +807,7 @@ class _CardListPageState extends State<CardListPage> {
                   subtitle: setCode.isNotEmpty ? Text(setCode, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)) : null,
                   trailing: ElevatedButton.icon(
                     icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Aggiungi'),
+                    label: Text(l10n.btnAdd),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.blue,
                       foregroundColor: Colors.white,
@@ -818,21 +833,21 @@ class _CardListPageState extends State<CardListPage> {
           children: [
             const Icon(Icons.search_off, size: 64, color: AppColors.textHint),
             const SizedBox(height: 16),
-            const Text(
-              'Carta non disponibile nel catalogo',
+            Text(
+              l10n.cardListNotInCatalog,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Questa carta non è ancora presente nel nostro catalogo. Puoi segnalarcela e la aggiungeremo il prima possibile.',
+            Text(
+              l10n.cardListNotInCatalogMsg,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
               icon: const Icon(Icons.support_agent),
-              label: const Text('Segnala carta mancante'),
+              label: Text(l10n.cardListReportMissing),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.gold,
                 foregroundColor: Colors.black87,

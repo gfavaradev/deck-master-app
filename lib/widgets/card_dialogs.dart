@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,125 +25,128 @@ class CardDialogs {
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AppDialog(
-          title: card.name,
-          icon: Icons.style_outlined,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'S/N: ${card.serialNumber}',
-                style: const TextStyle(
-                  color: AppColors.textHint,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  letterSpacing: 0.4,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (availableAlbums.isNotEmpty)
-                DropdownButtonFormField<int>(
-                  initialValue: selectedAlbumId,
-                  dropdownColor: AppColors.bgLight,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: 'Album',
-                    labelStyle: const TextStyle(color: AppColors.textHint),
-                    isDense: true,
-                    filled: true,
-                    fillColor: AppColors.bgLight,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.blue, width: 1.5)),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx)!;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AppDialog(
+            title: card.name,
+            icon: Icons.style_outlined,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'S/N: ${card.serialNumber}',
+                  style: const TextStyle(
+                    color: AppColors.textHint,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    letterSpacing: 0.4,
                   ),
-                  items: availableAlbums.map((album) {
-                    return DropdownMenuItem<int>(
-                      value: album.id,
-                      child: Text(album.name),
-                    );
-                  }).toList(),
-                  onChanged: (newId) async {
-                    if (newId == null || newId == selectedAlbumId) return;
-                    setDialogState(() => selectedAlbumId = newId);
-                    await DataRepository().updateCard(card.copyWith(albumId: newId));
-                    onAlbumChanged?.call();
-                  },
-                )
-              else
-                _infoRow('Album', albumName),
-              const SizedBox(height: 10),
-              _infoRow('Quantità', '${card.quantity}'),
-              if (card.serialNumber.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                CardtraderAllPricesSection(
-                  collection: card.collection,
-                  serialNumber: card.serialNumber,
-                  cardName: card.name,
-                  rarity: card.rarity.isNotEmpty ? card.rarity : null,
-                  catalogId: card.catalogId,
                 ),
-                if (_ctSearchUrl(card.collection, card.name) != null) ...[
-                  const SizedBox(height: 6),
-                  GestureDetector(
-                    onTap: () => launchUrl(
-                      Uri.parse(_ctSearchUrl(card.collection, card.name)!),
-                      mode: LaunchMode.externalApplication,
+                const SizedBox(height: 12),
+                if (availableAlbums.isNotEmpty)
+                  DropdownButtonFormField<int>(
+                    initialValue: selectedAlbumId,
+                    dropdownColor: AppColors.bgLight,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(
+                      labelText: l10n.cardDialogSelectAlbumLabel,
+                      labelStyle: const TextStyle(color: AppColors.textHint),
+                      isDense: true,
+                      filled: true,
+                      fillColor: AppColors.bgLight,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.blue, width: 1.5)),
                     ),
-                    child: const Text(
-                      'Cerca su CardTrader ↗',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.cardtraderTeal,
-                        decoration: TextDecoration.underline,
-                        decorationColor: AppColors.cardtraderTeal,
+                    items: availableAlbums.map((album) {
+                      return DropdownMenuItem<int>(
+                        value: album.id,
+                        child: Text(album.name),
+                      );
+                    }).toList(),
+                    onChanged: (newId) async {
+                      if (newId == null || newId == selectedAlbumId) return;
+                      setDialogState(() => selectedAlbumId = newId);
+                      await DataRepository().updateCard(card.copyWith(albumId: newId));
+                      onAlbumChanged?.call();
+                    },
+                  )
+                else
+                  _infoRow('Album', albumName),
+                const SizedBox(height: 10),
+                _infoRow('Quantità', '${card.quantity}'),
+                if (card.serialNumber.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  CardtraderAllPricesSection(
+                    collection: card.collection,
+                    serialNumber: card.serialNumber,
+                    cardName: card.name,
+                    rarity: card.rarity.isNotEmpty ? card.rarity : null,
+                    catalogId: card.catalogId,
+                  ),
+                  if (_ctSearchUrl(card.collection, card.name) != null) ...[
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      onTap: () => launchUrl(
+                        Uri.parse(_ctSearchUrl(card.collection, card.name)!),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                      child: const Text(
+                        'Cerca su CardTrader ↗', // TODO: l10n
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.cardtraderTeal,
+                          decoration: TextDecoration.underline,
+                          decorationColor: AppColors.cardtraderTeal,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
+                ],
+                const SizedBox(height: 6),
+                _infoRow('Tipo', card.type),
+                const SizedBox(height: 4),
+                _infoRow('Rarità', card.rarity),
+                if (cardDecks.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(l10n.cardDialogDeck, style: const TextStyle(color: AppColors.textHint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  ...cardDecks.map((d) => Text(
+                    '• ${d['name']} (x${d['quantity']})',
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  )),
+                ],
+                if (card.description.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(l10n.cardDialogDescription, style: const TextStyle(color: AppColors.textHint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  Text(card.description, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4)),
                 ],
               ],
-              const SizedBox(height: 6),
-              _infoRow('Tipo', card.type),
-              const SizedBox(height: 4),
-              _infoRow('Rarità', card.rarity),
-              if (cardDecks.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                const Text('Deck', style: TextStyle(color: AppColors.textHint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
-                const SizedBox(height: 4),
-                ...cardDecks.map((d) => Text(
-                  '• ${d['name']} (x${d['quantity']})',
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                )),
-              ],
-              if (card.description.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                const Text('Descrizione', style: TextStyle(color: AppColors.textHint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
-                const SizedBox(height: 4),
-                Text(card.description, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4)),
-              ],
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  onDelete(card);
+                },
+                style: appDialogCancelStyle().copyWith(
+                  foregroundColor: WidgetStatePropertyAll(AppColors.error),
+                  side: const WidgetStatePropertyAll(BorderSide(color: AppColors.error, width: 0.8)),
+                ),
+                child: Text(l10n.cardDialogDeleteBtn),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: appDialogConfirmStyle(),
+                child: Text(l10n.cardDialogCloseBtn),
+              ),
             ],
           ),
-          actions: [
-            OutlinedButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                onDelete(card);
-              },
-              style: appDialogCancelStyle().copyWith(
-                foregroundColor: WidgetStatePropertyAll(AppColors.error),
-                side: const WidgetStatePropertyAll(BorderSide(color: AppColors.error, width: 0.8)),
-              ),
-              child: const Text('Elimina'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx),
-              style: appDialogConfirmStyle(),
-              child: const Text('Chiudi'),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -181,33 +185,36 @@ class CardDialogs {
     if (availableAlbums.isEmpty) {
       showDialog(
         context: context,
-        builder: (ctx) => AppDialog(
-          title: 'Nessun Album',
-          icon: Icons.book_outlined,
-          iconColor: AppColors.warning,
-          content: const Text(
-            'Devi prima creare almeno un album per questa collezione prima di poter aggiungere delle carte.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
-          ),
-          actions: [
-            OutlinedButton(onPressed: () => Navigator.pop(ctx), style: appDialogCancelStyle(), child: const Text('Chiudi')),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.push(
-                  ctx,
-                  MaterialPageRoute(
-                    builder: (context) => AlbumListPage(
-                      collectionName: collectionName,
-                      collectionKey: collectionKey,
-                    ),
-                  ),
-                );
-              },
-              child: const Text('Gestisci Album'),
+        builder: (ctx) {
+          final l10n = AppLocalizations.of(ctx)!;
+          return AppDialog(
+            title: l10n.cardDialogNoAlbumTitle,
+            icon: Icons.book_outlined,
+            iconColor: AppColors.warning,
+            content: Text(
+              l10n.cardDialogNoAlbumMsg,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
             ),
-          ],
-        ),
+            actions: [
+              OutlinedButton(onPressed: () => Navigator.pop(ctx), style: appDialogCancelStyle(), child: Text(l10n.cardDialogCloseBtn)),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    ctx,
+                    MaterialPageRoute(
+                      builder: (context) => AlbumListPage(
+                        collectionName: collectionName,
+                        collectionKey: collectionKey,
+                      ),
+                    ),
+                  );
+                },
+                child: Text(l10n.cardDialogManageAlbum),
+              ),
+            ],
+          );
+        },
       );
       return;
     }
@@ -408,8 +415,9 @@ class _AddCardDialogState extends State<_AddCardDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return AlertDialog(
-      title: Text('Aggiungi a ${widget.collectionName}'),
+      title: Text(l10n.cardDialogAddToTitle(widget.collectionName)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -417,10 +425,10 @@ class _AddCardDialogState extends State<_AddCardDialog> {
           children: [
             // ── Album ─────────────────────────────────────────────────────
             InputDecorator(
-              decoration: const InputDecoration(
-                labelText: 'Seleziona Album',
+              decoration: InputDecoration(
+                labelText: l10n.cardDialogSelectAlbumLabel,
                 isDense: true,
-                border: UnderlineInputBorder(),
+                border: const UnderlineInputBorder(),
               ),
               child: DropdownButton<int>(
                 value: selectedAlbumId,
@@ -441,26 +449,27 @@ class _AddCardDialogState extends State<_AddCardDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.btnCancel)),
         ElevatedButton(
           onPressed: _saveCard,
-          child: const Text('Salva'),
+          child: Text(l10n.cardDialogSaveBtn),
         ),
       ],
     );
   }
 
   Future<void> _saveCard() async {
+    final l10n = AppLocalizations.of(context)!;
     if (selectedCatalogCard == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Seleziona una carta dal catalogo')),
+        SnackBar(content: Text(l10n.cardDialogSelectFromCatalog)),
       );
       return;
     }
 
     if (selectedAlbumId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Seleziona un album')),
+        SnackBar(content: Text(l10n.cardDialogSelectAlbum)),
       );
       return;
     }
@@ -469,14 +478,14 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     final String nameCheck = nameController.text.trim();
     if (nameCheck.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Il nome della carta non può essere vuoto.')),
+        SnackBar(content: Text(l10n.cardDialogNameEmpty)),
       );
       return;
     }
     final int qtyCheck = int.tryParse(quantityController.text.trim()) ?? 1;
     if (qtyCheck < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La quantità deve essere almeno 1.')),
+        SnackBar(content: Text(l10n.cardDialogQtyMin)),
       );
       return;
     }
@@ -492,24 +501,27 @@ class _AddCardDialogState extends State<_AddCardDialog> {
         if (!mounted) return;
         await showDialog<void>(
           context: context,
-          builder: (ctx) => AppDialog(
-            title: 'Album pieno',
-            icon: Icons.layers_outlined,
-            iconColor: AppColors.warning,
-            content: Text(
-              '${targetAlbum.name} ha raggiunto la capacità massima '
-              '($freshCount/${targetAlbum.maxCapacity}).\n\n'
-              'Aumenta la capacità dell\'album oppure seleziona un altro album.',
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
-            ),
-            actions: [
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx),
-                style: appDialogConfirmStyle(color: AppColors.warning),
-                child: const Text('OK'),
+          builder: (ctx) {
+            final l10n2 = AppLocalizations.of(ctx)!;
+            return AppDialog(
+              title: l10n.cardDialogAlbumFullTitle,
+              icon: Icons.layers_outlined,
+              iconColor: AppColors.warning,
+              content: Text(
+                '${targetAlbum.name} ha raggiunto la capacità massima '
+                '($freshCount/${targetAlbum.maxCapacity}).\n\n'
+                'Aumenta la capacità dell\'album oppure seleziona un altro album.',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
               ),
-            ],
-          ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: appDialogConfirmStyle(color: AppColors.warning),
+                  child: Text(l10n2.btnOk),
+                ),
+              ],
+            );
+          },
         );
         return;
       }
@@ -587,9 +599,9 @@ class _AddCardDialogState extends State<_AddCardDialog> {
     Navigator.pop(context);
     if (redirectedToDoppioni) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Carta già presente nella collezione → aggiunta ai Doppioni'),
-          duration: Duration(seconds: 3),
+        SnackBar(
+          content: Text(l10n.cardDialogDoppionAdded),
+          duration: const Duration(seconds: 3),
         ),
       );
     }

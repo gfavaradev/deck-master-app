@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -116,31 +117,32 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore: $e'), backgroundColor: AppColors.error),
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorGeneric(e.toString())), backgroundColor: AppColors.error),
         );
       }
     }
   }
 
   void _confirmDeleteAlbum(AlbumModel album) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog<bool>(
       context: context,
       builder: (_) => AppConfirmDialog(
-        title: 'Elimina Album',
+        title: l10n.dlgDeleteAlbumTitle,
         icon: Icons.delete_outline,
         message: album.currentCount > 0
-            ? 'Sei sicuro di voler eliminare "${album.name}"?\n\n'
+            ? 'Sei sicuro di voler eliminare "${album.name}"?\n\n' // TODO: l10n
                 'Verranno eliminate anche tutte le ${album.currentCount} carte contenute.\n\n'
                 'Questa azione non può essere annullata.'
-            : 'Sei sicuro di voler eliminare "${album.name}"?',
-        confirmLabel: 'Elimina',
+            : 'Sei sicuro di voler eliminare "${album.name}"?', // TODO: l10n
+        confirmLabel: l10n.btnDelete,
       ),
     ).then((confirmed) async {
       if (confirmed != true) return;
       await _repo.deleteAlbum(album.id!);
       if (!mounted) return;
       _refreshAlbums();
-      TopUndoBar.show(context: context, message: 'Album "${album.name}" eliminato');
+      TopUndoBar.show(context: context, message: l10n.msgAlbumDeleted(album.name));
     });
   }
 
@@ -157,20 +159,21 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
   }
 
   Future<void> _confirmDeleteDeck(Map<String, dynamic> deck) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AppConfirmDialog(
-        title: 'Elimina Deck',
+        title: l10n.dlgDeleteDeckTitle,
         icon: Icons.delete_outline,
-        message: 'Sei sicuro di voler eliminare "${deck['name']}"?',
-        confirmLabel: 'Elimina',
+        message: l10n.dlgDeleteDeckMsg(deck['name'] as String),
+        confirmLabel: l10n.btnDelete,
       ),
     );
     if (confirmed != true || !mounted) return;
     await _repo.deleteDeck(deck['id']);
     if (!mounted) return;
     _refreshDecks();
-    TopUndoBar.show(context: context, message: 'Deck "${deck['name']}" eliminato');
+    TopUndoBar.show(context: context, message: l10n.msgDeckDeleted(deck['name'] as String));
   }
 
   // ── FAB ────────────────────────────────────────────────────────────────────
@@ -192,13 +195,14 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final isWide = MediaQuery.of(context).size.width > 600;
 
     Widget albumContent;
     if (_loadingAlbums) {
       albumContent = const Center(child: CircularProgressIndicator());
     } else if (_albums.isEmpty) {
-      albumContent = const Center(child: Text('Nessun album creato.'));
+      albumContent = Center(child: Text(l10n.albumDeckPageNoAlbums));
     } else {
       albumContent = ListView.builder(
         itemCount: _albums.length,
@@ -269,7 +273,7 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
             const SizedBox(width: 10),
             const Expanded(
               child: Text(
-                'Visualizza deck condiviso',
+                'Visualizza deck condiviso', // TODO: l10n
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
               ),
             ),
@@ -286,7 +290,7 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
       deckContent = Column(
         children: [
           importBanner,
-          const Expanded(child: Center(child: Text('Nessun deck creato.'))),
+          Expanded(child: Center(child: Text(l10n.albumDeckPageNoDecks))),
         ],
       );
     } else {
@@ -401,6 +405,7 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
     return AnimatedBuilder(
       animation: _fabAnim,
       builder: (context, _) {
+        final l10n = AppLocalizations.of(context)!;
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -418,7 +423,7 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                       if (widget.collectionKey == 'yugioh')
                         _FabOption(
                           icon: Icons.auto_awesome,
-                          label: _isPro ? 'AI Deck Builder' : 'AI Deck Builder ✦',
+                          label: _isPro ? l10n.albumDeckPageAiDeckBuilder : '${l10n.albumDeckPageAiDeckBuilder} ✦',
                           color: const Color(0xFF9C6FFF),
                           onTap: () {
                             _closeFab();
@@ -439,7 +444,7 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                       if (widget.collectionKey == 'yugioh') const SizedBox(height: 10),
                       _FabOption(
                         icon: Icons.style_outlined,
-                        label: 'Nuovo Deck',
+                        label: l10n.albumDeckPageNewDeck,
                         color: AppColors.blue,
                         onTap: () {
                           _closeFab();
@@ -452,7 +457,7 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                       const SizedBox(height: 10),
                       _FabOption(
                         icon: Icons.book_outlined,
-                        label: 'Nuovo Album',
+                        label: l10n.albumDeckPageNewAlbum,
                         color: AppColors.gold,
                         onTap: () {
                           _closeFab();
@@ -620,6 +625,7 @@ class _AlbumDialogState extends State<_AlbumDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final isEdit = widget.album != null;
 
     return Dialog(
@@ -666,7 +672,7 @@ class _AlbumDialogState extends State<_AlbumDialog> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    isEdit ? 'Modifica Album' : 'Nuovo Album',
+                    isEdit ? l10n.btnEdit : l10n.albumDeckPageNewAlbum,
                     style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 17,
@@ -709,7 +715,7 @@ class _AlbumDialogState extends State<_AlbumDialog> {
                       ],
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                       decoration: InputDecoration(
-                        hintText: 'Es. CollezioneBase',
+                        hintText: l10n.albumNewAlbumHint,
                         hintStyle: const TextStyle(color: AppColors.textHint),
                         errorText: _nameError,
                         prefixIcon: const Icon(Icons.book_outlined, color: AppColors.gold, size: 20),
@@ -757,7 +763,7 @@ class _AlbumDialogState extends State<_AlbumDialog> {
                       keyboardType: TextInputType.number,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: InputDecoration(
-                        hintText: '100',
+                        hintText: l10n.albumCapacityHint,
                         hintStyle: const TextStyle(color: AppColors.textHint),
                         prefixIcon: const Icon(Icons.layers_outlined, color: AppColors.gold, size: 20),
                         suffixText: 'carte',
@@ -806,7 +812,7 @@ class _AlbumDialogState extends State<_AlbumDialog> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      child: const Text('Annulla'),
+                      child: Text(l10n.btnCancel),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -821,7 +827,7 @@ class _AlbumDialogState extends State<_AlbumDialog> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      child: Text(isEdit ? 'Salva' : 'Crea Album'),
+                      child: Text(isEdit ? l10n.btnSave : l10n.btnCreate),
                     ),
                   ),
                 ],
@@ -855,8 +861,9 @@ class _DeckDialogState extends State<_DeckDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return AppDialog(
-      title: 'Nuovo Deck',
+      title: l10n.deckListNewDeckTitle,
       icon: Icons.style_outlined,
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -880,7 +887,7 @@ class _DeckDialogState extends State<_DeckDialog> {
             ],
             style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
             decoration: InputDecoration(
-              hintText: 'Es. MazzoAttacco',
+              hintText: l10n.deckListNewDeckHint,
               hintStyle: const TextStyle(color: AppColors.textHint),
               errorText: _nameError,
               prefixIcon: const Icon(Icons.style_outlined, color: AppColors.blue, size: 20),
@@ -914,7 +921,7 @@ class _DeckDialogState extends State<_DeckDialog> {
         OutlinedButton(
           onPressed: () => Navigator.pop(context),
           style: appDialogCancelStyle(),
-          child: const Text('Annulla'),
+          child: Text(l10n.btnCancel),
         ),
         FilledButton(
           onPressed: () {
@@ -926,7 +933,7 @@ class _DeckDialogState extends State<_DeckDialog> {
             Navigator.pop(context, name);
           },
           style: appDialogConfirmStyle(),
-          child: const Text('Crea'),
+          child: Text(l10n.btnCreate),
         ),
       ],
     );

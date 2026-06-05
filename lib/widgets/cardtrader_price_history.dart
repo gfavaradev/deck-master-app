@@ -188,8 +188,8 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             hasSomeHistory
-                ? 'Dati insufficienti per il periodo selezionato.'
-                : 'Il grafico si popolerà ad ogni sincronizzazione prezzi.',
+                ? 'Dati insufficienti per il periodo selezionato.' // TODO: l10n
+                : 'Il grafico si popolerà ad ogni sincronizzazione prezzi.', // TODO: l10n
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,

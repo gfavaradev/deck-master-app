@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -52,19 +53,20 @@ class _NewsPageState extends State<NewsPage> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator(color: AppColors.gold));
     }
+    final l10n = AppLocalizations.of(context)!;
     if (_error != null) {
       return _buildEmptyState(
         icon: Icons.wifi_off_outlined,
-        title: 'Errore di rete',
-        subtitle: 'Controlla la connessione e riprova.',
+        title: l10n.newsNetworkError,
+        subtitle: l10n.newsNetworkErrorSubtitle,
         onRefresh: _load,
       );
     }
     if (_news == null || _news!.isEmpty) {
       return _buildEmptyState(
         icon: Icons.newspaper_outlined,
-        title: 'Nessuna news',
-        subtitle: 'Non ci sono aggiornamenti per le tue collezioni.',
+        title: l10n.newsNoNews,
+        subtitle: l10n.newsNoNewsSubtitle,
         onRefresh: _load,
       );
     }
@@ -84,9 +86,9 @@ class _NewsPageState extends State<NewsPage> {
             floating: true,
             backgroundColor: AppColors.bgDark,
             expandedHeight: 0,
-            title: const Text(
-              'News',
-              style: TextStyle(
+            title: Text(
+              AppLocalizations.of(context)!.newsTitle,
+              style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
@@ -96,7 +98,7 @@ class _NewsPageState extends State<NewsPage> {
               IconButton(
                 icon: const Icon(Icons.refresh, color: AppColors.textSecondary),
                 onPressed: () => _load(silent: true),
-                tooltip: 'Aggiorna',
+                tooltip: AppLocalizations.of(context)!.newsRefreshTooltip,
               ),
             ],
           ),
@@ -157,7 +159,7 @@ class _NewsPageState extends State<NewsPage> {
               OutlinedButton.icon(
                 onPressed: onRefresh,
                 icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Riprova'),
+                label: Text(AppLocalizations.of(context)!.newsRefreshTooltip),
                 style: OutlinedButton.styleFrom(foregroundColor: AppColors.gold),
               ),
             ],
@@ -284,8 +286,8 @@ class _NewsCardState extends State<_NewsCard> {
                           color: AppColors.gold,
                           borderRadius: BorderRadius.circular(5),
                         ),
-                        child: const Text('IN EVIDENZA',
-                            style: TextStyle(
+                        child: Text(AppLocalizations.of(context)!.newsHighlight,
+                            style: const TextStyle(
                                 color: Colors.black,
                                 fontSize: 9,
                                 fontWeight: FontWeight.w900,
@@ -379,11 +381,11 @@ class _NewsCardState extends State<_NewsCard> {
                     onTap: () => _openUrl(externalUrl),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.open_in_new, size: 13, color: AppColors.blue),
-                        SizedBox(width: 4),
-                        Text('Leggi di più',
-                            style: TextStyle(
+                      children: [
+                        const Icon(Icons.open_in_new, size: 13, color: AppColors.blue),
+                        const SizedBox(width: 4),
+                        Text(AppLocalizations.of(context)!.newsReadMore,
+                            style: const TextStyle(
                                 color: AppColors.blue,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600)),

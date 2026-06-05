@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:deck_master/services/admin_catalog_service.dart';
 import 'package:deck_master/models/pending_catalog_change.dart';
@@ -68,7 +69,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestione Catalogo'),
+        title: Text(AppLocalizations.of(context)!.adminHomeCatalogTitle),
         actions: [
           if (_pendingChanges.isNotEmpty)
             Stack(
@@ -76,7 +77,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
                 IconButton(
                   icon: const Icon(Icons.publish),
                   onPressed: _publishChanges,
-                  tooltip: 'Pubblica modifiche',
+                  tooltip: AppLocalizations.of(context)!.adminHomePublishTooltip,
                 ),
                 Positioned(
                   right: 8,
@@ -95,7 +96,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadPendingChanges,
-            tooltip: 'Ricarica',
+            tooltip: AppLocalizations.of(context)!.adminHomeReloadTooltip,
           ),
         ],
       ),
@@ -119,7 +120,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddCardDialog,
         icon: const Icon(Icons.add),
-        label: const Text('Nuova Carta'),
+        label: Text(AppLocalizations.of(context)!.adminHomeNewCard),
       ),
     );
   }
@@ -130,7 +131,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: 'Cerca carta (nome, archetipo, ID)...',
+          hintText: AppLocalizations.of(context)!.adminHomeSearchHint,
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
@@ -161,7 +162,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
           ),
           TextButton(
             onPressed: _showPendingChangesDialog,
-            child: const Text('Visualizza', style: TextStyle(color: Colors.deepPurple)),
+            child: Text(AppLocalizations.of(context)!.adminHomeViewBtn, style: const TextStyle(color: Colors.deepPurple)),
           ),
         ],
       ),
@@ -175,9 +176,9 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
         children: [
           const Icon(Icons.search, size: 64, color: AppColors.textHint),
           const SizedBox(height: 16),
-          const Text(
-            'Cerca una carta o aggiungi una nuova',
-            style: TextStyle(color: AppColors.textSecondary),
+          Text(
+            AppLocalizations.of(context)!.adminHomeSearchPrompt,
+            style: const TextStyle(color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -290,7 +291,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
         adminUid: uid,
       ));
       await _loadPendingChanges();
-      if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Carta aggiunta alle modifiche')));
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.adminCardAdded)));
     }
   }
 
@@ -311,26 +312,27 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
         adminUid: uid,
       ));
       await _loadPendingChanges();
-      if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Modifica aggiunta')));
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.adminEditAdded)));
     }
   }
 
   Future<void> _deleteCard(Map<String, dynamic> card) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Conferma eliminazione'),
-        content: Text('Vuoi eliminare "${card['name']}"?\nLa carta sarà rimossa al prossimo aggiornamento.'),
+        title: Text(l10n.adminDeleteConfirmTitle),
+        content: Text(l10n.adminDeleteConfirmMsg(card['name']?.toString() ?? '')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annulla'),
+            child: Text(l10n.btnCancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Elimina'),
+            child: Text(l10n.btnDelete),
           ),
         ],
       ),
@@ -346,7 +348,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
         adminUid: uid,
       ));
       await _loadPendingChanges();
-      if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Eliminazione aggiunta alle modifiche')));
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.adminDeleteAdded)));
     }
   }
 
@@ -354,7 +356,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Modifiche in sospeso'),
+        title: Text(AppLocalizations.of(context)!.adminPendingChangesTitle),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.separated(
@@ -382,7 +384,7 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(AppLocalizations.of(context)!.btnClose)),
         ],
       ),
     );
@@ -408,14 +410,14 @@ class _AdminCatalogPageState extends State<AdminCatalogPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Pubblica modifiche'),
+        title: Text(AppLocalizations.of(context)!.adminPublishTitle),
         content: Text(
           'Vuoi pubblicare ${_pendingChanges.length} modifica/e su Firestore?\n\n'
-          'Tutti gli utenti riceveranno una notifica dell\'aggiornamento.',
+          'Tutti gli utenti riceveranno una notifica dell\'aggiornamento.', // TODO: l10n
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Pubblica')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(AppLocalizations.of(context)!.btnCancel)),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(AppLocalizations.of(context)!.adminPublishTitle)),
         ],
       ),
     );

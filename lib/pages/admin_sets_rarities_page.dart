@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -69,7 +70,7 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Traduzioni sincronizzate su Firestore')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.adminSetsSynced)),
         );
       }
     } catch (e) { // ignore: empty_catches
@@ -87,7 +88,7 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Espansioni & Rarità'),
+        title: Text(AppLocalizations.of(context)!.adminSetsTitle),
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
         actions: [
@@ -105,7 +106,7 @@ class _AdminSetsRaritiesPageState extends State<AdminSetsRaritiesPage>
             else
               IconButton(
                 icon: const Icon(Icons.cloud_upload_outlined),
-                tooltip: 'Sincronizza su Firestore',
+                tooltip: AppLocalizations.of(context)!.adminSetsSyncTooltip,
                 onPressed: _syncToFirestore,
               ),
           ],
@@ -461,7 +462,7 @@ class _DataListState extends State<_DataList> {
                     const Icon(Icons.warning_amber, size: 16, color: Colors.orange),
                   IconButton(
                       icon: const Icon(Icons.edit_outlined, size: 18),
-                      tooltip: 'Modifica traduzioni',
+                      tooltip: AppLocalizations.of(context)!.adminSetsEditTooltip,
                       onPressed: widget.langs.isEmpty ? null : () => _openEdit(row),
                       color: Colors.deepPurple,
                     ),

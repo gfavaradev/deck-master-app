@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/subscription_model.dart';
@@ -78,10 +79,11 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _saveNickname() async {
+    final l10n = AppLocalizations.of(context)!;
     final nickname = _nicknameController.text.trim();
     if (nickname.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Il nickname non può essere vuoto')),
+        SnackBar(content: Text(l10n.msgNicknameEmpty)),
       );
       return;
     }
@@ -95,13 +97,13 @@ class _ProfilePageState extends State<ProfilePage> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nickname aggiornato!')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgNicknameSaved)),
         );
       }
     } catch (e) { // ignore: empty_catches
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorGeneric(e.toString()))),
         );
       }
     } finally {
@@ -143,7 +145,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Profilo'),
+        title: Text(AppLocalizations.of(context)!.profileTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
@@ -246,30 +248,38 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 28),
 
           // ── Nickname ─────────────────────────────────────────────────────
-          const Text(
-            'Nickname',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
-          ),
+          Builder(builder: (context) {
+            final l10n = AppLocalizations.of(context)!;
+            return Text(
+              l10n.profileNickname,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            );
+          }),
           const SizedBox(height: 8),
-          TextField(
+          Builder(builder: (context) {
+            final l10n = AppLocalizations.of(context)!;
+            return TextField(
             controller: _nicknameController,
             maxLength: 30,
             style: const TextStyle(color: AppColors.textPrimary),
-            decoration: const InputDecoration(
-              hintText: 'Il tuo nome visualizzato',
-              hintStyle: TextStyle(color: AppColors.textHint),
-              prefixIcon: Icon(Icons.person_outline, color: AppColors.textSecondary),
+            decoration: InputDecoration(
+              hintText: l10n.profileNicknameHint,
+              hintStyle: const TextStyle(color: AppColors.textHint),
+              prefixIcon: const Icon(Icons.person_outline, color: AppColors.textSecondary),
               counterText: '',
             ),
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _saveNickname(),
-          ),
+          );
+          }),
           const SizedBox(height: 16),
-          SizedBox(
+          Builder(builder: (context) {
+            final l10n = AppLocalizations.of(context)!;
+            return SizedBox(
             width: double.infinity,
             height: 48,
             child: ElevatedButton.icon(
@@ -280,11 +290,12 @@ class _ProfilePageState extends State<ProfilePage> {
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                     )
                   : const Icon(Icons.save_outlined, color: Colors.black),
-              label: const Text('Salva Nickname', style: TextStyle(color: Colors.black)),
+              label: Text(l10n.profileSaveNickname, style: const TextStyle(color: Colors.black)),
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold),
               onPressed: _isSavingNickname ? null : _saveNickname,
             ),
-          ),
+          );
+          }),
         ],
       ),
       ),
@@ -292,6 +303,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildXpBar(int level, double progress, int xpToNext, bool maxLevel) {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -306,7 +318,7 @@ class _ProfilePageState extends State<ProfilePage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Livello $level',
+                l10n.profileLevelLabel(level),
                 style: const TextStyle(
                   color: AppColors.gold,
                   fontWeight: FontWeight.w800,
@@ -314,7 +326,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
               Text(
-                maxLevel ? 'Livello MAX' : '${XpService.levelThresholds[level - 1]} / ${XpService.levelThresholds[level]} XP',
+                maxLevel ? l10n.profileLevelMax : '${XpService.levelThresholds[level - 1]} / ${XpService.levelThresholds[level]} XP',
                 style: const TextStyle(color: AppColors.textHint, fontSize: 12),
               ),
             ],
@@ -331,7 +343,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 6),
           Text(
-            maxLevel ? 'Hai raggiunto il livello massimo!' : '$_xp XP totali · ancora $xpToNext XP al prossimo livello',
+            maxLevel ? l10n.profileMaxLevelReached : l10n.profileXpInfo(_xp, xpToNext),
             style: const TextStyle(color: AppColors.textHint, fontSize: 11),
           ),
         ],
@@ -340,6 +352,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildAvatarPicker(int level, Map<String, double> completions) {
+    final l10n = AppLocalizations.of(context)!;
     // Global avatars
     final globalAvatars = XpService.avatars
         .where((a) => a.unlockType == AvatarUnlockType.level)
@@ -348,23 +361,23 @@ class _ProfilePageState extends State<ProfilePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Avatar',
-          style: TextStyle(
+        Text(
+          l10n.profileAvatarSection,
+          style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: AppColors.textSecondary,
             fontSize: 13,
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Sblocca avatar collezionando carte. Ogni collezione ha i suoi avatar esclusivi.',
-          style: TextStyle(color: AppColors.textHint, fontSize: 11),
+        Text(
+          l10n.profileAvatarSubtitle,
+          style: const TextStyle(color: AppColors.textHint, fontSize: 11),
         ),
         const SizedBox(height: 16),
 
         // ── Avatar Globali ──────────────────────────────────────────────
-        _buildAvatarSectionHeader('Avatar Globali', null, level / XpService.levelThresholds.length),
+        _buildAvatarSectionHeader(l10n.profileGlobalAvatars, null, level / XpService.levelThresholds.length),
         const SizedBox(height: 8),
         _buildAvatarGrid(globalAvatars, level, completions),
 

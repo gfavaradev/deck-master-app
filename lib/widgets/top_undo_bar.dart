@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
@@ -82,6 +83,7 @@ class _UndoBarWidgetState extends State<_UndoBarWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final topPad = MediaQuery.of(context).padding.top;
     return Positioned(
       top: topPad + kToolbarHeight + 8,
@@ -142,7 +144,7 @@ class _UndoBarWidgetState extends State<_UndoBarWidget> {
                     foregroundColor: Colors.orange.shade300,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  child: const Text('Annulla', style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: Text(l10n.undoBarUndo, style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
             ],
           ),

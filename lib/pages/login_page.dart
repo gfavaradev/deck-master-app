@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'dart:io' show Platform, InternetAddress;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -66,31 +67,33 @@ class _LoginPageState extends State<LoginPage> {
         }
       } else {
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Accesso annullato o non riuscito')),
+            SnackBar(content: Text(l10n.msgLoginCancelled)),
           );
         }
       }
     } catch (e) { // ignore: empty_catches
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         String errorMessage;
         final msg = e.toString();
         if (msg.contains('user-not-found')) {
-          errorMessage = 'Utente non trovato';
+          errorMessage = l10n.msgUserNotFound;
         } else if (msg.contains('wrong-password') || msg.contains('invalid-credential')) {
-          errorMessage = 'Credenziali non valide';
+          errorMessage = l10n.msgInvalidCredentials;
         } else if (msg.contains('email-already-in-use')) {
-          errorMessage = 'Email già in uso';
+          errorMessage = l10n.msgEmailInUse;
         } else if (msg.contains('popup-closed-by-user') || msg.contains('cancelled')) {
-          errorMessage = 'Accesso annullato';
+          errorMessage = l10n.msgLoginCancelledShort;
         } else if (msg.contains('popup-blocked')) {
-          errorMessage = 'Popup bloccato dal browser. Consenti i popup per questo sito.';
+          errorMessage = l10n.msgPopupBlocked;
         } else if (msg.contains('unauthorized-domain')) {
-          errorMessage = 'Dominio non autorizzato in Firebase Console';
+          errorMessage = l10n.msgUnauthorizedDomain;
         } else if (msg.contains('network')) {
-          errorMessage = 'Errore di rete. Controlla la connessione.';
+          errorMessage = l10n.msgNetworkError;
         } else {
-          errorMessage = 'Errore: $msg';
+          errorMessage = l10n.msgErrorGeneric(msg);
         }
         setState(() => _showOfflineButton = true);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -107,8 +110,9 @@ class _LoginPageState extends State<LoginPage> {
 
   void _emailAuth() {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inserisci email e password')),
+        SnackBar(content: Text(l10n.msgInsertEmailPassword)),
       );
       return;
     }
@@ -232,7 +236,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
           Text(
-            'La tua collezione di carte',
+            AppLocalizations.of(context)!.loginSubtitle,
             style: TextStyle(fontFamily: 'Poppins',
               fontSize: 14,
               color: Colors.white70,
@@ -240,7 +244,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
           const Spacer(flex: 2),
           Text(
-            'Accedi per continuare',
+            AppLocalizations.of(context)!.loginAccessToContinue,
             style: TextStyle(fontFamily: 'Poppins',
               fontSize: 13,
               color: Colors.white54,
@@ -300,7 +304,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Accedi per continuare',
+                AppLocalizations.of(context)!.loginAccessToContinue,
                 style: TextStyle(fontFamily: 'Poppins',
                   fontSize: 14,
                   color: Colors.white70,
@@ -323,7 +327,7 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   children: [
                     Text(
-                      _isLogin ? 'Accedi' : 'Registrati',
+                      _isLogin ? AppLocalizations.of(context)!.btnLogin : AppLocalizations.of(context)!.btnRegister,
                       style: TextStyle(fontFamily: 'Poppins',
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -370,7 +374,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                           child: Text(
-                            _isLogin ? 'ACCEDI' : 'REGISTRATI',
+                            _isLogin ? AppLocalizations.of(context)!.loginBtnAccedi : AppLocalizations.of(context)!.loginBtnRegistrati,
                             style: TextStyle(fontFamily: 'Poppins',fontWeight: FontWeight.bold),
                           ),
                         ),
@@ -379,8 +383,8 @@ class _LoginPageState extends State<LoginPage> {
                       onPressed: () => setState(() => _isLogin = !_isLogin),
                       child: Text(
                         _isLogin
-                            ? 'Non hai un account? Registrati'
-                            : 'Hai già un account? Accedi',
+                            ? AppLocalizations.of(context)!.loginNoAccount
+                            : AppLocalizations.of(context)!.loginHasAccount,
                         style: TextStyle(color: Colors.blue.shade900),
                       ),
                     ),
@@ -394,7 +398,7 @@ class _LoginPageState extends State<LoginPage> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
-                      'Oppure continua con',
+                      AppLocalizations.of(context)!.loginOrContinueWith,
                       style: TextStyle(fontFamily: 'Poppins',color: Colors.white70, fontSize: 12),
                     ),
                   ),
@@ -440,7 +444,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildOfflineButton() {
     return Tooltip(
-      message: 'Continua senza connessione',
+      message: AppLocalizations.of(context)!.loginContinueOfflineTooltip,
       child: InkWell(
         onTap: _isLoading
             ? null

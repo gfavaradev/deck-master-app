@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import '../services/app_preferences.dart';
 import '../theme/app_colors.dart';
@@ -55,12 +56,13 @@ class _OnboardingPageState extends State<OnboardingPage>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
-          child: _step == 0 ? _buildLanguageStep() : _buildCurrencyStep(),
+          child: _step == 0 ? _buildLanguageStep(l10n) : _buildCurrencyStep(l10n),
         ),
       ),
     );
@@ -68,7 +70,7 @@ class _OnboardingPageState extends State<OnboardingPage>
 
   // ─── Step 1: Lingua ──────────────────────────────────────────────────────
 
-  Widget _buildLanguageStep() {
+  Widget _buildLanguageStep(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
@@ -77,15 +79,15 @@ class _OnboardingPageState extends State<OnboardingPage>
           const SizedBox(height: 56),
           _buildHeader(
             icon: Icons.language,
-            step: '1 / 2',
-            title: 'Seleziona la lingua',
-            subtitle: 'Choose your language',
+            step: l10n.onboardingStep1of2,
+            title: l10n.onboardingSelectLanguageTitle,
+            subtitle: l10n.onboardingSelectLanguageSubtitle,
           ),
           const SizedBox(height: 40),
           ...AppPreferences.languages.map((lang) => _buildLangCard(lang)),
           const Spacer(),
           _buildContinueButton(
-            label: 'Continua',
+            label: l10n.btnContinue,
             onTap: () => _goToStep(1),
           ),
           const SizedBox(height: 32),
@@ -137,7 +139,7 @@ class _OnboardingPageState extends State<OnboardingPage>
 
   // ─── Step 2: Valuta ──────────────────────────────────────────────────────
 
-  Widget _buildCurrencyStep() {
+  Widget _buildCurrencyStep(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
@@ -146,9 +148,9 @@ class _OnboardingPageState extends State<OnboardingPage>
           const SizedBox(height: 56),
           _buildHeader(
             icon: Icons.monetization_on_outlined,
-            step: '2 / 2',
-            title: 'Seleziona la valuta',
-            subtitle: 'Select your preferred currency',
+            step: l10n.onboardingStep2of2,
+            title: l10n.onboardingSelectCurrencyTitle,
+            subtitle: l10n.onboardingSelectCurrencySubtitle,
           ),
           const SizedBox(height: 40),
           Expanded(
@@ -158,7 +160,7 @@ class _OnboardingPageState extends State<OnboardingPage>
                   .toList(),
             ),
           ),
-          _buildContinueButton(label: 'Inizia', onTap: _finish),
+          _buildContinueButton(label: l10n.btnStart, onTap: _finish),
           const SizedBox(height: 32),
         ],
       ),

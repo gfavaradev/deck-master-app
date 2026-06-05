@@ -1,3 +1,4 @@
+import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -100,8 +101,8 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!granted) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Permesso notifiche negato. Abilitalo nelle impostazioni di sistema.'),
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.msgNotifPermissionDenied),
             ),
           );
         }
@@ -138,14 +139,14 @@ class _SettingsPageState extends State<SettingsPage> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Accesso annullato')),
+            SnackBar(content: Text(AppLocalizations.of(context)!.msgLoginCancelledShort)),
           );
         }
       }
     } catch (e) { // ignore: empty_catches
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorGeneric(e.toString()))),
         );
       }
     } finally {
@@ -182,17 +183,17 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       if (e.code == 'requires-recent-login') {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Per sicurezza, esci e accedi di nuovo prima di eliminare l\'account.'),
-            duration: Duration(seconds: 5),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.msgDeleteAccountRelogin),
+            duration: const Duration(seconds: 5),
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: ${e.message}')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorGeneric(e.message ?? ''))));
       }
     } catch (e) { // ignore: empty_catches
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorGeneric(e.toString()))));
     }
   }
 
@@ -203,17 +204,17 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       if (result.requiresPro) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Funzione disponibile a breve')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgExportProRequired)),
         );
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${result.cardCount} carte esportate come ${result.format} (negli appunti)')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.msgCardsExported(result.cardCount, result.format))),
       );
     } catch (e) { // ignore: empty_catches
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore esportazione: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgExportError(e.toString()))),
         );
       }
     } finally {
@@ -250,15 +251,15 @@ class _SettingsPageState extends State<SettingsPage> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sincronizzazione ripristinata con successo!'),
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.msgSyncRestoredSuccess),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorGeneric(e.toString())), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() { _isResetting = false; _resetStatus = ''; });
@@ -294,7 +295,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (unlocked.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nessuna collezione sbloccata da ripristinare.')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.msgNoCollectionToRestore)),
       );
       return;
     }
@@ -393,9 +394,9 @@ class _SettingsPageState extends State<SettingsPage> {
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgMedium,
-        title: const Text(
-          'Impostazioni',
-          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
+        title: Text(
+          AppLocalizations.of(context)!.settingsTitle,
+          style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
         ),
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
         elevation: 0,
@@ -703,17 +704,17 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: const Icon(Icons.wifi_off, color: AppColors.warning, size: 26),
                     ),
                     const SizedBox(width: 14),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Modalità Offline', style: TextStyle(
+                          Text(AppLocalizations.of(context)!.settingsOfflineMode, style: const TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 17,
                             fontWeight: FontWeight.w600,
                           )),
-                          SizedBox(height: 3),
-                          Text('I dati non sono sincronizzati sul cloud', style: TextStyle(
+                          const SizedBox(height: 3),
+                          Text(AppLocalizations.of(context)!.settingsOfflineSubtitle, style: const TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 13,
                           )),
@@ -737,7 +738,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: _isSigningIn
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.wifi, size: 18),
-                    label: const Text('Accedi e torna online', style: TextStyle(fontWeight: FontWeight.w600)),
+                    label: Text(AppLocalizations.of(context)!.settingsSignInOnline, style: const TextStyle(fontWeight: FontWeight.w600)),
                     onPressed: _isSigningIn ? null : _signInWithGoogle,
                   ),
                 ),
@@ -757,15 +758,15 @@ class _SettingsPageState extends State<SettingsPage> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.border, width: 0.5),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            CircleAvatar(
+            const CircleAvatar(
               radius: 28,
               backgroundColor: AppColors.bgLight,
               child: Icon(Icons.person, color: AppColors.textSecondary, size: 28),
             ),
-            SizedBox(width: 14),
-            Text('Utente non loggato', style: TextStyle(
+            const SizedBox(width: 14),
+            Text(AppLocalizations.of(context)!.settingsUserNotLogged, style: const TextStyle(
               color: AppColors.textSecondary,
               fontSize: 16,
             )),
@@ -822,7 +823,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(color: AppColors.gold.withValues(alpha:0.35), width: 0.5),
                         ),
-                        child: const Text('Vedi Profilo', style: TextStyle(
+                        child: Text(AppLocalizations.of(context)!.settingsViewProfile, style: const TextStyle(
                           color: AppColors.gold,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -841,16 +842,17 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildAdminSection() {
+    final l10n = AppLocalizations.of(context)!;
     return _buildSectionCard(
-      title: 'Amministrazione',
+      title: l10n.settingsSectionAdmin,
       icon: Icons.admin_panel_settings,
       accentColor: Colors.orange,
       borderColor: Colors.orange.withValues(alpha:0.25),
       children: [
         _buildTile(
           icon: Icons.people,
-          title: 'Gestisci Utenti',
-          subtitle: 'Visualizza e modifica ruoli utenti',
+          title: l10n.settingsManageUsers,
+          subtitle: l10n.settingsManageUsersSubtitle,
           iconColor: Colors.orange,
           trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminUsersPage())),
@@ -858,8 +860,8 @@ class _SettingsPageState extends State<SettingsPage> {
         _tileDivider(),
         _buildTile(
           icon: Icons.storage,
-          title: 'Gestisci Catalogo',
-          subtitle: 'Aggiungi/Modifica carte nel catalogo',
+          title: l10n.settingsManageCatalog,
+          subtitle: l10n.settingsManageCatalogSubtitle,
           iconColor: Colors.orange,
           isLast: true,
           trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
@@ -872,15 +874,16 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildCatalogSection() => const SizedBox.shrink();
 
   Widget _buildCatalogRestoreSection() {
+    final l10n = AppLocalizations.of(context)!;
     return _buildSectionCard(
-      title: 'Ripristino Catalogo',
+      title: l10n.settingsSectionCatalogRestore,
       icon: Icons.cloud_download_outlined,
       accentColor: AppColors.info,
       children: [
         _buildTile(
           icon: Icons.download_for_offline_outlined,
-          title: 'Ripristina Catalogo',
-          subtitle: 'Riscarica dal server e aggiorna il catalogo locale',
+          title: l10n.settingsRestoreCatalog,
+          subtitle: l10n.settingsRestoreCatalogSubtitle,
           iconColor: AppColors.info,
           enabled: !_isOffline,
           isLast: true,
@@ -892,19 +895,20 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildExportSection() {
-    final spinner = const SizedBox(
+    final l10n = AppLocalizations.of(context)!;
+    const spinner = SizedBox(
       width: 16, height: 16,
       child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.blue),
     );
     return _buildSectionCard(
-      title: 'Esporta Collezione',
+      title: l10n.settingsSectionExport,
       icon: Icons.file_download_outlined,
       accentColor: AppColors.blue,
       children: [
         _buildTile(
           icon: Icons.table_chart_outlined,
-          title: 'Esporta come CSV',
-          subtitle: 'Copia negli appunti — richiede Pro',
+          title: l10n.settingsExportCsv,
+          subtitle: l10n.settingsExportCsvSubtitle,
           iconColor: AppColors.blue,
           enabled: !_isExporting,
           trailing: _isExporting ? spinner : const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
@@ -913,8 +917,8 @@ class _SettingsPageState extends State<SettingsPage> {
         _tileDivider(),
         _buildTile(
           icon: Icons.data_object,
-          title: 'Esporta come JSON',
-          subtitle: 'Copia negli appunti — richiede Pro',
+          title: l10n.settingsExportJson,
+          subtitle: l10n.settingsExportJsonSubtitle,
           iconColor: AppColors.blue,
           enabled: !_isExporting,
           isLast: true,
@@ -926,15 +930,16 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildSyncSection() {
+    final l10n = AppLocalizations.of(context)!;
     return _buildSectionCard(
-      title: 'Sincronizzazione',
+      title: l10n.settingsSectionSync,
       icon: Icons.sync,
       accentColor: AppColors.warning,
       children: [
         _buildTile(
           icon: Icons.sync_problem_outlined,
-          title: 'Ripristina Sincronizzazione',
-          subtitle: _isResetting ? _resetStatus : 'Risolve elementi duplicati nel cloud',
+          title: l10n.settingsResetSync,
+          subtitle: _isResetting ? _resetStatus : l10n.settingsResetSyncSubtitle,
           iconColor: AppColors.warning,
           enabled: !_isResetting && !_isOffline,
           isLast: true,
@@ -964,10 +969,10 @@ class _SettingsPageState extends State<SettingsPage> {
               color: AppColors.textHint, borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
-            child: Text('Lingua App',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Text(AppLocalizations.of(context)!.settingsLanguageDialogTitle,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
           ),
           Container(height: 0.5, color: AppColors.divider),
           for (final lang in AppPreferences.languages) ...[
