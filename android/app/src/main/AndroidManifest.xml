@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Fotocamera per scanner barcode e riconoscimento carte -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- required="false": la fotocamera è opzionale — l'app funziona anche senza -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
     <!-- Accesso foto per profilo utente (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <!-- Accesso storage per dispositivi con Android < 13 -->

@@ -37,6 +37,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
   static const int _kFreeLimit = 25;
   static const String _kScanCountKey = 'scanner_monthly_count';
   static const String _kScanMonthKey = 'scanner_month';
+  static const String _kAiConsentKey = 'scanner_ai_consent_v1';
 
   int _scansUsed = 0;
   bool _isPro = false;
@@ -179,11 +180,72 @@ class _CardScannerPageState extends State<CardScannerPage> {
     );
   }
 
+  /// Shows the Google Play-required prominent disclosure before first camera use.
+  /// Returns true if the user consented (or had already consented), false otherwise.
+  Future<bool> _ensureAiConsent() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_kAiConsentKey) == true) return true;
+    if (!mounted) return false;
+
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.privacy_tip_outlined, color: AppColors.gold, size: 22),
+            SizedBox(width: 10),
+            Text(
+              'Informativa scanner AI',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Per identificare le tue carte, la foto scattata viene inviata temporaneamente ai servizi AI di Google (Gemini) tramite connessione cifrata.\n\n'
+            'Le immagini non vengono conservate da Deck Master né da Google oltre il tempo necessario all\'elaborazione della singola richiesta.\n\n'
+            'Continuando autorizzi questo trasferimento. Puoi rifiutare: in quel caso lo scanner non sarà disponibile.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.55),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Non accetto', style: TextStyle(color: AppColors.textHint)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.gold,
+              foregroundColor: Colors.black87,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Accetto'),
+          ),
+        ],
+      ),
+    );
+
+    if (accepted == true) {
+      await prefs.setBool(_kAiConsentKey, true);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _scan() async {
     if (!_limitLoaded) return;
 
     if (!_canScan) {
       _showLimitDialog();
+      return;
+    }
+
+    if (!await _ensureAiConsent()) {
+      if (mounted) Navigator.of(context).maybePop();
       return;
     }
 
