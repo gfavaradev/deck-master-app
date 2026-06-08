@@ -22,7 +22,7 @@ class AdService {
   static const _iosBannerTestId      = 'ca-app-pub-3940256099942544/2934735716';
 
   // ── Rewarded IDs ──────────────────────────────────────────────────────────
-  static const _androidRewardedProdId  = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+  static const _androidRewardedProdId  = 'ca-app-pub-8286949651686497/1949048086';
   static const _iosRewardedProdId      = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
   static const _androidRewardedTestId  = 'ca-app-pub-3940256099942544/5224354917';
   static const _iosRewardedTestId      = 'ca-app-pub-3940256099942544/1712485313';
@@ -48,8 +48,13 @@ class AdService {
   static Future<void> initialize() async {
     if (_isIos && !kDebugMode && !_iosReady) return;
     await MobileAds.instance.initialize();
+    // Google Play Families Policy: annunci family-safe, non personalizzati,
+    // classificazione G (General Audiences), conformità COPPA e GDPR.
     MobileAds.instance.updateRequestConfiguration(
       RequestConfiguration(
+        tagForChildDirectedTreatment: TagForChildDirectedTreatment.yes,
+        tagForUnderAgeOfConsent: TagForUnderAgeOfConsent.yes,
+        maxAdContentRating: MaxAdContentRating.g,
         testDeviceIds: ['1F9CDB810B965089B9CAD8D41B30B255'],
       ),
     );
@@ -64,7 +69,7 @@ class AdService {
   }) {
     RewardedAd.load(
       adUnitId: rewardedAdUnitId,
-      request: const AdRequest(),
+      request: const AdRequest(nonPersonalizedAds: true),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: onLoaded,
         onAdFailedToLoad: onFailed,

@@ -38,7 +38,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     final ad = BannerAd(
       adUnitId: AdService.bannerAdUnitId,
       size: AdSize.banner,
-      request: const AdRequest(),
+      request: const AdRequest(nonPersonalizedAds: true),
       listener: BannerAdListener(
         onAdLoaded: (_) {
           if (mounted) setState(() => _isAdLoaded = true);

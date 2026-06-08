@@ -1,6 +1,7 @@
 import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/app_preferences.dart';
 import '../services/export_service.dart';
@@ -426,6 +427,8 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildSyncSection(),
           const SizedBox(height: 12),
           _buildGeneralSection(),
+          const SizedBox(height: 12),
+          _buildLegalSection(),
           const SizedBox(height: 12),
           _buildDangerSection(),
           const SizedBox(height: 32),
@@ -1171,6 +1174,38 @@ class _SettingsPageState extends State<SettingsPage> {
               builder: (_) => const TutorialPage(),
             ),
           ),
+        ),
+      ],
+    );
+  }
+
+  // ── TODO: sostituisci con l'URL reale della tua Privacy Policy ──────────────
+  static const _privacyPolicyUrl = 'https://gfavaradev.github.io/deck-master-app/privacy-policy.html';
+  Future<void> _launchPrivacyPolicy() async {
+    final uri = Uri.parse(_privacyPolicyUrl);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Impossibile aprire la pagina. Riprova più tardi.')),
+        );
+      }
+    }
+  }
+
+  Widget _buildLegalSection() {
+    return _buildSectionCard(
+      title: 'Legale',
+      icon: Icons.gavel_outlined,
+      accentColor: AppColors.textHint,
+      children: [
+        _buildTile(
+          icon: Icons.privacy_tip_outlined,
+          title: 'Informativa sulla Privacy',
+          subtitle: 'Come raccogliamo e utilizziamo i tuoi dati',
+          iconColor: AppColors.textHint,
+          isLast: true,
+          trailing: const Icon(Icons.open_in_new, color: AppColors.textHint, size: 18),
+          onTap: _launchPrivacyPolicy,
         ),
       ],
     );
