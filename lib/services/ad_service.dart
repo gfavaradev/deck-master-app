@@ -55,7 +55,7 @@ class AdService {
         tagForChildDirectedTreatment: TagForChildDirectedTreatment.yes,
         tagForUnderAgeOfConsent: TagForUnderAgeOfConsent.yes,
         maxAdContentRating: MaxAdContentRating.g,
-        testDeviceIds: ['1F9CDB810B965089B9CAD8D41B30B255'],
+        testDeviceIds: kDebugMode ? ['1F9CDB810B965089B9CAD8D41B30B255'] : [],
       ),
     );
   }

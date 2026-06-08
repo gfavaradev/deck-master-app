@@ -49,6 +49,8 @@
 	<string>Deck Master può salvare immagini nella tua libreria foto.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Deck Master usa la tua libreria foto per aggiornare l'immagine del profilo.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Deck Master usa dati anonimi per mostrare annunci pertinenti e migliorare l'esperienza nell'app.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

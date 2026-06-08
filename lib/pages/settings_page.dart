@@ -1179,7 +1179,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  // ── TODO: sostituisci con l'URL reale della tua Privacy Policy ──────────────
   static const _privacyPolicyUrl = 'https://gfavaradev.github.io/deck-master-app/privacy-policy.html';
   Future<void> _launchPrivacyPolicy() async {
     final uri = Uri.parse(_privacyPolicyUrl);
