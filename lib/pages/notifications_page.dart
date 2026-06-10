@@ -440,8 +440,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
             Icon(Icons.notifications_none, size: 64, color: AppColors.textHint),
             const SizedBox(height: 12),
             Text(
-              'Nessuna notifica',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
+              AppLocalizations.of(context)!.notifNoNotifications,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 16),
             ),
           ],
         ),
@@ -464,12 +464,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       children: [
         // ── Sezione aggiornamenti in attesa di download ──────────────────────
         if (hasPending) ...[
-          _buildSectionHeader('Aggiornamenti Disponibili', Icons.cloud_download_outlined),
+          _buildSectionHeader(AppLocalizations.of(context)!.notifSectionAvailableUpdates, Icons.cloud_download_outlined),
           ...widget.pendingCatalogUpdates.map(_buildPendingUpdateTile),
         ],
         if (sorted.isNotEmpty) ...[
           if (hasPending)
-            _buildSectionHeader('Storico', Icons.history),
+            _buildSectionHeader(AppLocalizations.of(context)!.notifSectionHistory, Icons.history),
           ...sorted.map((e) => e.type == 'app_update'
               ? _buildAppEntry(e)
               : _buildCatalogTile(e)),
@@ -522,14 +522,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
       color = const Color(0xFF4CAF50);
     }
 
+    final l10n = AppLocalizations.of(context)!;
     final String subtitle;
     if (isFirst) {
-      subtitle = 'Primo download disponibile';
+      subtitle = l10n.notifFirstDownload;
     } else if (canIncremental) {
       final chunks = (update['modifiedChunks'] as List?)?.length ?? 0;
-      subtitle = 'Aggiornamento parziale ($chunks chunk)';
+      subtitle = l10n.notifPartialUpdate(chunks);
     } else {
-      subtitle = 'Aggiornamento completo disponibile';
+      subtitle = l10n.notifFullUpdate;
     }
 
     return Card(
@@ -594,8 +595,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 GestureDetector(
                   onTap: () => Navigator.pop(context, {'action': 'later'}),
                   child: Text(
-                    'Più tardi',
-                    style: TextStyle(
+                    AppLocalizations.of(context)!.notifLater,
+                    style: const TextStyle(
                       color: AppColors.textHint,
                       fontSize: 11,
                       decoration: TextDecoration.underline,
@@ -654,9 +655,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       color: Colors.red.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text(
-                      'NUOVA',
-                      style: TextStyle(
+                    child: Text(
+                      AppLocalizations.of(context)!.notifNewBadge,
+                      style: const TextStyle(
                           color: Colors.red,
                           fontSize: 10,
                           fontWeight: FontWeight.w700),
@@ -747,8 +748,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
             : Icons.sailing;
     final name = isYugioh ? 'Yu-Gi-Oh!' : isPokemon ? 'Pokémon' : 'One Piece TCG';
 
-    final List<String> details = ['Prezzi di mercato aggiornati'];
-    if (newCards > 0) details.insert(0, '+$newCards nuove carte aggiunte');
+    final l10n = AppLocalizations.of(context)!;
+    final List<String> details = [l10n.notifPricesUpdated];
+    if (newCards > 0) details.insert(0, l10n.notifNewCardsAdded(newCards));
 
     // Always show a date: prefer lastUpdated (catalog update date), fallback detectedAt
     final rawDate = lastUpdated.isNotEmpty ? lastUpdated : entry.detectedAt;

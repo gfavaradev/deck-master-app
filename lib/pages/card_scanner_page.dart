@@ -191,7 +191,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
           OutlinedButton(
             onPressed: () => Navigator.pop(context),
             style: appDialogCancelStyle(),
-            child: const Text('Chiudi'),
+            child: Text(AppLocalizations.of(context)!.btnClose),
           ),
           FilledButton.icon(
             onPressed: () {
@@ -253,7 +253,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
               foregroundColor: Colors.black87,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: const Text('Accetto'),
+            child: Text(AppLocalizations.of(ctx)!.btnAccept),
           ),
         ],
       ),
@@ -505,9 +505,9 @@ class _CardScannerPageState extends State<CardScannerPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Inquadra la carta e premi Scansiona',
-            style: TextStyle(color: Colors.white70, fontSize: 13),
+          Text(
+            AppLocalizations.of(context)!.scannerFrameInstruction,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
           const SizedBox(height: 16),
           // Scan button
@@ -527,7 +527,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
             ),
           ),
           const SizedBox(height: 10),
-          const Text('Scansiona', style: TextStyle(color: Colors.white70, fontSize: 12)),
+          Text(AppLocalizations.of(context)!.scannerScanBtn, style: const TextStyle(color: Colors.white70, fontSize: 12)),
           if (!_isPro && _scansRemaining <= 5 && _scansRemaining > 0) ...[
             const SizedBox(height: 12),
             _ScanLimitWarning(

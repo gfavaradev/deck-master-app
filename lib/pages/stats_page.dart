@@ -81,9 +81,10 @@ class _StatsPageState extends State<StatsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.statsTitle),
+        title: Text(l10n.statsTitle),
       ),
       body: SafeArea(
         top: false,
@@ -95,9 +96,9 @@ class _StatsPageState extends State<StatsPage> {
                 child: ListView(
                   padding: const EdgeInsets.all(16.0),
                   children: [
-                    _buildStatCard('Carte Totali', _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
-                    _buildStatCard('Carte Uniche', _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
-                    _buildStatCard('Valore Stimato', CurrencyFormatter.format(_stats?['totalValue'] as double? ?? 0.0), Icons.euro, Colors.green),
+                    _buildStatCard(l10n.statsTotalCards, _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
+                    _buildStatCard(l10n.statsUniqueCards, _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
+                    _buildStatCard(l10n.statsEstimatedValue, CurrencyFormatter.format(_stats?['totalValue'] as double? ?? 0.0), Icons.euro, Colors.green),
                     _buildValueChart(),
                     if (_collectionStats.isNotEmpty) _buildCollectionBreakdown(),
                     if (_rarityStats.isNotEmpty) _buildRarityBreakdown(),
@@ -141,7 +142,7 @@ class _StatsPageState extends State<StatsPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Andamento Valore',
+                    AppLocalizations.of(context)!.statsValueTrend,
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.bold),
                   ),

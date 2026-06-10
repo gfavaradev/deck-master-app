@@ -48,13 +48,11 @@ class AdService {
   static Future<void> initialize() async {
     if (_isIos && !kDebugMode && !_iosReady) return;
     await MobileAds.instance.initialize();
-    // Google Play Families Policy: annunci family-safe, non personalizzati,
-    // classificazione G (General Audiences), conformità COPPA e GDPR.
     MobileAds.instance.updateRequestConfiguration(
       RequestConfiguration(
-        tagForChildDirectedTreatment: TagForChildDirectedTreatment.yes,
-        tagForUnderAgeOfConsent: TagForUnderAgeOfConsent.yes,
-        maxAdContentRating: MaxAdContentRating.g,
+        tagForChildDirectedTreatment: TagForChildDirectedTreatment.no,
+        tagForUnderAgeOfConsent: TagForUnderAgeOfConsent.no,
+        maxAdContentRating: MaxAdContentRating.ma,
         testDeviceIds: kDebugMode ? ['1F9CDB810B965089B9CAD8D41B30B255'] : [],
       ),
     );

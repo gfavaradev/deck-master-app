@@ -2,6 +2,7 @@ import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../models/wishlist_model.dart';
+import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/price_alert_service.dart';
 import '../services/tutorial_service.dart';
@@ -25,9 +26,12 @@ class _WishlistPageState extends State<WishlistPage> {
 
   final _fabKey = GlobalKey();
 
+  void _onCurrencyChanged() => setState(() {});
+
   @override
   void initState() {
     super.initState();
+    AppPreferences.currencyNotifier.addListener(_onCurrencyChanged);
     _load();
     if (TutorialService.instance.isActive && TutorialService.instance.phase == 2) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -63,6 +67,12 @@ class _WishlistPageState extends State<WishlistPage> {
       onFinish: _onPhase2Done,
       onSkip: () { _onPhase2Done(); return true; },
     ).show(context: context);
+  }
+
+  @override
+  void dispose() {
+    AppPreferences.currencyNotifier.removeListener(_onCurrencyChanged);
+    super.dispose();
   }
 
   void _onPhase2Done() {

@@ -34,6 +34,9 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     _loadAd();
   }
 
+  int _retryCount = 0;
+  static const _maxRetries = 3;
+
   void _loadAd() {
     final ad = BannerAd(
       adUnitId: AdService.bannerAdUnitId,
@@ -41,9 +44,17 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
       request: const AdRequest(nonPersonalizedAds: true),
       listener: BannerAdListener(
         onAdLoaded: (_) {
-          if (mounted) setState(() => _isAdLoaded = true);
+          if (mounted) setState(() { _isAdLoaded = true; _retryCount = 0; });
         },
-        onAdFailedToLoad: (ad, _) => ad.dispose(),
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          if (mounted && _retryCount < _maxRetries) {
+            _retryCount++;
+            Future.delayed(Duration(seconds: _retryCount * 5), () {
+              if (mounted) _loadAd();
+            });
+          }
+        },
       ),
     );
     ad.load();

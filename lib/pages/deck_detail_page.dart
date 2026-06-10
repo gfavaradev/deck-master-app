@@ -211,9 +211,9 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Condividi questo codice con altri giocatori:',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            Text(
+              l10n.deckDetailShareCodeHint,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
             const SizedBox(height: 16),
             GestureDetector(
@@ -250,9 +250,9 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Il codice è valido fino alla rimozione manuale.',
-              style: TextStyle(color: AppColors.textHint, fontSize: 11),
+            Text(
+              l10n.deckDetailCodeExpiry,
+              style: const TextStyle(color: AppColors.textHint, fontSize: 11),
               textAlign: TextAlign.center,
             ),
           ],
@@ -308,7 +308,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
               ),
             ),
             Text(
-              '$_totalDeckCards carte nel deck', // TODO: l10n
+              l10n.deckDetailCardCount(_totalDeckCards),
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -369,7 +369,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
           child: _deckCards.isEmpty
               ? Center(
                   child: Text(
-                    'Nessuna carta — aggiungile\ndalle carte possedute qui sotto', // TODO: l10n
+                    l10n.deckDetailEmptyDeck,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: AppColors.textHint, fontSize: 13),
                   ),

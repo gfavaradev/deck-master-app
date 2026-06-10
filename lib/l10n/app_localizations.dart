@@ -2222,6 +2222,18 @@ abstract class AppLocalizations {
   /// **'Leggi di più'**
   String get newsReadMore;
 
+  /// Expand full news body
+  ///
+  /// In it, this message translates to:
+  /// **'Leggi tutto'**
+  String get newsReadAll;
+
+  /// Collapse news body
+  ///
+  /// In it, this message translates to:
+  /// **'Mostra meno'**
+  String get newsShowLess;
+
   /// Card scanner page title
   ///
   /// In it, this message translates to:
@@ -3109,6 +3121,324 @@ abstract class AppLocalizations {
   /// In it, this message translates to:
   /// **'Filtro: '**
   String get adminHomeFilterLabel;
+
+  /// Unique cards label in collection summary
+  ///
+  /// In it, this message translates to:
+  /// **'Uniche'**
+  String get collectionSummaryUnique;
+
+  /// Duplicates label in collection summary
+  ///
+  /// In it, this message translates to:
+  /// **'Doppioni'**
+  String get collectionSummaryDuplicates;
+
+  /// Total cards label in collection summary
+  ///
+  /// In it, this message translates to:
+  /// **'Totali'**
+  String get collectionSummaryTotal;
+
+  /// Value label in collection summary
+  ///
+  /// In it, this message translates to:
+  /// **'Valore'**
+  String get collectionSummaryValue;
+
+  /// Total cards stat card label
+  ///
+  /// In it, this message translates to:
+  /// **'Carte Totali'**
+  String get statsTotalCards;
+
+  /// Unique cards stat card label
+  ///
+  /// In it, this message translates to:
+  /// **'Carte Uniche'**
+  String get statsUniqueCards;
+
+  /// Estimated value stat card label
+  ///
+  /// In it, this message translates to:
+  /// **'Valore Stimato'**
+  String get statsEstimatedValue;
+
+  /// Value trend chart title
+  ///
+  /// In it, this message translates to:
+  /// **'Andamento Valore'**
+  String get statsValueTrend;
+
+  /// N cards label in set completion
+  ///
+  /// In it, this message translates to:
+  /// **'{n} carte'**
+  String setCompletionNCards(int n);
+
+  /// N total expansions label
+  ///
+  /// In it, this message translates to:
+  /// **'{n} espansioni totali'**
+  String setCompletionTotalSets(int n);
+
+  /// Completed and in-progress expansions stats
+  ///
+  /// In it, this message translates to:
+  /// **'{completed} completate · {inProgress} in corso'**
+  String setCompletionCompletedStats(int completed, int inProgress);
+
+  /// Out of N expansions label
+  ///
+  /// In it, this message translates to:
+  /// **'su {n} espansioni'**
+  String setCompletionOutOf(int n);
+
+  /// In progress tab label
+  ///
+  /// In it, this message translates to:
+  /// **'In corso ({n})'**
+  String setCompletionTabInProgress(int n);
+
+  /// Completed tab label
+  ///
+  /// In it, this message translates to:
+  /// **'Completate ({n})'**
+  String setCompletionTabCompleted(int n);
+
+  /// Available tab label
+  ///
+  /// In it, this message translates to:
+  /// **'Disponibili ({n})'**
+  String setCompletionTabAvailable(int n);
+
+  /// Catalog not downloaded empty state
+  ///
+  /// In it, this message translates to:
+  /// **'Catalogo non ancora scaricato.\nScarica il catalogo dalle Impostazioni.'**
+  String get setCompletionNoCatalog;
+
+  /// No in-progress expansions
+  ///
+  /// In it, this message translates to:
+  /// **'Nessuna espansione in corso.'**
+  String get setCompletionEmptyInProgress;
+
+  /// No completed expansions
+  ///
+  /// In it, this message translates to:
+  /// **'Nessuna espansione completata.'**
+  String get setCompletionEmptyCompleted;
+
+  /// No available expansions
+  ///
+  /// In it, this message translates to:
+  /// **'Nessuna espansione disponibile.'**
+  String get setCompletionEmptyAvailable;
+
+  /// Card count in deck subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'{n} carte nel deck'**
+  String deckDetailCardCount(int n);
+
+  /// Empty deck state
+  ///
+  /// In it, this message translates to:
+  /// **'Nessuna carta — aggiungile\ndalle carte possedute qui sotto'**
+  String get deckDetailEmptyDeck;
+
+  /// Share code instruction
+  ///
+  /// In it, this message translates to:
+  /// **'Condividi questo codice con altri giocatori:'**
+  String get deckDetailShareCodeHint;
+
+  /// Code expiry info
+  ///
+  /// In it, this message translates to:
+  /// **'Il codice è valido fino alla rimozione manuale.'**
+  String get deckDetailCodeExpiry;
+
+  /// All collections label in news
+  ///
+  /// In it, this message translates to:
+  /// **'Tutti'**
+  String get newsCollectionAll;
+
+  /// Today date label in news
+  ///
+  /// In it, this message translates to:
+  /// **'Oggi'**
+  String get newsDateToday;
+
+  /// Yesterday date label in news
+  ///
+  /// In it, this message translates to:
+  /// **'Ieri'**
+  String get newsDateYesterday;
+
+  /// N days ago date label in news
+  ///
+  /// In it, this message translates to:
+  /// **'{n} giorni fa'**
+  String newsDateDaysAgo(int n);
+
+  /// Available updates section header
+  ///
+  /// In it, this message translates to:
+  /// **'Aggiornamenti Disponibili'**
+  String get notifSectionAvailableUpdates;
+
+  /// History section header in notifications
+  ///
+  /// In it, this message translates to:
+  /// **'Storico'**
+  String get notifSectionHistory;
+
+  /// First download available subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Primo download disponibile'**
+  String get notifFirstDownload;
+
+  /// Partial update subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Aggiornamento parziale ({chunks} chunk)'**
+  String notifPartialUpdate(int chunks);
+
+  /// Full update available subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Aggiornamento completo disponibile'**
+  String get notifFullUpdate;
+
+  /// Later button in notification
+  ///
+  /// In it, this message translates to:
+  /// **'Più tardi'**
+  String get notifLater;
+
+  /// No notifications empty state
+  ///
+  /// In it, this message translates to:
+  /// **'Nessuna notifica'**
+  String get notifNoNotifications;
+
+  /// New notification badge label
+  ///
+  /// In it, this message translates to:
+  /// **'NUOVA'**
+  String get notifNewBadge;
+
+  /// Prices updated notification detail
+  ///
+  /// In it, this message translates to:
+  /// **'Prezzi di mercato aggiornati'**
+  String get notifPricesUpdated;
+
+  /// N new cards added notification detail
+  ///
+  /// In it, this message translates to:
+  /// **'+{n} nuove carte aggiunte'**
+  String notifNewCardsAdded(int n);
+
+  /// Scanner frame instruction
+  ///
+  /// In it, this message translates to:
+  /// **'Inquadra la carta e premi Scansiona'**
+  String get scannerFrameInstruction;
+
+  /// Scan button label
+  ///
+  /// In it, this message translates to:
+  /// **'Scansiona'**
+  String get scannerScanBtn;
+
+  /// Accept/I accept button
+  ///
+  /// In it, this message translates to:
+  /// **'Accetto'**
+  String get btnAccept;
+
+  /// No CT price available message
+  ///
+  /// In it, this message translates to:
+  /// **'Attualmente nessun prezzo disponibile.'**
+  String get ctNoPriceAvailable;
+
+  /// Search on CardTrader link
+  ///
+  /// In it, this message translates to:
+  /// **'Cerca su CardTrader ↗'**
+  String get ctSearchOnCardtrader;
+
+  /// Last price date label
+  ///
+  /// In it, this message translates to:
+  /// **'Ultimo: {date}'**
+  String ctLastPrice(String date);
+
+  /// Insufficient data for chart period
+  ///
+  /// In it, this message translates to:
+  /// **'Dati insufficienti per il periodo selezionato.'**
+  String get ctHistoryInsufficientData;
+
+  /// Chart will populate with price syncs
+  ///
+  /// In it, this message translates to:
+  /// **'Il grafico si popolerà ad ogni sincronizzazione prezzi.'**
+  String get ctHistoryWillPopulate;
+
+  /// Collection value chart update note
+  ///
+  /// In it, this message translates to:
+  /// **'Il grafico si aggiorna ogni volta che\nvisiti questa pagina.'**
+  String get collectionChartUpdateNote;
+
+  /// Default user type name in splash
+  ///
+  /// In it, this message translates to:
+  /// **'Collezionista'**
+  String get splashDefaultCollector;
+
+  /// Year period label in pro page
+  ///
+  /// In it, this message translates to:
+  /// **'anno'**
+  String get proYearPeriod;
+
+  /// Yearly plan subtext with monthly price
+  ///
+  /// In it, this message translates to:
+  /// **'€{price}/mese — risparmia il 30%'**
+  String proYearSubtext(String price);
+
+  /// Month period label in pro page
+  ///
+  /// In it, this message translates to:
+  /// **'mese'**
+  String get proMonthPeriod;
+
+  /// Monthly renewal subtext in pro page
+  ///
+  /// In it, this message translates to:
+  /// **'Rinnovo automatico mensile'**
+  String get proMonthSubtext;
+
+  /// ROI portfolio description
+  ///
+  /// In it, this message translates to:
+  /// **'Qui vedi il valore totale delle carte che possiedi. Inserisci il prezzo d\'acquisto di ogni carta per calcolare il tuo ROI e scoprire quanto è cresciuto il tuo investimento.'**
+  String get roiPortfolioDescription;
+
+  /// Purchase price helper text in ROI
+  ///
+  /// In it, this message translates to:
+  /// **'Inserisci il prezzo per singola copia'**
+  String get roiPurchasePriceHelper;
 }
 
 class _AppLocalizationsDelegate

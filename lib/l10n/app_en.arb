@@ -385,6 +385,8 @@
   "newsRefreshTooltip": "Refresh",
   "newsHighlight": "FEATURED",
   "newsReadMore": "Read more",
+  "newsReadAll": "Read all",
+  "newsShowLess": "Show less",
 
   "cardScannerTitle": "Scan Card",
   "cardScannerLimitTitle": "Scan limit reached",
@@ -548,5 +550,71 @@
   "adminHomeCtWithPrice": "With price",
   "adminHomeCtDiff": "Diff.",
   "adminHomeCtNoData": "No CT data in local cache.",
-  "adminHomeFilterLabel": "Filter: "
+  "adminHomeFilterLabel": "Filter: ",
+
+  "collectionSummaryUnique": "Unique",
+  "collectionSummaryDuplicates": "Duplicates",
+  "collectionSummaryTotal": "Total",
+  "collectionSummaryValue": "Value",
+
+  "statsTotalCards": "Total Cards",
+  "statsUniqueCards": "Unique Cards",
+  "statsEstimatedValue": "Estimated Value",
+  "statsValueTrend": "Value Trend",
+
+  "setCompletionNCards": "{n} cards",
+  "setCompletionTotalSets": "{n} expansions total",
+  "setCompletionCompletedStats": "{completed} completed · {inProgress} in progress",
+  "setCompletionOutOf": "out of {n} expansions",
+  "setCompletionTabInProgress": "In progress ({n})",
+  "setCompletionTabCompleted": "Completed ({n})",
+  "setCompletionTabAvailable": "Available ({n})",
+  "setCompletionNoCatalog": "Catalog not downloaded yet.\nDownload the catalog from Settings.",
+  "setCompletionEmptyInProgress": "No expansions in progress.",
+  "setCompletionEmptyCompleted": "No expansions completed.",
+  "setCompletionEmptyAvailable": "No expansions available.",
+
+  "deckDetailCardCount": "{n} cards in deck",
+  "deckDetailEmptyDeck": "No cards — add them\nfrom your owned cards below",
+  "deckDetailShareCodeHint": "Share this code with other players:",
+  "deckDetailCodeExpiry": "The code is valid until manually removed.",
+
+  "newsCollectionAll": "All",
+  "newsDateToday": "Today",
+  "newsDateYesterday": "Yesterday",
+  "newsDateDaysAgo": "{n} days ago",
+
+  "notifSectionAvailableUpdates": "Available Updates",
+  "notifSectionHistory": "History",
+  "notifFirstDownload": "First download available",
+  "notifPartialUpdate": "Partial update ({chunks} chunks)",
+  "notifFullUpdate": "Full update available",
+  "notifLater": "Later",
+  "notifNoNotifications": "No notifications",
+  "notifNewBadge": "NEW",
+  "notifPricesUpdated": "Market prices updated",
+  "notifNewCardsAdded": "+{n} new cards added",
+
+  "scannerFrameInstruction": "Frame the card and press Scan",
+  "scannerScanBtn": "Scan",
+  "btnAccept": "Accept",
+
+  "ctNoPriceAvailable": "No price currently available.",
+  "ctSearchOnCardtrader": "Search on CardTrader ↗",
+  "ctLastPrice": "Last: {date}",
+
+  "ctHistoryInsufficientData": "Insufficient data for the selected period.",
+  "ctHistoryWillPopulate": "The chart will populate with each price sync.",
+
+  "collectionChartUpdateNote": "The chart updates every time\nyou visit this page.",
+
+  "splashDefaultCollector": "Collector",
+
+  "proYearPeriod": "year",
+  "proYearSubtext": "€{price}/month — save 30%",
+  "proMonthPeriod": "month",
+  "proMonthSubtext": "Monthly automatic renewal",
+
+  "roiPortfolioDescription": "Here you can see the total value of the cards you own. Enter the purchase price of each card to calculate your ROI and discover how much your investment has grown.",
+  "roiPurchasePriceHelper": "Enter the price per single copy"
 }

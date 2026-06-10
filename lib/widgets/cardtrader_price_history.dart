@@ -1,6 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/card_model.dart';
+import '../services/app_preferences.dart';
 import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/currency_formatter.dart';
@@ -50,10 +52,19 @@ class _CardtraderPriceHistoryChartState
     return i < 0 ? '' : sn.substring(i + 1);
   }
 
+  void _onCurrencyChanged() => setState(() {});
+
   @override
   void initState() {
     super.initState();
+    AppPreferences.currencyNotifier.addListener(_onCurrencyChanged);
     _load();
+  }
+
+  @override
+  void dispose() {
+    AppPreferences.currencyNotifier.removeListener(_onCurrencyChanged);
+    super.dispose();
   }
 
   void _load() {
@@ -189,8 +200,8 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             hasSomeHistory
-                ? 'Dati insufficienti per il periodo selezionato.' // TODO: l10n
-                : 'Il grafico si popolerà ad ogni sincronizzazione prezzi.', // TODO: l10n
+                ? AppLocalizations.of(context)!.ctHistoryInsufficientData
+                : AppLocalizations.of(context)!.ctHistoryWillPopulate,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,

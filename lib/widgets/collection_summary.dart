@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
+import '../services/app_preferences.dart';
 import '../theme/app_colors.dart';
 import '../utils/currency_formatter.dart';
 
@@ -19,19 +21,22 @@ class CollectionSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // TODO: l10n — 'Uniche', 'Doppioni', 'Totali', 'Valore' not in ARB
-    return Container(
+    final l10n = AppLocalizations.of(context)!;
+    return ValueListenableBuilder<String>(
+      valueListenable: AppPreferences.currencyNotifier,
+      builder: (context, currency, _) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       color: AppColors.glowBlue,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStat('Uniche', uniqueCards.toString(), AppColors.blue),
-          _buildStat('Doppioni', duplicates.toString(), AppColors.gold),
-          _buildStat('Totali', totalCards.toString(), AppColors.purple),
-          _buildStat('Valore', CurrencyFormatter.format(totalValue), AppColors.gold),
+          _buildStat(l10n.collectionSummaryUnique, uniqueCards.toString(), AppColors.blue),
+          _buildStat(l10n.collectionSummaryDuplicates, duplicates.toString(), AppColors.gold),
+          _buildStat(l10n.collectionSummaryTotal, totalCards.toString(), AppColors.purple),
+          _buildStat(l10n.collectionSummaryValue, CurrencyFormatter.format(totalValue), AppColors.gold),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildStat(String label, String value, Color color) {

@@ -278,16 +278,16 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
       return _PricingCard(
         title: l10n.proYearlyTitle,
         price: _annualPrice,
-        period: 'anno', // TODO: l10n
-        subText: '€${_annualMonthly.toStringAsFixed(2)}/mese — risparmia il 30%', // TODO: l10n
+        period: l10n.proYearPeriod,
+        subText: l10n.proYearSubtext(_annualMonthly.toStringAsFixed(2)),
         highlight: true,
       );
     }
     return _PricingCard(
       title: l10n.proMonthlyTitle,
       price: _monthlyPrice,
-      period: 'mese', // TODO: l10n
-      subText: 'Rinnovo automatico mensile', // TODO: l10n
+      period: l10n.proMonthPeriod,
+      subText: l10n.proMonthSubtext,
       highlight: false,
     );
   }

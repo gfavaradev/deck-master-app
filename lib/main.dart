@@ -55,10 +55,13 @@ void main() async {
 
   await AppPreferences.init();
 
+  // AdMob deve essere inizializzato PRIMA di runApp per evitare race condition
+  // con il primo caricamento del banner.
+  await AdService.initialize().catchError((_) {});
+
   // Avvia in background — non bloccano runApp, errori non critici ignorati
   BackgroundDownloadService.initialize().catchError((_) {});
   NotificationService().initialize().catchError((_) {});
-  AdService.initialize().catchError((_) {});
   // Mostra reminder catalogo se era stato posticipato nella sessione precedente
   NotificationService().checkAndShowPendingCatalogReminder().catchError((_) {});
 

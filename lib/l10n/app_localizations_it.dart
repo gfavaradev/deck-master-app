@@ -1213,6 +1213,12 @@ class AppLocalizationsIt extends AppLocalizations {
   String get newsReadMore => 'Leggi di più';
 
   @override
+  String get newsReadAll => 'Leggi tutto';
+
+  @override
+  String get newsShowLess => 'Mostra meno';
+
+  @override
   String get cardScannerTitle => 'Scansiona Carta';
 
   @override
@@ -1695,4 +1701,197 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get adminHomeFilterLabel => 'Filtro: ';
+
+  @override
+  String get collectionSummaryUnique => 'Uniche';
+
+  @override
+  String get collectionSummaryDuplicates => 'Doppioni';
+
+  @override
+  String get collectionSummaryTotal => 'Totali';
+
+  @override
+  String get collectionSummaryValue => 'Valore';
+
+  @override
+  String get statsTotalCards => 'Carte Totali';
+
+  @override
+  String get statsUniqueCards => 'Carte Uniche';
+
+  @override
+  String get statsEstimatedValue => 'Valore Stimato';
+
+  @override
+  String get statsValueTrend => 'Andamento Valore';
+
+  @override
+  String setCompletionNCards(int n) {
+    return '$n carte';
+  }
+
+  @override
+  String setCompletionTotalSets(int n) {
+    return '$n espansioni totali';
+  }
+
+  @override
+  String setCompletionCompletedStats(int completed, int inProgress) {
+    return '$completed completate · $inProgress in corso';
+  }
+
+  @override
+  String setCompletionOutOf(int n) {
+    return 'su $n espansioni';
+  }
+
+  @override
+  String setCompletionTabInProgress(int n) {
+    return 'In corso ($n)';
+  }
+
+  @override
+  String setCompletionTabCompleted(int n) {
+    return 'Completate ($n)';
+  }
+
+  @override
+  String setCompletionTabAvailable(int n) {
+    return 'Disponibili ($n)';
+  }
+
+  @override
+  String get setCompletionNoCatalog =>
+      'Catalogo non ancora scaricato.\nScarica il catalogo dalle Impostazioni.';
+
+  @override
+  String get setCompletionEmptyInProgress => 'Nessuna espansione in corso.';
+
+  @override
+  String get setCompletionEmptyCompleted => 'Nessuna espansione completata.';
+
+  @override
+  String get setCompletionEmptyAvailable => 'Nessuna espansione disponibile.';
+
+  @override
+  String deckDetailCardCount(int n) {
+    return '$n carte nel deck';
+  }
+
+  @override
+  String get deckDetailEmptyDeck =>
+      'Nessuna carta — aggiungile\ndalle carte possedute qui sotto';
+
+  @override
+  String get deckDetailShareCodeHint =>
+      'Condividi questo codice con altri giocatori:';
+
+  @override
+  String get deckDetailCodeExpiry =>
+      'Il codice è valido fino alla rimozione manuale.';
+
+  @override
+  String get newsCollectionAll => 'Tutti';
+
+  @override
+  String get newsDateToday => 'Oggi';
+
+  @override
+  String get newsDateYesterday => 'Ieri';
+
+  @override
+  String newsDateDaysAgo(int n) {
+    return '$n giorni fa';
+  }
+
+  @override
+  String get notifSectionAvailableUpdates => 'Aggiornamenti Disponibili';
+
+  @override
+  String get notifSectionHistory => 'Storico';
+
+  @override
+  String get notifFirstDownload => 'Primo download disponibile';
+
+  @override
+  String notifPartialUpdate(int chunks) {
+    return 'Aggiornamento parziale ($chunks chunk)';
+  }
+
+  @override
+  String get notifFullUpdate => 'Aggiornamento completo disponibile';
+
+  @override
+  String get notifLater => 'Più tardi';
+
+  @override
+  String get notifNoNotifications => 'Nessuna notifica';
+
+  @override
+  String get notifNewBadge => 'NUOVA';
+
+  @override
+  String get notifPricesUpdated => 'Prezzi di mercato aggiornati';
+
+  @override
+  String notifNewCardsAdded(int n) {
+    return '+$n nuove carte aggiunte';
+  }
+
+  @override
+  String get scannerFrameInstruction => 'Inquadra la carta e premi Scansiona';
+
+  @override
+  String get scannerScanBtn => 'Scansiona';
+
+  @override
+  String get btnAccept => 'Accetto';
+
+  @override
+  String get ctNoPriceAvailable => 'Attualmente nessun prezzo disponibile.';
+
+  @override
+  String get ctSearchOnCardtrader => 'Cerca su CardTrader ↗';
+
+  @override
+  String ctLastPrice(String date) {
+    return 'Ultimo: $date';
+  }
+
+  @override
+  String get ctHistoryInsufficientData =>
+      'Dati insufficienti per il periodo selezionato.';
+
+  @override
+  String get ctHistoryWillPopulate =>
+      'Il grafico si popolerà ad ogni sincronizzazione prezzi.';
+
+  @override
+  String get collectionChartUpdateNote =>
+      'Il grafico si aggiorna ogni volta che\nvisiti questa pagina.';
+
+  @override
+  String get splashDefaultCollector => 'Collezionista';
+
+  @override
+  String get proYearPeriod => 'anno';
+
+  @override
+  String proYearSubtext(String price) {
+    return '€$price/mese — risparmia il 30%';
+  }
+
+  @override
+  String get proMonthPeriod => 'mese';
+
+  @override
+  String get proMonthSubtext => 'Rinnovo automatico mensile';
+
+  @override
+  String get roiPortfolioDescription =>
+      'Qui vedi il valore totale delle carte che possiedi. Inserisci il prezzo d\'acquisto di ogni carta per calcolare il tuo ROI e scoprire quanto è cresciuto il tuo investimento.';
+
+  @override
+  String get roiPurchasePriceHelper => 'Inserisci il prezzo per singola copia';
 }

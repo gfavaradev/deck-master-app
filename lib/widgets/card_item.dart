@@ -2,6 +2,7 @@ import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/card_model.dart';
+import '../services/app_preferences.dart';
 import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/currency_formatter.dart';
@@ -22,9 +23,12 @@ class _LivePriceText extends StatefulWidget {
 class _LivePriceTextState extends State<_LivePriceText> {
   late final Future<CardtraderPrice?> _future;
 
+  void _onCurrencyChanged() => setState(() {});
+
   @override
   void initState() {
     super.initState();
+    AppPreferences.currencyNotifier.addListener(_onCurrencyChanged);
     final c = widget.card;
     _future = CardtraderService().getPriceForCard(
       catalog: c.collection,
@@ -35,6 +39,12 @@ class _LivePriceTextState extends State<_LivePriceText> {
       collectorNumber: c.serialNumber.serialCollectorNumber,
       catalogId: c.catalogId,
     );
+  }
+
+  @override
+  void dispose() {
+    AppPreferences.currencyNotifier.removeListener(_onCurrencyChanged);
+    super.dispose();
   }
 
   @override

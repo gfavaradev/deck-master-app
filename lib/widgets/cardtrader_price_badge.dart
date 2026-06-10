@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../l10n/app_localizations.dart';
+import '../services/app_preferences.dart';
 import '../services/cardtrader_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/extensions.dart';
@@ -68,11 +70,18 @@ class _CardtraderAllPricesSectionState
     'es': 'ES', 'pt': 'PT', 'ja': 'JA', 'ko': 'KO', 'zh': 'ZH',
   };
 
-  static const _langNames = <String, String>{
-    'en': 'Inglese', 'it': 'Italiano', 'fr': 'Francese', 'de': 'Tedesco',
-    'es': 'Spagnolo', 'pt': 'Portoghese', 'ja': 'Giapponese',
-    'ko': 'Coreano', 'zh': 'Cinese',
-  };
+  static String _langName(String code) {
+    final isEn = AppPreferences.instance.languageCode == 'en';
+    const enNames = <String, String>{
+      'en': 'English', 'it': 'Italian', 'fr': 'French', 'de': 'German',
+      'es': 'Spanish', 'pt': 'Portuguese', 'ja': 'Japanese', 'ko': 'Korean', 'zh': 'Chinese',
+    };
+    const itNames = <String, String>{
+      'en': 'Inglese', 'it': 'Italiano', 'fr': 'Francese', 'de': 'Tedesco',
+      'es': 'Spagnolo', 'pt': 'Portoghese', 'ja': 'Giapponese', 'ko': 'Coreano', 'zh': 'Cinese',
+    };
+    return (isEn ? enNames : itNames)[code] ?? code.toUpperCase();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +109,7 @@ class _CardtraderAllPricesSectionState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Attualmente nessun prezzo disponibile.', // TODO: l10n
+                  AppLocalizations.of(context)!.ctNoPriceAvailable,
                   style: TextStyle(
                     fontSize: 11,
                     color: AppColors.textHint.withValues(alpha: 0.7),
@@ -114,9 +123,9 @@ class _CardtraderAllPricesSectionState
                       Uri.parse(searchUrl),
                       mode: LaunchMode.externalApplication,
                     ),
-                    child: const Text(
-                      'Cerca su CardTrader ↗', // TODO: l10n
-                      style: TextStyle(
+                    child: Text(
+                      AppLocalizations.of(context)!.ctSearchOnCardtrader,
+                      style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.cardtraderTeal,
                         decoration: TextDecoration.underline,
@@ -152,7 +161,7 @@ class _CardtraderAllPricesSectionState
             return _PriceRow(
               price: byLang[lang],
               langLabel: _langLabels[lang] ?? lang.toUpperCase(),
-              langName: _langNames[lang] ?? lang,
+              langName: _langName(lang),
               isMain: isMain,
             );
           }).toList(),
@@ -535,7 +544,7 @@ class _PriceBadge extends StatelessWidget {
                 // Catalog fallback (blueprintId==0): no link, no date.
                 if (isHistorical && price.syncedAt.isNotEmpty)
                   Text(
-                    'Ultimo: ${_formatDate(price.syncedAtDate)}', // TODO: l10n
+                    AppLocalizations.of(context)!.ctLastPrice(_formatDate(price.syncedAtDate)),
                     style: const TextStyle(
                       fontSize: 9,
                       color: Colors.orange,

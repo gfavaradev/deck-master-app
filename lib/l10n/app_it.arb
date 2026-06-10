@@ -1195,6 +1195,12 @@
   "newsReadMore": "Leggi di più",
   "@newsReadMore": { "description": "Read more link in news" },
 
+  "newsReadAll": "Leggi tutto",
+  "@newsReadAll": { "description": "Expand full news body" },
+
+  "newsShowLess": "Mostra meno",
+  "@newsShowLess": { "description": "Collapse news body" },
+
   "cardScannerTitle": "Scansiona Carta",
   "@cardScannerTitle": { "description": "Card scanner page title" },
 
@@ -1673,5 +1679,203 @@
   "@adminHomeCtNoData": { "description": "No CT data in local cache" },
 
   "adminHomeFilterLabel": "Filtro: ",
-  "@adminHomeFilterLabel": { "description": "Filter label in admin users" }
+  "@adminHomeFilterLabel": { "description": "Filter label in admin users" },
+
+  "collectionSummaryUnique": "Uniche",
+  "@collectionSummaryUnique": { "description": "Unique cards label in collection summary" },
+
+  "collectionSummaryDuplicates": "Doppioni",
+  "@collectionSummaryDuplicates": { "description": "Duplicates label in collection summary" },
+
+  "collectionSummaryTotal": "Totali",
+  "@collectionSummaryTotal": { "description": "Total cards label in collection summary" },
+
+  "collectionSummaryValue": "Valore",
+  "@collectionSummaryValue": { "description": "Value label in collection summary" },
+
+  "statsTotalCards": "Carte Totali",
+  "@statsTotalCards": { "description": "Total cards stat card label" },
+
+  "statsUniqueCards": "Carte Uniche",
+  "@statsUniqueCards": { "description": "Unique cards stat card label" },
+
+  "statsEstimatedValue": "Valore Stimato",
+  "@statsEstimatedValue": { "description": "Estimated value stat card label" },
+
+  "statsValueTrend": "Andamento Valore",
+  "@statsValueTrend": { "description": "Value trend chart title" },
+
+  "setCompletionNCards": "{n} carte",
+  "@setCompletionNCards": {
+    "description": "N cards label in set completion",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "setCompletionTotalSets": "{n} espansioni totali",
+  "@setCompletionTotalSets": {
+    "description": "N total expansions label",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "setCompletionCompletedStats": "{completed} completate · {inProgress} in corso",
+  "@setCompletionCompletedStats": {
+    "description": "Completed and in-progress expansions stats",
+    "placeholders": { "completed": { "type": "int" }, "inProgress": { "type": "int" } }
+  },
+
+  "setCompletionOutOf": "su {n} espansioni",
+  "@setCompletionOutOf": {
+    "description": "Out of N expansions label",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "setCompletionTabInProgress": "In corso ({n})",
+  "@setCompletionTabInProgress": {
+    "description": "In progress tab label",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "setCompletionTabCompleted": "Completate ({n})",
+  "@setCompletionTabCompleted": {
+    "description": "Completed tab label",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "setCompletionTabAvailable": "Disponibili ({n})",
+  "@setCompletionTabAvailable": {
+    "description": "Available tab label",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "setCompletionNoCatalog": "Catalogo non ancora scaricato.\nScarica il catalogo dalle Impostazioni.",
+  "@setCompletionNoCatalog": { "description": "Catalog not downloaded empty state" },
+
+  "setCompletionEmptyInProgress": "Nessuna espansione in corso.",
+  "@setCompletionEmptyInProgress": { "description": "No in-progress expansions" },
+
+  "setCompletionEmptyCompleted": "Nessuna espansione completata.",
+  "@setCompletionEmptyCompleted": { "description": "No completed expansions" },
+
+  "setCompletionEmptyAvailable": "Nessuna espansione disponibile.",
+  "@setCompletionEmptyAvailable": { "description": "No available expansions" },
+
+  "deckDetailCardCount": "{n} carte nel deck",
+  "@deckDetailCardCount": {
+    "description": "Card count in deck subtitle",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "deckDetailEmptyDeck": "Nessuna carta — aggiungile\ndalle carte possedute qui sotto",
+  "@deckDetailEmptyDeck": { "description": "Empty deck state" },
+
+  "deckDetailShareCodeHint": "Condividi questo codice con altri giocatori:",
+  "@deckDetailShareCodeHint": { "description": "Share code instruction" },
+
+  "deckDetailCodeExpiry": "Il codice è valido fino alla rimozione manuale.",
+  "@deckDetailCodeExpiry": { "description": "Code expiry info" },
+
+  "newsCollectionAll": "Tutti",
+  "@newsCollectionAll": { "description": "All collections label in news" },
+
+  "newsDateToday": "Oggi",
+  "@newsDateToday": { "description": "Today date label in news" },
+
+  "newsDateYesterday": "Ieri",
+  "@newsDateYesterday": { "description": "Yesterday date label in news" },
+
+  "newsDateDaysAgo": "{n} giorni fa",
+  "@newsDateDaysAgo": {
+    "description": "N days ago date label in news",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "notifSectionAvailableUpdates": "Aggiornamenti Disponibili",
+  "@notifSectionAvailableUpdates": { "description": "Available updates section header" },
+
+  "notifSectionHistory": "Storico",
+  "@notifSectionHistory": { "description": "History section header in notifications" },
+
+  "notifFirstDownload": "Primo download disponibile",
+  "@notifFirstDownload": { "description": "First download available subtitle" },
+
+  "notifPartialUpdate": "Aggiornamento parziale ({chunks} chunk)",
+  "@notifPartialUpdate": {
+    "description": "Partial update subtitle",
+    "placeholders": { "chunks": { "type": "int" } }
+  },
+
+  "notifFullUpdate": "Aggiornamento completo disponibile",
+  "@notifFullUpdate": { "description": "Full update available subtitle" },
+
+  "notifLater": "Più tardi",
+  "@notifLater": { "description": "Later button in notification" },
+
+  "notifNoNotifications": "Nessuna notifica",
+  "@notifNoNotifications": { "description": "No notifications empty state" },
+
+  "notifNewBadge": "NUOVA",
+  "@notifNewBadge": { "description": "New notification badge label" },
+
+  "notifPricesUpdated": "Prezzi di mercato aggiornati",
+  "@notifPricesUpdated": { "description": "Prices updated notification detail" },
+
+  "notifNewCardsAdded": "+{n} nuove carte aggiunte",
+  "@notifNewCardsAdded": {
+    "description": "N new cards added notification detail",
+    "placeholders": { "n": { "type": "int" } }
+  },
+
+  "scannerFrameInstruction": "Inquadra la carta e premi Scansiona",
+  "@scannerFrameInstruction": { "description": "Scanner frame instruction" },
+
+  "scannerScanBtn": "Scansiona",
+  "@scannerScanBtn": { "description": "Scan button label" },
+
+  "btnAccept": "Accetto",
+  "@btnAccept": { "description": "Accept/I accept button" },
+
+  "ctNoPriceAvailable": "Attualmente nessun prezzo disponibile.",
+  "@ctNoPriceAvailable": { "description": "No CT price available message" },
+
+  "ctSearchOnCardtrader": "Cerca su CardTrader ↗",
+  "@ctSearchOnCardtrader": { "description": "Search on CardTrader link" },
+
+  "ctLastPrice": "Ultimo: {date}",
+  "@ctLastPrice": {
+    "description": "Last price date label",
+    "placeholders": { "date": { "type": "String" } }
+  },
+
+  "ctHistoryInsufficientData": "Dati insufficienti per il periodo selezionato.",
+  "@ctHistoryInsufficientData": { "description": "Insufficient data for chart period" },
+
+  "ctHistoryWillPopulate": "Il grafico si popolerà ad ogni sincronizzazione prezzi.",
+  "@ctHistoryWillPopulate": { "description": "Chart will populate with price syncs" },
+
+  "collectionChartUpdateNote": "Il grafico si aggiorna ogni volta che\nvisiti questa pagina.",
+  "@collectionChartUpdateNote": { "description": "Collection value chart update note" },
+
+  "splashDefaultCollector": "Collezionista",
+  "@splashDefaultCollector": { "description": "Default user type name in splash" },
+
+  "proYearPeriod": "anno",
+  "@proYearPeriod": { "description": "Year period label in pro page" },
+
+  "proYearSubtext": "€{price}/mese — risparmia il 30%",
+  "@proYearSubtext": {
+    "description": "Yearly plan subtext with monthly price",
+    "placeholders": { "price": { "type": "String" } }
+  },
+
+  "proMonthPeriod": "mese",
+  "@proMonthPeriod": { "description": "Month period label in pro page" },
+
+  "proMonthSubtext": "Rinnovo automatico mensile",
+  "@proMonthSubtext": { "description": "Monthly renewal subtext in pro page" },
+
+  "roiPortfolioDescription": "Qui vedi il valore totale delle carte che possiedi. Inserisci il prezzo d'acquisto di ogni carta per calcolare il tuo ROI e scoprire quanto è cresciuto il tuo investimento.",
+  "@roiPortfolioDescription": { "description": "ROI portfolio description" },
+
+  "roiPurchasePriceHelper": "Inserisci il prezzo per singola copia",
+  "@roiPurchasePriceHelper": { "description": "Purchase price helper text in ROI" }
 }

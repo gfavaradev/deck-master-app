@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
 import '../utils/currency_formatter.dart';
@@ -169,7 +170,7 @@ class _EmptyState extends StatelessWidget {
               size: 28, color: color.withValues(alpha: 0.3)),
           const SizedBox(height: 8),
           Text(
-            'Il grafico si aggiorna ogni volta che\nvisiti questa pagina.', // TODO: l10n
+            AppLocalizations.of(context)!.collectionChartUpdateNote,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,

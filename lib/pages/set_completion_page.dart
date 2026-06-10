@@ -108,6 +108,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
   }
 
   Widget _buildSetTile(Map<String, dynamic> set) {
+    final l10n = AppLocalizations.of(context)!;
     final setName = set['setName'] as String? ?? '';
     final setCode = set['setCode'] as String?;
     final total = (set['totalCards'] as int?) ?? 0;
@@ -161,7 +162,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(
-            pct > 0 ? '$owned / $total' : '$total carte', // TODO: l10n
+            pct > 0 ? '$owned / $total' : l10n.setCompletionNCards(total),
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
           ),
           Text(
@@ -201,6 +202,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
   }
 
   Widget _buildSummaryCard() {
+    final l10n = AppLocalizations.of(context)!;
     final totalSets = _allSets.length;
     final completedSets = _allSets.where((s) => _pct(s) >= 1.0).length;
     final inProgressSets = _allSets.where((s) => _pct(s) > 0 && _pct(s) < 1.0).length;
@@ -223,7 +225,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$totalSets espansioni totali', // TODO: l10n
+                  l10n.setCompletionTotalSets(totalSets),
                   style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 6),
@@ -248,11 +250,11 @@ class _SetCompletionPageState extends State<SetCompletionPage>
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               Text(
-                '$completedSets completate · $inProgressSets in corso', // TODO: l10n
+                l10n.setCompletionCompletedStats(completedSets, inProgressSets),
                 style: TextStyle(fontSize: 11, color: completedSets == totalSets && totalSets > 0 ? Colors.green : AppColors.textSecondary),
               ),
               Text(
-                'su $totalSets espansioni', // TODO: l10n
+                l10n.setCompletionOutOf(totalSets),
                 style: const TextStyle(fontSize: 10, color: AppColors.textHint),
               ),
             ],
@@ -274,9 +276,9 @@ class _SetCompletionPageState extends State<SetCompletionPage>
             : TabBar(
                 controller: _tabController,
                 tabs: [
-                  Tab(text: 'In corso (${_inProgress.length})'), // TODO: l10n
-                  Tab(text: 'Completate (${_completed.length})'), // TODO: l10n
-                  Tab(text: 'Disponibili (${_available.length})'), // TODO: l10n
+                  Tab(text: l10n.setCompletionTabInProgress(_inProgress.length)),
+                  Tab(text: l10n.setCompletionTabCompleted(_completed.length)),
+                  Tab(text: l10n.setCompletionTabAvailable(_available.length)),
                 ],
               ),
       ),
@@ -311,7 +313,7 @@ class _SetCompletionPageState extends State<SetCompletionPage>
                               const Icon(Icons.inventory_2_outlined, size: 64, color: AppColors.textHint),
                               const SizedBox(height: 16),
                               Text(
-                                'Catalogo non ancora scaricato.\nScarica il catalogo dalle Impostazioni.', // TODO: l10n
+                                l10n.setCompletionNoCatalog,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(color: AppColors.textHint),
                               ),
@@ -321,9 +323,9 @@ class _SetCompletionPageState extends State<SetCompletionPage>
                       : TabBarView(
                           controller: _tabController,
                           children: [
-                            _buildList(_inProgress, 'Nessuna espansione in corso.'), // TODO: l10n
-                            _buildList(_completed, 'Nessuna espansione completata.'), // TODO: l10n
-                            _buildList(_available, 'Nessuna espansione disponibile.'), // TODO: l10n
+                            _buildList(_inProgress, l10n.setCompletionEmptyInProgress),
+                            _buildList(_completed, l10n.setCompletionEmptyCompleted),
+                            _buildList(_available, l10n.setCompletionEmptyAvailable),
                           ],
                         ),
           ),

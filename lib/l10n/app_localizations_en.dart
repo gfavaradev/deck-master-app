@@ -1199,6 +1199,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get newsReadMore => 'Read more';
 
   @override
+  String get newsReadAll => 'Read all';
+
+  @override
+  String get newsShowLess => 'Show less';
+
+  @override
   String get cardScannerTitle => 'Scan Card';
 
   @override
@@ -1678,4 +1684,196 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get adminHomeFilterLabel => 'Filter: ';
+
+  @override
+  String get collectionSummaryUnique => 'Unique';
+
+  @override
+  String get collectionSummaryDuplicates => 'Duplicates';
+
+  @override
+  String get collectionSummaryTotal => 'Total';
+
+  @override
+  String get collectionSummaryValue => 'Value';
+
+  @override
+  String get statsTotalCards => 'Total Cards';
+
+  @override
+  String get statsUniqueCards => 'Unique Cards';
+
+  @override
+  String get statsEstimatedValue => 'Estimated Value';
+
+  @override
+  String get statsValueTrend => 'Value Trend';
+
+  @override
+  String setCompletionNCards(int n) {
+    return '$n cards';
+  }
+
+  @override
+  String setCompletionTotalSets(int n) {
+    return '$n expansions total';
+  }
+
+  @override
+  String setCompletionCompletedStats(int completed, int inProgress) {
+    return '$completed completed · $inProgress in progress';
+  }
+
+  @override
+  String setCompletionOutOf(int n) {
+    return 'out of $n expansions';
+  }
+
+  @override
+  String setCompletionTabInProgress(int n) {
+    return 'In progress ($n)';
+  }
+
+  @override
+  String setCompletionTabCompleted(int n) {
+    return 'Completed ($n)';
+  }
+
+  @override
+  String setCompletionTabAvailable(int n) {
+    return 'Available ($n)';
+  }
+
+  @override
+  String get setCompletionNoCatalog =>
+      'Catalog not downloaded yet.\nDownload the catalog from Settings.';
+
+  @override
+  String get setCompletionEmptyInProgress => 'No expansions in progress.';
+
+  @override
+  String get setCompletionEmptyCompleted => 'No expansions completed.';
+
+  @override
+  String get setCompletionEmptyAvailable => 'No expansions available.';
+
+  @override
+  String deckDetailCardCount(int n) {
+    return '$n cards in deck';
+  }
+
+  @override
+  String get deckDetailEmptyDeck =>
+      'No cards — add them\nfrom your owned cards below';
+
+  @override
+  String get deckDetailShareCodeHint => 'Share this code with other players:';
+
+  @override
+  String get deckDetailCodeExpiry =>
+      'The code is valid until manually removed.';
+
+  @override
+  String get newsCollectionAll => 'All';
+
+  @override
+  String get newsDateToday => 'Today';
+
+  @override
+  String get newsDateYesterday => 'Yesterday';
+
+  @override
+  String newsDateDaysAgo(int n) {
+    return '$n days ago';
+  }
+
+  @override
+  String get notifSectionAvailableUpdates => 'Available Updates';
+
+  @override
+  String get notifSectionHistory => 'History';
+
+  @override
+  String get notifFirstDownload => 'First download available';
+
+  @override
+  String notifPartialUpdate(int chunks) {
+    return 'Partial update ($chunks chunks)';
+  }
+
+  @override
+  String get notifFullUpdate => 'Full update available';
+
+  @override
+  String get notifLater => 'Later';
+
+  @override
+  String get notifNoNotifications => 'No notifications';
+
+  @override
+  String get notifNewBadge => 'NEW';
+
+  @override
+  String get notifPricesUpdated => 'Market prices updated';
+
+  @override
+  String notifNewCardsAdded(int n) {
+    return '+$n new cards added';
+  }
+
+  @override
+  String get scannerFrameInstruction => 'Frame the card and press Scan';
+
+  @override
+  String get scannerScanBtn => 'Scan';
+
+  @override
+  String get btnAccept => 'Accept';
+
+  @override
+  String get ctNoPriceAvailable => 'No price currently available.';
+
+  @override
+  String get ctSearchOnCardtrader => 'Search on CardTrader ↗';
+
+  @override
+  String ctLastPrice(String date) {
+    return 'Last: $date';
+  }
+
+  @override
+  String get ctHistoryInsufficientData =>
+      'Insufficient data for the selected period.';
+
+  @override
+  String get ctHistoryWillPopulate =>
+      'The chart will populate with each price sync.';
+
+  @override
+  String get collectionChartUpdateNote =>
+      'The chart updates every time\nyou visit this page.';
+
+  @override
+  String get splashDefaultCollector => 'Collector';
+
+  @override
+  String get proYearPeriod => 'year';
+
+  @override
+  String proYearSubtext(String price) {
+    return '€$price/month — save 30%';
+  }
+
+  @override
+  String get proMonthPeriod => 'month';
+
+  @override
+  String get proMonthSubtext => 'Monthly automatic renewal';
+
+  @override
+  String get roiPortfolioDescription =>
+      'Here you can see the total value of the cards you own. Enter the purchase price of each card to calculate your ROI and discover how much your investment has grown.';
+
+  @override
+  String get roiPurchasePriceHelper => 'Enter the price per single copy';
 }

@@ -2,6 +2,7 @@ import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/wishlist_model.dart';
+import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import '../theme/app_colors.dart';
@@ -34,9 +35,12 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
   bool _searching = false;
   bool _adding = false;
 
+  void _onCurrencyChanged() => setState(() {});
+
   @override
   void initState() {
     super.initState();
+    AppPreferences.currencyNotifier.addListener(_onCurrencyChanged);
     _searchCtrl.addListener(_onQueryChanged);
     _loadExistingIds();
   }
@@ -51,6 +55,7 @@ class _WishlistCatalogPickerState extends State<WishlistCatalogPicker> {
 
   @override
   void dispose() {
+    AppPreferences.currencyNotifier.removeListener(_onCurrencyChanged);
     _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();

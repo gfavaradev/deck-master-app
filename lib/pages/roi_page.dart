@@ -56,7 +56,7 @@ class _RoiPageState extends State<RoiPage> {
               child: Builder(
                 builder: (ctx) => TutorialContentWidget(
                   title: AppLocalizations.of(ctx)!.roiPortfolioTitle,
-                  description: 'Qui vedi il valore totale delle carte che possiedi. Inserisci il prezzo d\'acquisto di ogni carta per calcolare il tuo ROI e scoprire quanto è cresciuto il tuo investimento.', // TODO: l10n
+                  description: AppLocalizations.of(ctx)!.roiPortfolioDescription,
                 ),
               ),
             ),
@@ -152,7 +152,7 @@ class _RoiPageState extends State<RoiPage> {
                 labelText: l10n.roiPurchasePriceLabel,
                 border: const OutlineInputBorder(),
                 prefixText: CurrencyFormatter.prefixText,
-                helperText: 'Inserisci il prezzo per singola copia', // TODO: l10n
+                helperText: l10n.roiPurchasePriceHelper,
               ),
               autofocus: true,
             ),

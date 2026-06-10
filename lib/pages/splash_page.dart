@@ -111,14 +111,18 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       final hasLoggedInBefore = prefs.getBool(key) ?? false;
       await prefs.setBool(key, true);
 
-      final rawName = user.displayName ?? user.email?.split('@').first ?? 'Collezionista';
-      final name = rawName.split(' ').first;
+      final rawName = user.displayName ?? user.email?.split('@').first;
+      final namePart = rawName?.split(' ').first ?? '';
 
       if (!mounted) return;
 
+      final greetingName = namePart.isNotEmpty
+          ? namePart
+          : AppLocalizations.of(context)!.splashDefaultCollector;
+
       setState(() {
         _phase = _Phase.greeting;
-        _greetingName = name;
+        _greetingName = greetingName;
         _isFirstLogin = !hasLoggedInBefore;
         _statusMessage = '';
         _downloadProgress = null;

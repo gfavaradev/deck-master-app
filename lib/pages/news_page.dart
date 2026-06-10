@@ -194,10 +194,12 @@ class _NewsCardState extends State<_NewsCard> {
     'pokemon': 'Pokémon',
     'onepiece': 'One Piece',
     'magic': 'Magic',
-    'all': 'Tutti',
   };
 
-  String _formatDate(dynamic ts) {
+  String _collectionLabel(String key, AppLocalizations l10n) =>
+      _collectionLabels[key] ?? (key == 'all' ? l10n.newsCollectionAll : key);
+
+  String _formatDate(dynamic ts, AppLocalizations l10n) {
     DateTime? dt;
     if (ts is Timestamp) {
       dt = ts.toDate();
@@ -207,9 +209,9 @@ class _NewsCardState extends State<_NewsCard> {
     if (dt == null) return '';
     final now = DateTime.now();
     final diff = now.difference(dt);
-    if (diff.inDays == 0) return 'Oggi';
-    if (diff.inDays == 1) return 'Ieri';
-    if (diff.inDays < 7) return '${diff.inDays} giorni fa';
+    if (diff.inDays == 0) return l10n.newsDateToday;
+    if (diff.inDays == 1) return l10n.newsDateYesterday;
+    if (diff.inDays < 7) return l10n.newsDateDaysAgo(diff.inDays);
     return '${dt.day}/${dt.month}/${dt.year}';
   }
 
@@ -223,6 +225,7 @@ class _NewsCardState extends State<_NewsCard> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final n = widget.news;
     final isPinned = n['pinned'] == true;
     final title = n['title'] as String? ?? '';
@@ -234,7 +237,7 @@ class _NewsCardState extends State<_NewsCard> {
     final collections = rawCollections is List
         ? rawCollections.map((e) => e.toString()).toList()
         : <String>[];
-    final dateStr = _formatDate(n['publishedAt']);
+    final dateStr = _formatDate(n['publishedAt'], l10n);
     final isLongBody = body.length > 160;
 
     return Container(
@@ -303,7 +306,7 @@ class _NewsCardState extends State<_NewsCard> {
                     // Collection chips
                     ...collections.take(3).map((key) {
                       final color = _collectionColors[key] ?? AppColors.textHint;
-                      final label = _collectionLabels[key] ?? key;
+                      final label = _collectionLabel(key, l10n);
                       return Container(
                         margin: const EdgeInsets.only(left: 4),
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -364,7 +367,7 @@ class _NewsCardState extends State<_NewsCard> {
                       child: Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          _expanded ? 'Mostra meno' : 'Leggi tutto',
+                          _expanded ? l10n.newsShowLess : l10n.newsReadAll,
                           style: const TextStyle(
                               color: AppColors.gold,
                               fontSize: 12,
