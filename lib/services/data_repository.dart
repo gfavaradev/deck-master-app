@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2451,15 +2452,63 @@ class DataRepository {
 
   Future<bool> isInWishlist(String catalogId) => _dbHelper.isInWishlist(catalogId);
 
-  Future<int> addToWishlist(WishlistModel item) => _dbHelper.insertWishlistItem(item.toMap());
+  Future<Set<String>> getAllWishlistCatalogIds() => _dbHelper.getAllWishlistCatalogIds();
 
-  Future<void> removeFromWishlist(int id) => _dbHelper.deleteWishlistItem(id);
+  Future<int> addToWishlist(WishlistModel item) async {
+    final id = await _dbHelper.insertWishlistItem(item.toMap());
+    final uid = _authService.currentUserId;
+    if (uid != null) {
+      unawaited(_firestoreService.upsertWishlistItem(uid, item.toMap()));
+    }
+    return id;
+  }
 
-  Future<void> removeFromWishlistByCatalogId(String catalogId) =>
-      _dbHelper.deleteWishlistItemByCatalogId(catalogId);
+  Future<void> removeFromWishlist(int id) async {
+    final row = await _dbHelper.getWishlistItemById(id);
+    await _dbHelper.deleteWishlistItem(id);
+    final uid = _authService.currentUserId;
+    if (uid != null && row != null) {
+      unawaited(_firestoreService.deleteWishlistItem(uid, row['catalogId'] as String));
+    }
+  }
 
-  Future<void> updateWishlistTargetPrice(int id, double? price) =>
-      _dbHelper.updateWishlistTargetPrice(id, price);
+  Future<void> removeFromWishlistByCatalogId(String catalogId) async {
+    await _dbHelper.deleteWishlistItemByCatalogId(catalogId);
+    final uid = _authService.currentUserId;
+    if (uid != null) {
+      unawaited(_firestoreService.deleteWishlistItem(uid, catalogId));
+    }
+  }
+
+  Future<void> updateWishlistTargetPrice(int id, double? price) async {
+    await _dbHelper.updateWishlistTargetPrice(id, price);
+    final uid = _authService.currentUserId;
+    if (uid != null) {
+      final row = await _dbHelper.getWishlistItemById(id);
+      if (row != null) {
+        unawaited(_firestoreService.updateWishlistTargetPrice(uid, row['catalogId'] as String, price));
+      }
+    }
+  }
+
+  Future<void> syncWishlistFromCloud() async {
+    final uid = _authService.currentUserId;
+    if (uid == null) return;
+    try {
+      final remoteRows = await _firestoreService.getWishlistItems(uid);
+      for (final row in remoteRows) {
+        final alreadyLocal = await _dbHelper.isInWishlist(row['catalogId'] as String);
+        if (!alreadyLocal) {
+          await _dbHelper.insertWishlistItem(row);
+        }
+      }
+      // Push any local items not yet on Firestore
+      final localRows = await _dbHelper.getWishlistItems();
+      for (final row in localRows) {
+        unawaited(_firestoreService.upsertWishlistItem(uid, row));
+      }
+    } catch (_) {}
+  }
 
   // ── AI Deck Builder ───────────────────────────────────────────────────────
 

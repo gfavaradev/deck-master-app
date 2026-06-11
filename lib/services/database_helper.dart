@@ -5239,7 +5239,15 @@ class DatabaseHelper {
             WHERE op.card_id = CAST(w.catalogId AS INTEGER)
             LIMIT 1
           )
-          ELSE NULL
+          ELSE (
+            SELECT ct.min_price_nm_cents / 100.0
+            FROM cardtrader_prices ct
+            WHERE ct.catalog = w.collection
+              AND ct.card_name_en = w.name
+              AND ct.listing_count > 0
+            ORDER BY ct.min_price_nm_cents ASC
+            LIMIT 1
+          )
         END AS cardtrader_value
       FROM wishlist w
       ORDER BY w.added_at DESC
@@ -5270,6 +5278,18 @@ class DatabaseHelper {
   Future<int> deleteWishlistItemByCatalogId(String catalogId) async {
     final db = await database;
     return db.delete('wishlist', where: 'catalogId = ?', whereArgs: [catalogId]);
+  }
+
+  Future<Map<String, dynamic>?> getWishlistItemById(int id) async {
+    final db = await database;
+    final rows = await db.query('wishlist', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isNotEmpty ? rows.first : null;
+  }
+
+  Future<Set<String>> getAllWishlistCatalogIds() async {
+    final db = await database;
+    final rows = await db.query('wishlist', columns: ['catalogId']);
+    return rows.map((r) => r['catalogId'] as String).toSet();
   }
 
   Future<int> updateWishlistTargetPrice(int id, double? targetPrice) async {

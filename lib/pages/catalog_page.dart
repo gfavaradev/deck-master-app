@@ -13,6 +13,7 @@ import '../widgets/full_screen_gallery.dart';
 import '../widgets/op_lang_badge.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
+import '../models/wishlist_model.dart';
 
 class CatalogPage extends StatefulWidget {
   final String collectionName;
@@ -58,6 +59,7 @@ class _CatalogPageState extends State<CatalogPage> {
   bool _isSelectionMode = false;
   Set<String> _selectedCardIds = {}; // Use card IDs instead of indices
   bool _isAdding = false;
+  Set<String> _wishlistCatalogIds = {};
 
   Timer? _debounce;
   String _lastQuery = '';
@@ -116,7 +118,11 @@ class _CatalogPageState extends State<CatalogPage> {
       _loadAlbumsAndOwned(),
       _checkCatalogMissing(),
       _dbHelper.getAvailableCatalogLanguages(widget.collectionKey),
+      _dbHelper.getAllWishlistCatalogIds(),
     ]);
+    if (mounted) {
+      setState(() => _wishlistCatalogIds = results[4] as Set<String>);
+    }
 
     if (mounted) {
       setState(() => _availableCatalogLanguages = results[3] as Set<String>);
@@ -488,6 +494,28 @@ class _CatalogPageState extends State<CatalogPage> {
     });
   }
 
+  Future<void> _toggleWishlist(Map<String, dynamic> card) async {
+    final catalogId = card['id']?.toString() ?? '';
+    if (catalogId.isEmpty) return;
+    final isInWishlist = _wishlistCatalogIds.contains(catalogId);
+    if (isInWishlist) {
+      setState(() => _wishlistCatalogIds.remove(catalogId));
+      await _dbHelper.removeFromWishlistByCatalogId(catalogId);
+    } else {
+      setState(() => _wishlistCatalogIds.add(catalogId));
+      final item = WishlistModel(
+        catalogId: catalogId,
+        name: (card['localizedName'] ?? card['name'] ?? '').toString(),
+        collection: widget.collectionKey,
+        imageUrl: card['artwork'] as String?,
+        serialNumber: (card['localizedSetCode'] ?? card['setCode'])?.toString(),
+        rarity: (card['localizedRarityCode'] ?? card['rarityCode'] ?? card['rarity'])?.toString(),
+        addedAt: DateTime.now().toIso8601String(),
+      );
+      await _dbHelper.addToWishlist(item);
+    }
+  }
+
   Future<void> _addSelectedToCollection() async {
     if (_isAdding || _selectedCardIds.isEmpty) return;
     setState(() => _isAdding = true);
@@ -741,6 +769,7 @@ class _CatalogPageState extends State<CatalogPage> {
                           final displayRarityFull = (card['localizedRarity'] ?? card['setRarity'] ?? card['rarity'] ?? displayRarityCode)?.toString();
                           // Foreign print badge: solo YGO quando isLocalizedPrint == 0
                           final bool isForeignPrint = card['isLocalizedPrint'] == 0;
+                          final String catalogId = card['id']?.toString() ?? '';
                           final String ownedKey =
                               '${card['id']}-${card['localizedSetCode'] ?? card['setCode'] ?? ''}';
                           final int ownedQty = _ownedQuantityMap[ownedKey] ?? 0;
@@ -783,7 +812,7 @@ class _CatalogPageState extends State<CatalogPage> {
                                             if (ownedQty > 0)
                                               Positioned(
                                                 bottom: 4,
-                                                right: 4,
+                                                left: 4,
                                                 child: Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                                   decoration: BoxDecoration(
@@ -796,6 +825,37 @@ class _CatalogPageState extends State<CatalogPage> {
                                                       color: Colors.white,
                                                       fontSize: 11,
                                                       fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            if (!_isSelectionMode)
+                                              Positioned(
+                                                bottom: 4,
+                                                right: 4,
+                                                child: GestureDetector(
+                                                  onTap: () => _toggleWishlist(card),
+                                                  child: Container(
+                                                    width: 28,
+                                                    height: 28,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black.withValues(alpha: 0.55),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: AnimatedSwitcher(
+                                                      duration: const Duration(milliseconds: 200),
+                                                      transitionBuilder: (child, anim) =>
+                                                          ScaleTransition(scale: anim, child: child),
+                                                      child: Icon(
+                                                        _wishlistCatalogIds.contains(catalogId)
+                                                            ? Icons.favorite
+                                                            : Icons.favorite_border,
+                                                        key: ValueKey(_wishlistCatalogIds.contains(catalogId)),
+                                                        color: _wishlistCatalogIds.contains(catalogId)
+                                                            ? Colors.red
+                                                            : Colors.white,
+                                                        size: 16,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),

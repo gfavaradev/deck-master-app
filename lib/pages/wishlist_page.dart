@@ -1,16 +1,13 @@
+import 'dart:async' show unawaited;
 import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
-import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../models/wishlist_model.dart';
 import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/price_alert_service.dart';
-import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/currency_formatter.dart';
 import '../widgets/app_dialog.dart';
-import '../widgets/tutorial_content_widget.dart';
-import 'wishlist_catalog_picker.dart';
 
 class WishlistPage extends StatefulWidget {
   const WishlistPage({super.key});
@@ -24,8 +21,6 @@ class _WishlistPageState extends State<WishlistPage> {
   List<WishlistModel> _items = [];
   bool _loading = true;
 
-  final _fabKey = GlobalKey();
-
   void _onCurrencyChanged() => setState(() {});
 
   @override
@@ -33,40 +28,6 @@ class _WishlistPageState extends State<WishlistPage> {
     super.initState();
     AppPreferences.currencyNotifier.addListener(_onCurrencyChanged);
     _load();
-    if (TutorialService.instance.isActive && TutorialService.instance.phase == 2) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await Future.delayed(const Duration(milliseconds: 450));
-        if (mounted) _startPhase2Tutorial();
-      });
-    }
-  }
-
-  void _startPhase2Tutorial() {
-    final l10n = AppLocalizations.of(context)!;
-    TutorialCoachMark(
-      targets: [
-        TargetFocus(
-          identify: 'wishlist_fab',
-          keyTarget: _fabKey,
-          shape: ShapeLightFocus.RRect,
-          radius: 28,
-          contents: [
-            TargetContent(
-              align: ContentAlign.top,
-              child: TutorialContentWidget(
-                title: l10n.wishlistAddToWishlistTitle,
-                description: 'Tocca qui per aggiungere le carte che vuoi acquistare. Puoi impostare un prezzo obiettivo e ricevere un avviso quando viene raggiunto.', // TODO: l10n
-              ),
-            ),
-          ],
-        ),
-      ],
-      colorShadow: Colors.black,
-      opacityShadow: 0.85,
-      textSkip: l10n.tutorialSkip,
-      onFinish: _onPhase2Done,
-      onSkip: () { _onPhase2Done(); return true; },
-    ).show(context: context);
   }
 
   @override
@@ -75,14 +36,8 @@ class _WishlistPageState extends State<WishlistPage> {
     super.dispose();
   }
 
-  void _onPhase2Done() {
-    TutorialService.instance.advanceTo(3);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.pop(context);
-    });
-  }
-
   Future<void> _load() async {
+    unawaited(_repo.syncWishlistFromCloud());
     final items = await _repo.getWishlistItems();
     if (!mounted) return;
     setState(() { _items = items; _loading = false; });
@@ -118,14 +73,6 @@ class _WishlistPageState extends State<WishlistPage> {
         ),
       );
     }
-  }
-
-  Future<void> _openAdd() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const WishlistCatalogPicker()),
-    );
-    _load();
   }
 
   Future<void> _editTargetPrice(WishlistModel item) async {
@@ -198,14 +145,6 @@ class _WishlistPageState extends State<WishlistPage> {
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        key: _fabKey,
-        onPressed: _openAdd,
-        backgroundColor: AppColors.gold,
-        foregroundColor: Colors.black,
-        icon: const Icon(Icons.add),
-        label: Text(l10n.wishlistAddCard),
-      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _items.isEmpty
@@ -215,7 +154,6 @@ class _WishlistPageState extends State<WishlistPage> {
   }
 
   Widget _buildEmpty() {
-    final l10n = AppLocalizations.of(context)!;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -228,16 +166,9 @@ class _WishlistPageState extends State<WishlistPage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Aggiungi le carte che vuoi acquistare\ne tieni traccia dei prezzi.', // TODO: l10n
+            'Vai al catalogo e tocca il cuore\nsulle carte che vuoi acquistare.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textHint, fontSize: 14),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: _openAdd,
-            style: FilledButton.styleFrom(backgroundColor: AppColors.gold, foregroundColor: Colors.black),
-            icon: const Icon(Icons.add),
-            label: Text(l10n.wishlistAddCard),
           ),
         ],
       ),

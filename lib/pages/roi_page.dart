@@ -1,14 +1,11 @@
 import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
-import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
-import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/currency_formatter.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/collection_value_chart.dart';
-import '../widgets/tutorial_content_widget.dart';
 
 class RoiPage extends StatefulWidget {
   const RoiPage({super.key});
@@ -25,8 +22,6 @@ class _RoiPageState extends State<RoiPage> {
   bool _loading = true;
   String? _filterCollection;
 
-  final _kpiKey = GlobalKey();
-
   void _onCurrencyChanged() => setState(() {});
 
   @override
@@ -34,65 +29,6 @@ class _RoiPageState extends State<RoiPage> {
     super.initState();
     _load();
     AppPreferences.currencyNotifier.addListener(_onCurrencyChanged);
-    if (TutorialService.instance.isActive && TutorialService.instance.phase == 3) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await Future.delayed(const Duration(milliseconds: 450));
-        if (mounted) _startPhase3Tutorial();
-      });
-    }
-  }
-
-  void _startPhase3Tutorial() {
-    TutorialCoachMark(
-      targets: [
-        TargetFocus(
-          identify: 'roi_kpi',
-          keyTarget: _kpiKey,
-          shape: ShapeLightFocus.RRect,
-          radius: 10,
-          contents: [
-            TargetContent(
-              align: ContentAlign.bottom,
-              child: Builder(
-                builder: (ctx) => TutorialContentWidget(
-                  title: AppLocalizations.of(ctx)!.roiPortfolioTitle,
-                  description: AppLocalizations.of(ctx)!.roiPortfolioDescription,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-      colorShadow: Colors.black,
-      opacityShadow: 0.85,
-      textSkip: 'SALTA',
-      onFinish: _onPhase3Done,
-      onSkip: () { _onPhase3Done(); return true; },
-    ).show(context: context);
-  }
-
-  void _onPhase3Done() {
-    TutorialService.instance.complete();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.emoji_events, color: Colors.black),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Tutorial completato! Buona fortuna con la tua collezione!',
-                  style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Color(0xFFF9A825),
-          duration: Duration(seconds: 4),
-        ),
-      );
-    }
   }
 
   @override
@@ -234,7 +170,6 @@ class _RoiPageState extends State<RoiPage> {
               style: const TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 1.2)),
           const SizedBox(height: 8),
           Row(
-            key: _kpiKey,
             children: [
               Expanded(
                 child: _KpiCard(

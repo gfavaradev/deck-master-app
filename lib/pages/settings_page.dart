@@ -1163,7 +1163,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _buildTile(
           icon: Icons.help_outline,
           title: 'Guida all\'App',
-          subtitle: 'Rivedi il tutorial introduttivo',
+          subtitle: 'Rivedi la guida alle funzionalità dell\'app',
           iconColor: AppColors.purple,
           isLast: true,
           trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),

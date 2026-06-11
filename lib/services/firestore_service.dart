@@ -428,6 +428,56 @@ class FirestoreService {
         .delete();
   }
 
+  // ============================================================
+  // Wishlist Methods
+  // ============================================================
+
+  Future<void> upsertWishlistItem(String userId, Map<String, dynamic> item) async {
+    await _firestore
+        .doc(FirestorePaths.userWishlistItem(userId, item['catalogId'] as String))
+        .set({
+      'catalogId': item['catalogId'],
+      'name': item['name'],
+      'collection': item['collection'],
+      'imageUrl': item['imageUrl'],
+      'serialNumber': item['serialNumber'],
+      'rarity': item['rarity'],
+      'target_price': item['target_price'],
+      'added_at': item['added_at'],
+    });
+  }
+
+  Future<void> deleteWishlistItem(String userId, String catalogId) async {
+    await _firestore
+        .doc(FirestorePaths.userWishlistItem(userId, catalogId))
+        .delete();
+  }
+
+  Future<void> updateWishlistTargetPrice(String userId, String catalogId, double? targetPrice) async {
+    await _firestore
+        .doc(FirestorePaths.userWishlistItem(userId, catalogId))
+        .set({'target_price': targetPrice}, SetOptions(merge: true));
+  }
+
+  Future<List<Map<String, dynamic>>> getWishlistItems(String userId) async {
+    final snapshot = await _firestore
+        .collection(FirestorePaths.userWishlist(userId))
+        .get();
+    return snapshot.docs.map((doc) {
+      final d = doc.data();
+      return {
+        'catalogId': d['catalogId'] ?? doc.id,
+        'name': d['name'] ?? '',
+        'collection': d['collection'] ?? '',
+        'imageUrl': d['imageUrl'],
+        'serialNumber': d['serialNumber'],
+        'rarity': d['rarity'],
+        'target_price': d['target_price'],
+        'added_at': d['added_at'] ?? '',
+      };
+    }).toList();
+  }
+
   Future<void> addCardToDeck(String userId, String deckFirestoreId, int cardId, int quantity) async {
     await _firestore
         .doc(FirestorePaths.userDeck(userId, deckFirestoreId))

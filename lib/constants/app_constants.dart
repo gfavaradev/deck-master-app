@@ -225,6 +225,7 @@ class FirestoreConstants {
   static const String albums = 'albums';
   static const String cards = 'cards';
   static const String decks = 'decks';
+  static const String wishlist = 'wishlist';
 
   /// Catalog structure
   static const String catalogMetadata = 'metadata';

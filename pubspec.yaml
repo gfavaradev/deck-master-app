@@ -69,7 +69,6 @@ dependencies:
   google_mobile_ads: ^9.0.0
   # google_mlkit_text_recognition: ^0.15.1  # disabled for simulator build
   google_generative_ai: ^0.4.6
-  tutorial_coach_mark: ^1.2.11
   excel: ^4.0.6
   share_plus: ^13.1.0
 

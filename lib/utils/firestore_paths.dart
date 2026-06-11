@@ -67,4 +67,14 @@ class FirestorePaths {
   static String userDeck(String userId, String deckId) {
     return '${userDecks(userId)}/$deckId';
   }
+
+  /// Get user wishlist path
+  static String userWishlist(String userId) {
+    return '${user(userId)}/${FirestoreConstants.wishlist}';
+  }
+
+  /// Get specific wishlist item path (keyed by catalogId)
+  static String userWishlistItem(String userId, String catalogId) {
+    return '${userWishlist(userId)}/$catalogId';
+  }
 }
