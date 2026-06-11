@@ -323,7 +323,7 @@ class _Chart extends StatelessWidget {
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
             getTooltipColor: (_) => AppColors.bgLight,
-            tooltipRoundedRadius: 6,
+            tooltipBorderRadius: BorderRadius.circular(6),
             getTooltipItems: (spots) => spots
                 .map((s) => LineTooltipItem(
                       CurrencyFormatter.format(s.y),

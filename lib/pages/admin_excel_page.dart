@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import '../l10n/app_localizations.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
@@ -68,10 +69,12 @@ class _AdminExcelPageState extends State<AdminExcelPage> {
       final ts = DateTime.now().millisecondsSinceEpoch;
       final filename = 'deck_master_${_selectedCollection}_$ts.xlsx';
       _updateProgress('Condivisione file...', null);
-      await Share.shareXFiles(
-        [XFile.fromData(bytes, name: filename,
-            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
-        subject: 'Catalogo $label — Deck Master',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile.fromData(bytes, name: filename,
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
+          subject: 'Catalogo $label — Deck Master',
+        ),
       );
       _showResult('File Excel esportato (${(bytes.length / 1024).toStringAsFixed(0)} KB).');
     } catch (e) {
@@ -87,11 +90,12 @@ class _AdminExcelPageState extends State<AdminExcelPage> {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
-      withData: true,
     );
     if (result == null || result.files.isEmpty) return;
-    final bytes = result.files.first.bytes;
-    if (bytes == null) {
+    final Uint8List bytes;
+    try {
+      bytes = await result.files.first.readAsBytes();
+    } catch (_) {
       _showResult('Impossibile leggere il file selezionato.', isError: true);
       return;
     }

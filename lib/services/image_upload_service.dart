@@ -18,10 +18,9 @@ class ImageUploadService {
     String? setCode,
   }) async {
     await _assertAdmin();
-    final result = await FilePicker.pickFiles(type: FileType.image, withData: true);
+    final result = await FilePicker.pickFiles(type: FileType.image);
     if (result == null || result.files.isEmpty) return null;
-    final bytes = result.files.first.bytes;
-    if (bytes == null) return null;
+    final bytes = await result.files.first.readAsBytes();
     return BackblazeService.uploadBytes(
       bytes: bytes,
       catalog: catalog,
