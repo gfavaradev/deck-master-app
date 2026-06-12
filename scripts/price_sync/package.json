@@ -1,0 +1,16 @@
+{
+  "name": "deck-master-price-sync",
+  "version": "1.0.0",
+  "description": "Sync giornaliero prezzi CardTrader → Firestore catalog chunks",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "yugioh": "node index.js --catalogs yugioh",
+    "pokemon": "node index.js --catalogs pokemon",
+    "onepiece": "node index.js --catalogs onepiece"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "dotenv": "^16.0.0"
+  }
+}

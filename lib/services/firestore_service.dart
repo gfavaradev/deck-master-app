@@ -608,6 +608,41 @@ class FirestoreService {
     });
   }
 
+  /// Returns the syncedAt timestamp from cardtrader_prices/{catalog}.
+  /// Used by SyncService to decide whether to download fresh price rows.
+  /// Cost: 1 Firestore read per catalog per check.
+  Future<DateTime?> getCardtraderPricesSyncedAt(String catalog) async {
+    try {
+      final doc = await _firestore
+          .collection('cardtrader_prices')
+          .doc(catalog)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      if (!doc.exists) return null;
+      final ts = doc.data()?['syncedAt'];
+      if (ts is! Timestamp) return null;
+      return ts.toDate();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Downloads all raw price rows from cardtrader_prices/{catalog}/chunks.
+  /// Each row has the same schema as the local cardtrader_prices SQLite table.
+  Future<List<Map<String, dynamic>>> fetchCardtraderPriceRows(String catalog) async {
+    final ref = _firestore.collection('cardtrader_prices').doc(catalog);
+    final chunks = await ref.collection('chunks').get();
+    final rows = <Map<String, dynamic>>[];
+    for (final doc in chunks.docs) {
+      final rawRows = doc.data()['rows'] as List<dynamic>?;
+      if (rawRows == null) continue;
+      for (final r in rawRows) {
+        if (r is Map) rows.add(Map<String, dynamic>.from(r));
+      }
+    }
+    return rows;
+  }
+
   /// Returns syncedAt + modifiedChunks from the catalog metadata,
   /// written by syncCatalogPricesToFirestore when prices are embedded in chunks.
   Future<Map<String, dynamic>?> getCatalogPriceSyncInfo(String catalog) async {

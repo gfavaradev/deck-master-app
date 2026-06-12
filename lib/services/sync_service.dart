@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'auth_service.dart';
+import 'cardtrader_service.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
@@ -22,9 +23,14 @@ class SyncService {
   bool _isSyncing = false;
   DateTime? _lastSyncTime;
   static const _syncCooldown = Duration(hours: 6);
-  static const _priceSyncCooldown = Duration(hours: 24);
-  static const _lastPriceSyncKey = 'sync_last_price_sync_at';
   static const _hasRemoteDataPrefix = 'sync_has_remote_';
+
+  // Cataloghi con supporto prezzi CardTrader
+  static const _ctCatalogs = [
+    'yugioh', 'pokemon', 'onepiece', 'digimon', 'lorcana',
+    'flesh-and-blood', 'vanguard', 'dragon-ball-super',
+    'star-wars', 'riftbound', 'gundam', 'union-arena',
+  ];
 
   // Cache locale: una volta che sappiamo che il remoto ha dati, rimane vero per sempre
   Future<bool> _getCachedHasRemote(String uid) async {
@@ -43,13 +49,6 @@ class SyncService {
 
   final _remoteChangeController = StreamController<String>.broadcast();
   Stream<String> get onRemoteChange => _remoteChangeController.stream;
-
-  Future<void> Function(String catalog, List<String> chunkIds)? _catalogPriceUpdateListener;
-
-  void registerCatalogPriceUpdateListener(
-      Future<void> Function(String, List<String>) listener) {
-    _catalogPriceUpdateListener = listener;
-  }
 
   // I listener real-time Firestore sono stati rimossi per azzerare le letture
   // passive (ogni riconnessione costava N reads = tutti i documenti).
@@ -328,50 +327,90 @@ class SyncService {
     }
   }
 
+  // Key prefix per timestamp locale per-catalogo (SharedPreferences).
+  static const _rawPricesSyncedAtPrefix = 'ct_raw_prices_synced_at_';
+
+  /// Controlla se i prezzi CT su Firestore sono più recenti di quelli locali
+  /// e, se sì, scarica le righe e le applica alle tabelle di stampa locali.
+  ///
+  /// Cost per check: 1 Firestore read per catalogo (metadata doc, ~100 byte).
+  /// Cost per download: N read (chunks con righe prezzi) — solo quando cambiati.
+  ///
+  /// Non ha cooldown globale: il confronto syncedAt è il gate efficiente.
   Future<void> _syncCardtraderPrices() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Rispetta cooldown 24h — anche quando chiamato da pullFromCloud()
-    final lastStr = prefs.getString(_lastPriceSyncKey);
-    final lastPriceSync = lastStr != null ? DateTime.tryParse(lastStr) : null;
-    if (lastPriceSync != null &&
-        DateTime.now().difference(lastPriceSync) < _priceSyncCooldown) {
-      return;
-    }
-
     Future<void> syncOne(String catalog) async {
       try {
-        final priceSyncInfo = await _firestoreService
-            .getCatalogPriceSyncInfo(catalog)
-            .timeout(const Duration(seconds: 10), onTimeout: () => null);
-        if (priceSyncInfo != null) {
-          final syncedAt = priceSyncInfo['syncedAt'] as DateTime;
-          final chunkIds = priceSyncInfo['modifiedChunks'] as List<String>;
-          final localCatalogKey = 'ct_catalog_prices_synced_at_$catalog';
-          final localCatalogSyncedStr = prefs.getString(localCatalogKey);
-          final localCatalogSyncedAt = localCatalogSyncedStr != null
-              ? DateTime.tryParse(localCatalogSyncedStr)
-              : null;
-          if ((localCatalogSyncedAt == null || syncedAt.isAfter(localCatalogSyncedAt)) &&
-              chunkIds.isNotEmpty) {
-            await _catalogPriceUpdateListener?.call(catalog, chunkIds);
-            await prefs.setString(localCatalogKey, syncedAt.toIso8601String());
-          }
+        // 1. Leggi timestamp remoto — 1 read Firestore
+        final remoteSyncedAt = await _firestoreService
+            .getCardtraderPricesSyncedAt(catalog)
+            .timeout(const Duration(seconds: 8), onTimeout: () => null);
+        if (remoteSyncedAt == null) return;
+
+        // 2. Confronta con timestamp locale
+        final localKey = '$_rawPricesSyncedAtPrefix$catalog';
+        final localStr = prefs.getString(localKey);
+        final localSyncedAt = localStr != null ? DateTime.tryParse(localStr) : null;
+        if (localSyncedAt != null && !remoteSyncedAt.isAfter(localSyncedAt)) return;
+
+        // 3. Scarica righe prezzi e inserisci in SQLite
+        final rows = await _firestoreService
+            .fetchCardtraderPriceRows(catalog)
+            .timeout(const Duration(minutes: 3));
+        if (rows.isEmpty) return;
+
+        await _dbHelper.upsertCardtraderPrices(rows);
+
+        // 4. Applica i prezzi alle tabelle di stampa e aggiorna il valore
+        //    delle carte in collezione
+        await CardtraderService().applyLocalPricesToCollection(catalog);
+
+        // 5. Salva timestamp locale
+        await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
+
+        // 6. Notifica l'UI che i valori delle carte sono cambiati
+        _remoteChangeController.add('cards');
+      } catch (_) {}
+    }
+
+    Future<void> syncMagic() async {
+      try {
+        // Magic usa Scryfall → prezzi in cardtrader_prices/magic con schema
+        // { api_id, price_eur, price_eur_foil } anziché le righe CT standard.
+        final remoteSyncedAt = await _firestoreService
+            .getCardtraderPricesSyncedAt('magic')
+            .timeout(const Duration(seconds: 8), onTimeout: () => null);
+        if (remoteSyncedAt == null) return;
+
+        const localKey = '${_rawPricesSyncedAtPrefix}magic';
+        final localStr = prefs.getString(localKey);
+        final localSyncedAt =
+            localStr != null ? DateTime.tryParse(localStr) : null;
+        if (localSyncedAt != null && !remoteSyncedAt.isAfter(localSyncedAt)) {
+          return;
         }
+
+        final rows = await _firestoreService
+            .fetchCardtraderPriceRows('magic')
+            .timeout(const Duration(minutes: 3));
+        if (rows.isEmpty) return;
+
+        await _dbHelper.applyMagicPricesFromFirestore(rows);
+        await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
+        _remoteChangeController.add('cards');
       } catch (_) {}
     }
 
     try {
-      for (final catalog in ['yugioh', 'pokemon', 'onepiece']) {
+      for (final catalog in _ctCatalogs) {
         await syncOne(catalog);
       }
-      await prefs.setString(_lastPriceSyncKey, DateTime.now().toIso8601String());
-    } catch (e) { // ignore: empty_catches
-    }
+      await syncMagic();
+    } catch (_) {}
   }
 
-  // Price-only sync: called when within the 6h main cooldown. The 24h cooldown
-  // is handled internally by _syncCardtraderPrices().
+  // Price-only sync: called when within the 6h main cooldown.
   Future<void> _maybeSyncPrices() async {
     try {
       await _syncCardtraderPrices();

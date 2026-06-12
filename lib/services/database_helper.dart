@@ -5168,6 +5168,28 @@ class DatabaseHelper {
     return total;
   }
 
+  /// Applies Magic price rows (from Firestore `cardtrader_prices/magic`) directly
+  /// to `magic_cards.price_eur`. Runs inside a single transaction for speed.
+  /// Each row must have { api_id, price_eur }.
+  Future<int> applyMagicPricesFromFirestore(
+      List<Map<String, dynamic>> rows) async {
+    final db = await database;
+    int updated = 0;
+    final now = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      for (final row in rows) {
+        final apiId = row['api_id'] as String?;
+        if (apiId == null) continue;
+        final priceEur = (row['price_eur'] as num?)?.toDouble();
+        updated += await txn.rawUpdate(
+          'UPDATE magic_cards SET price_eur = ?, updated_at = ? WHERE api_id = ?',
+          [priceEur, now, apiId],
+        );
+      }
+    });
+    return updated;
+  }
+
   /// Normalizes a SQL column expression for fuzzy name matching.
   /// Trims whitespace, lowercases, and converts common Unicode variants to ASCII:
   ///   U+2019 ' → U+0027 '   (RIGHT SINGLE QUOTATION MARK)

@@ -54,9 +54,7 @@ CardModel _fixOnepieceCardImage(CardModel card) {
 class DataRepository {
   static final DataRepository _instance = DataRepository._internal();
   factory DataRepository() => _instance;
-  DataRepository._internal() {
-    SyncService().registerCatalogPriceUpdateListener(_onCatalogPriceUpdate);
-  }
+  DataRepository._internal();
 
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final SyncService _syncService = SyncService();
@@ -98,24 +96,6 @@ class DataRepository {
   Future<void> clearPendingCatalogUpdates() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(kPendingCatalogUpdatesKey);
-  }
-
-  // Called by SyncService when the admin has embedded new prices in Firestore
-  // catalog chunks. Instead of auto-downloading, saves a pending flag so the
-  // user can manually trigger the download via the cloud icon in the AppBar.
-  Future<void> _onCatalogPriceUpdate(String catalog, List<String> chunkIds) async {
-    try {
-      if (_isDownloadingCatalog) return;
-      final localMeta = await _dbHelper.getCatalogMetadata(catalog);
-      if (localMeta == null) return; // catalogo non ancora scaricato su questo device
-      await savePendingCatalogUpdate(catalog, {
-        'canDoIncremental': true,
-        'modifiedChunks': chunkIds,
-        'deletedCards': <dynamic>[],
-        'isFirstDownload': false,
-      });
-      _syncService.notifyLocalChange('catalog_update_pending');
-    } catch (_) {}
   }
 
   // ============================================================
