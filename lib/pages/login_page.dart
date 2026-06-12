@@ -22,7 +22,8 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isLogin = true;
-  bool _showOfflineButton = false;
+  // null = checking, true = offline, false = online
+  bool? _isOffline;
 
   /// Su mobile (Android/iOS) usiamo solo social login
   bool get _isSocialOnly => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
@@ -34,15 +35,16 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _checkConnectivity() async {
+    setState(() => _isOffline = null); // mostra spinner mentre verifica
+    bool offline = true;
     try {
       final result = await InternetAddress.lookup('google.com')
-          .timeout(const Duration(seconds: 3));
-      if (result.isEmpty || result[0].rawAddress.isEmpty) {
-        if (mounted) setState(() => _showOfflineButton = true);
-      }
-    } catch (_) { // ignore: empty_catches
-      if (mounted) setState(() => _showOfflineButton = true);
+          .timeout(const Duration(seconds: 4));
+      offline = result.isEmpty || result[0].rawAddress.isEmpty;
+    } catch (_) {
+      offline = true;
     }
+    if (mounted) setState(() => _isOffline = offline);
   }
 
   @override
@@ -95,7 +97,10 @@ class _LoginPageState extends State<LoginPage> {
         } else {
           errorMessage = l10n.msgErrorGeneric(msg);
         }
-        setState(() => _showOfflineButton = true);
+        // Segna come offline dopo un errore di rete durante il login
+        if (msg.contains('network') || msg.contains('timeout') || msg.contains('socket')) {
+          setState(() => _isOffline = true);
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
@@ -214,6 +219,7 @@ class _LoginPageState extends State<LoginPage> {
   // ─── Layout solo social (Android / iOS) ────────────────────────────────────
 
   Widget _buildSocialOnlyLayout() {
+    final l10n = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 30),
       child: Column(
@@ -236,47 +242,115 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
           Text(
-            AppLocalizations.of(context)!.loginSubtitle,
+            l10n.loginSubtitle,
             style: TextStyle(fontFamily: 'Poppins',
               fontSize: 14,
               color: Colors.white70,
             ),
           ),
           const Spacer(flex: 2),
-          Text(
-            AppLocalizations.of(context)!.loginAccessToContinue,
-            style: TextStyle(fontFamily: 'Poppins',
-              fontSize: 13,
-              color: Colors.white54,
-            ),
-          ),
-          const SizedBox(height: 16),
           if (_isLoading)
             const CircularProgressIndicator(color: AppColors.gold)
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildSocialButton(
-                    svgAsset: 'assets/icon/google.svg',
-                    onPressed: () => _handleSignIn(_authService.signInWithGoogle),
-                  ),
-                  if (_showOfflineButton) ...[
-                    const SizedBox(width: 24),
-                    _buildOfflineButton(),
-                  ],
-                ],
+          else if (_isOffline == null)
+            // Verifica connessione in corso
+            const CircularProgressIndicator(color: AppColors.gold)
+          else if (_isOffline == true)
+            _buildOfflinePanel(l10n)
+          else ...[
+            Text(
+              l10n.loginAccessToContinue,
+              style: TextStyle(fontFamily: 'Poppins',
+                fontSize: 13,
+                color: Colors.white54,
               ),
-            const Spacer(flex: 1),
-            const SizedBox(height: 24),
+            ),
+            const SizedBox(height: 16),
+            _buildSocialButton(
+              svgAsset: 'assets/icon/google.svg',
+              onPressed: () => _handleSignIn(_authService.signInWithGoogle),
+            ),
+          ],
+          const Spacer(flex: 1),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  // ─── Pannello offline (sostituisce il pulsante Google) ─────────────────────
+
+  Widget _buildOfflinePanel(AppLocalizations l10n) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.wifi_off_rounded, color: Colors.white54, size: 36),
+        const SizedBox(height: 12),
+        Text(
+          l10n.loginNoInternetTitle,
+          style: const TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.white70,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          l10n.loginNoInternetBody,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 13,
+            color: Colors.white38,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Riprova connessione
+            OutlinedButton.icon(
+              onPressed: _checkConnectivity,
+              icon: const Icon(Icons.refresh, size: 18, color: Colors.white70),
+              label: Text(
+                l10n.loginBtnRetry,
+                style: const TextStyle(color: Colors.white70, fontFamily: 'Poppins'),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.white30),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Accesso offline
+            ElevatedButton.icon(
+              onPressed: () => _handleSignIn(() async {
+                await _authService.signInOffline();
+                return true;
+              }),
+              icon: const Icon(Icons.lock_open_rounded, size: 18),
+              label: Text(
+                l10n.loginBtnOfflineAccess,
+                style: const TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
           ],
         ),
+      ],
     );
   }
 
   // ─── Layout completo con email/password (Web / Desktop) ────────────────────
 
   Widget _buildFullLayout() {
+    final l10n = AppLocalizations.of(context)!;
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -304,121 +378,119 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                AppLocalizations.of(context)!.loginAccessToContinue,
+                l10n.loginAccessToContinue,
                 style: TextStyle(fontFamily: 'Poppins',
                   fontSize: 14,
                   color: Colors.white70,
                 ),
               ),
               const SizedBox(height: 42),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      _isLogin ? AppLocalizations.of(context)!.btnLogin : AppLocalizations.of(context)!.btnRegister,
-                      style: TextStyle(fontFamily: 'Poppins',
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade900,
+              // Form email/password — visibile solo online
+              if (_isOffline != true) ...[
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 5),
                       ),
-                    ),
-                    const SizedBox(height: 25),
-                    TextField(
-                      controller: _emailController,
-                      decoration: InputDecoration(
-                        hintText: 'Email',
-                        prefixIcon: const Icon(Icons.email_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _isLogin ? l10n.btnLogin : l10n.btnRegister,
+                        style: TextStyle(fontFamily: 'Poppins',
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade900,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 15),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        hintText: 'Password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                      const SizedBox(height: 25),
+                      TextField(
+                        controller: _emailController,
+                        decoration: InputDecoration(
+                          hintText: 'Email',
+                          prefixIcon: const Icon(Icons.email_outlined),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 25),
-                    if (_isLoading)
-                      const CircularProgressIndicator()
-                    else
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: _emailAuth,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue.shade900,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                      const SizedBox(height: 15),
+                      TextField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          hintText: 'Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+                      if (_isLoading)
+                        const CircularProgressIndicator()
+                      else
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: _emailAuth,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade900,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              _isLogin ? l10n.loginBtnAccedi : l10n.loginBtnRegistrati,
+                              style: TextStyle(fontFamily: 'Poppins',fontWeight: FontWeight.bold),
                             ),
                           ),
-                          child: Text(
-                            _isLogin ? AppLocalizations.of(context)!.loginBtnAccedi : AppLocalizations.of(context)!.loginBtnRegistrati,
-                            style: TextStyle(fontFamily: 'Poppins',fontWeight: FontWeight.bold),
-                          ),
+                        ),
+                      TextButton(
+                        onPressed: () => setState(() => _isLogin = !_isLogin),
+                        child: Text(
+                          _isLogin ? l10n.loginNoAccount : l10n.loginHasAccount,
+                          style: TextStyle(color: Colors.blue.shade900),
                         ),
                       ),
-                    TextButton(
-                      onPressed: () => setState(() => _isLogin = !_isLogin),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Row(
+                  children: [
+                    const Expanded(child: Divider(color: Colors.white70)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                       child: Text(
-                        _isLogin
-                            ? AppLocalizations.of(context)!.loginNoAccount
-                            : AppLocalizations.of(context)!.loginHasAccount,
-                        style: TextStyle(color: Colors.blue.shade900),
+                        l10n.loginOrContinueWith,
+                        style: TextStyle(fontFamily: 'Poppins',color: Colors.white70, fontSize: 12),
                       ),
                     ),
+                    const Expanded(child: Divider(color: Colors.white70)),
                   ],
                 ),
-              ),
-              const SizedBox(height: 30),
-              Row(
-                children: [
-                  const Expanded(child: Divider(color: Colors.white70)),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Text(
-                      AppLocalizations.of(context)!.loginOrContinueWith,
-                      style: TextStyle(fontFamily: 'Poppins',color: Colors.white70, fontSize: 12),
-                    ),
-                  ),
-                  const Expanded(child: Divider(color: Colors.white70)),
-                ],
-              ),
-              const SizedBox(height: 25),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+                const SizedBox(height: 25),
+                if (_isLoading)
+                  const CircularProgressIndicator(color: AppColors.gold)
+                else if (_isOffline == null)
+                  const CircularProgressIndicator(color: AppColors.gold)
+                else
                   _buildSocialButton(
                     svgAsset: 'assets/icon/google.svg',
                     onPressed: () => _handleSignIn(_authService.signInWithGoogle),
                   ),
-                  if (_showOfflineButton) ...[
-                    const SizedBox(width: 24),
-                    _buildOfflineButton(),
-                  ],
-                ],
-              ),
+              ] else
+                _buildOfflinePanel(l10n),
               const SizedBox(height: 50),
             ],
           ),
@@ -438,35 +510,6 @@ class _LoginPageState extends State<LoginPage> {
         width: 60,
         height: 60,
         child: SvgPicture.asset(svgAsset),
-      ),
-    );
-  }
-
-  Widget _buildOfflineButton() {
-    return Tooltip(
-      message: AppLocalizations.of(context)!.loginContinueOfflineTooltip,
-      child: InkWell(
-        onTap: _isLoading
-            ? null
-            : () => _handleSignIn(() async {
-                  await _authService.signInOffline();
-                  return true;
-                }),
-        borderRadius: BorderRadius.circular(30),
-        child: Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.08),
-            border: Border.all(color: Colors.white30, width: 1.5),
-          ),
-          child: const Icon(
-            Icons.wifi_off_rounded,
-            color: Colors.white70,
-            size: 28,
-          ),
-        ),
       ),
     );
   }

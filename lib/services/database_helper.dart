@@ -2132,33 +2132,48 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getGenericCatalogCards(
     String catalogKey, {
     String? query,
+    String language = 'EN',
     int limit = 100,
     int offset = 0,
   }) async {
     final prefix = genericTablePrefix(catalogKey);
     if (prefix == null) return [];
     final db = await database;
+    final langCol = switch (language.toUpperCase()) {
+      'IT' => 'name_it',
+      'FR' => 'name_fr',
+      'DE' => 'name_de',
+      'PT' => 'name_pt',
+      _ => null,
+    };
+    final nameExpr = langCol != null
+        ? 'COALESCE(NULLIF($langCol, ""), name)'
+        : 'name';
+    final effectCol = langCol?.replaceFirst('name_', 'effect_');
+    final effectExpr = effectCol != null
+        ? 'COALESCE(NULLIF($effectCol, ""), effect)'
+        : 'effect';
     final where = (query != null && query.isNotEmpty)
-        ? 'WHERE name LIKE ? OR api_id LIKE ?'
+        ? 'WHERE name LIKE ? OR $nameExpr LIKE ? OR api_id LIKE ?'
         : '';
     final args = (query != null && query.isNotEmpty)
-        ? ['%$query%', '%$query%']
+        ? ['%$query%', '%$query%', '%$query%']
         : <dynamic>[];
     final rows = await db.rawQuery('''
       SELECT
-        api_id      AS id,
-        name,
-        api_id      AS setCode,
+        api_id          AS id,
+        $nameExpr       AS name,
+        api_id          AS setCode,
         rarity,
-        rarity      AS setRarity,
-        image_url   AS artwork,
+        rarity          AS setRarity,
+        image_url       AS artwork,
         card_type,
-        effect,
+        $effectExpr     AS effect,
         set_code,
         set_name
       FROM ${prefix}_cards
       $where
-      ORDER BY name, api_id
+      ORDER BY $nameExpr, api_id
       LIMIT $limit OFFSET $offset
     ''', args);
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
@@ -2989,6 +3004,17 @@ class DatabaseHelper {
           LIMIT 1
         ''', [lang]);
         if (rows.isNotEmpty) result.add(lang);
+      }
+    } else {
+      final prefix = genericTablePrefix(collectionKey);
+      if (prefix != null) {
+        final db = await database;
+        for (final entry in const {'IT': 'name_it', 'FR': 'name_fr', 'DE': 'name_de', 'PT': 'name_pt'}.entries) {
+          final rows = await db.rawQuery(
+            "SELECT 1 FROM ${prefix}_cards WHERE ${entry.value} IS NOT NULL AND ${entry.value} != '' LIMIT 1",
+          );
+          if (rows.isNotEmpty) result.add(entry.key);
+        }
       }
     }
     return result;

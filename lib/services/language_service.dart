@@ -9,9 +9,19 @@ class LanguageService {
   /// Languages available per collection. Collections not listed (or with empty list)
   /// have no language support and won't show the language picker.
   static const Map<String, List<String>> collectionLanguages = {
-    'yugioh':   ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'],
-    'pokemon':  ['EN', 'IT', 'FR', 'DE', 'PT'],
-    'onepiece': ['JP', 'EN', 'FR', 'KO', 'ZH'],
+    'yugioh':            ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'],
+    'pokemon':           ['EN', 'IT', 'FR', 'DE', 'PT'],
+    'onepiece':          ['JP', 'EN', 'FR', 'KO', 'ZH'],
+    'magic':             ['EN', 'IT', 'FR', 'DE', 'PT', 'SP', 'JP', 'KO', 'ZH'],
+    'digimon':           ['EN', 'IT', 'FR', 'DE', 'PT'],
+    'lorcana':           ['EN', 'FR', 'DE', 'IT'],
+    'flesh-and-blood':   ['EN'],
+    'vanguard':          ['EN', 'JP'],
+    'dragon-ball-super': ['EN', 'IT', 'FR', 'DE', 'PT', 'SP'],
+    'star-wars':         ['EN', 'FR', 'DE'],
+    'riftbound':         ['EN'],
+    'gundam':            ['JP', 'EN'],
+    'union-arena':       ['JP', 'EN'],
   };
 
   /// Kept for backward compatibility — same as yugioh list.

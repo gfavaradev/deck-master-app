@@ -374,6 +374,30 @@ abstract class AppLocalizations {
   /// **'Continua senza connessione'**
   String get loginContinueOfflineTooltip;
 
+  /// No description provided for @loginNoInternetTitle.
+  ///
+  /// In it, this message translates to:
+  /// **'Nessuna connessione'**
+  String get loginNoInternetTitle;
+
+  /// No description provided for @loginNoInternetBody.
+  ///
+  /// In it, this message translates to:
+  /// **'Impossibile raggiungere internet.\nPuoi continuare in modalità offline o riprovare.'**
+  String get loginNoInternetBody;
+
+  /// No description provided for @loginBtnRetry.
+  ///
+  /// In it, this message translates to:
+  /// **'Riprova'**
+  String get loginBtnRetry;
+
+  /// No description provided for @loginBtnOfflineAccess.
+  ///
+  /// In it, this message translates to:
+  /// **'Modalità offline'**
+  String get loginBtnOfflineAccess;
+
   /// Login cancelled snackbar
   ///
   /// In it, this message translates to:

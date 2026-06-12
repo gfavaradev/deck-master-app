@@ -2415,7 +2415,7 @@ class DataRepository {
       return getMagicCatalogCards(query: query, limit: limit);
     } else if (DatabaseHelper.genericTablePrefix(collection) != null) {
       // Cataloghi v36 — tabelle dedicate (digimon_cards, lorcana_cards, ecc.)
-      return _dbHelper.getGenericCatalogCards(collection, query: query, limit: limit, offset: offset);
+      return _dbHelper.getGenericCatalogCards(collection, query: query, language: language, limit: limit, offset: offset);
     } else {
       // Fallback: vecchio schema catalog_cards (YGO-style)
       if (offset > 0) return [];

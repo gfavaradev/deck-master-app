@@ -43,6 +43,9 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   bool _isPro = false;
   RewardedAd? _rewardedAd;
   bool _adLoading = false;
+  // Riferimento al setState del dialog aperto: permette di aggiornare il dialog
+  // quando l'ad finisce di caricarsi (showDialog ha un context separato).
+  StateSetter? _dialogSetState;
 
   @override
   void initState() {
@@ -66,13 +69,17 @@ class _HomePageSimpleState extends State<HomePageSimple> {
 
   void _preloadRewardedAd() {
     setState(() => _adLoading = true);
+    _dialogSetState?.call(() {}); // aggiorna subito il dialog se aperto
     AdService.loadRewardedAd(
       onLoaded: (ad) {
         if (!mounted) { ad.dispose(); return; }
         setState(() { _rewardedAd = ad; _adLoading = false; });
+        _dialogSetState?.call(() {}); // l'ad è pronta: aggiorna il dialog
       },
       onFailed: (_) {
-        if (mounted) setState(() { _rewardedAd = null; _adLoading = false; });
+        if (!mounted) return;
+        setState(() { _rewardedAd = null; _adLoading = false; });
+        _dialogSetState?.call(() {}); // fallimento: aggiorna il dialog
       },
     );
   }
@@ -142,86 +149,92 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     final l10n = AppLocalizations.of(context)!;
     showDialog<void>(
       context: context,
-      builder: (ctx) => AppDialog(
-        title: l10n.homeWatchVideoTitle(collection.name),
-        icon: Icons.ondemand_video_outlined,
-        iconColor: AppColors.blue,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.homeWatchVideoMsg,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.glowGold,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.workspace_premium, color: AppColors.gold, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      l10n.homeWatchVideoProNote,
-                      style: const TextStyle(color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          // Registra il setState del dialog: _preloadRewardedAd lo notificherà
+          // quando lo stato dell'ad cambia, così il pulsante si aggiorna live.
+          _dialogSetState = setDialogState;
+          return AppDialog(
+            title: l10n.homeWatchVideoTitle(collection.name),
+            icon: Icons.ondemand_video_outlined,
+            iconColor: AppColors.blue,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.homeWatchVideoMsg,
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.glowGold,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
-                    },
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.gold,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(l10n.btnGoPro, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.workspace_premium, color: AppColors.gold, size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          l10n.homeWatchVideoProNote,
+                          style: const TextStyle(color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.gold,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(l10n.btnGoPro, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
                   ),
-                ],
+                ),
+              ],
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: appDialogCancelStyle(),
+                child: Text(l10n.btnCancel),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: appDialogCancelStyle(),
-            child: Text(l10n.btnCancel),
-          ),
-          FilledButton.icon(
-            icon: _adLoading
-                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.play_circle_outline, size: 18),
-            label: Text(l10n.homeWatchVideoBtn),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.blue,
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: _adLoading
-                ? null
-                : () {
-                    Navigator.pop(ctx);
-                    _playRewardedAdFor(collection);
-                  },
-          ),
-        ],
+              FilledButton.icon(
+                icon: _adLoading
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.play_circle_outline, size: 18),
+                label: Text(l10n.homeWatchVideoBtn),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.blue,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: _adLoading
+                    ? null
+                    : () {
+                        Navigator.pop(ctx);
+                        _playRewardedAdFor(collection);
+                      },
+              ),
+            ],
+          );
+        },
       ),
-    );
+    ).then((_) => _dialogSetState = null);
   }
 
   void _playRewardedAdFor(CollectionModel collection) {
     final ad = _rewardedAd;
     if (ad == null) {
-      // Ad non disponibile: riprova e mostra un messaggio
       if (mounted) {
         final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(

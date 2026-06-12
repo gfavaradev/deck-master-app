@@ -138,6 +138,10 @@
 
   "loginContinueOfflineTooltip": "Continua senza connessione",
   "@loginContinueOfflineTooltip": { "description": "Offline button tooltip" },
+  "loginNoInternetTitle": "Nessuna connessione",
+  "loginNoInternetBody": "Impossibile raggiungere internet.\nPuoi continuare in modalità offline o riprovare.",
+  "loginBtnRetry": "Riprova",
+  "loginBtnOfflineAccess": "Modalità offline",
 
   "msgLoginCancelled": "Accesso annullato o non riuscito",
   "@msgLoginCancelled": { "description": "Login cancelled snackbar" },

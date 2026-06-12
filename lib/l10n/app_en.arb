@@ -50,6 +50,10 @@
   "loginHasAccount": "Already have an account? Sign in",
   "loginOrContinueWith": "Or continue with",
   "loginContinueOfflineTooltip": "Continue without connection",
+  "loginNoInternetTitle": "No connection",
+  "loginNoInternetBody": "Unable to reach the internet.\nYou can continue in offline mode or retry.",
+  "loginBtnRetry": "Retry",
+  "loginBtnOfflineAccess": "Offline mode",
 
   "msgLoginCancelled": "Login cancelled or failed",
   "msgUserNotFound": "User not found",

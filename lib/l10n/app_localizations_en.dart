@@ -149,6 +149,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loginContinueOfflineTooltip => 'Continue without connection';
 
   @override
+  String get loginNoInternetTitle => 'No connection';
+
+  @override
+  String get loginNoInternetBody =>
+      'Unable to reach the internet.\nYou can continue in offline mode or retry.';
+
+  @override
+  String get loginBtnRetry => 'Retry';
+
+  @override
+  String get loginBtnOfflineAccess => 'Offline mode';
+
+  @override
   String get msgLoginCancelled => 'Login cancelled or failed';
 
   @override
