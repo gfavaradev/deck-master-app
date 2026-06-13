@@ -1,3 +1,4 @@
+import 'dart:async' show TimeoutException;
 import 'dart:io' show Platform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -37,23 +38,45 @@ class AuthService {
     }
   }
 
+  Future<void> _updateUserFirestore(User user) async {
+    final userExists = await _userService.userExists(user.uid);
+    if (!userExists) {
+      await _userService.createUser(
+        uid: user.uid,
+        email: user.email ?? '',
+        displayName: user.displayName,
+        photoUrl: user.photoURL,
+      );
+    } else {
+      await _userService.updateLastLogin(user.uid);
+    }
+  }
+
   /// Tries Google Sign-In via Credential Manager (google_sign_in v7.x).
   /// If that fails (device incompatibility, missing Play Services update, etc.)
   /// falls back to the browser-based OAuth flow via Firebase signInWithProvider,
   /// which works on any Android version and any signing certificate.
   Future<UserCredential> _signInWithGoogleMobile() async {
     try {
-      await _ensureGoogleInitialized();
-      final googleUser = await _googleSignIn.authenticate();
+      await _ensureGoogleInitialized()
+          .timeout(const Duration(seconds: 8));
+      final googleUser = await _googleSignIn.authenticate()
+          .timeout(const Duration(seconds: 10));
       final googleAuth = googleUser.authentication;
       final idToken = googleAuth.idToken;
       if (idToken == null) throw Exception('Google idToken is null — Credential Manager returned no token');
       final credential = GoogleAuthProvider.credential(idToken: idToken);
       return await _auth.signInWithCredential(credential);
+    } on TimeoutException catch (_) {
+      // Credential Manager hung — fall back to browser OAuth.
+      final googleProvider = GoogleAuthProvider();
+      return await _auth.signInWithProvider(googleProvider)
+          .timeout(const Duration(seconds: 120));
     } catch (_) {
       // Credential Manager failed — fall back to browser OAuth.
       final googleProvider = GoogleAuthProvider();
-      return await _auth.signInWithProvider(googleProvider);
+      return await _auth.signInWithProvider(googleProvider)
+          .timeout(const Duration(seconds: 120));
     }
   }
 
@@ -86,20 +109,14 @@ class AuthService {
 
       await setOfflineMode(false);
 
-      // Create or update user document in Firestore
+      // Create or update user document in Firestore.
+      // updateLastLogin is fire-and-forget (non-critical); createUser is awaited
+      // because the rest of the app depends on the document existing.
       final user = userCredential.user;
       if (user != null) {
-        final userExists = await _userService.userExists(user.uid);
-        if (!userExists) {
-          await _userService.createUser(
-            uid: user.uid,
-            email: user.email ?? '',
-            displayName: user.displayName,
-            photoUrl: user.photoURL,
-          );
-        } else {
-          await _userService.updateLastLogin(user.uid);
-        }
+        await _updateUserFirestore(user)
+            .timeout(const Duration(seconds: 15))
+            .catchError((_) {});
       }
 
       return userCredential;

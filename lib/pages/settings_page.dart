@@ -1,6 +1,8 @@
 import '../l10n/app_localizations.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../widgets/banner_ad_widget.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/app_preferences.dart';
@@ -406,35 +408,42 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Container(height: 1, color: AppColors.divider),
         ),
       ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 20),
+      body: Column(
         children: [
-          _buildUserSection(),
-          const SizedBox(height: 12),
-          _buildProSection(),
-          if (_isAdmin) ...[
-            _buildAdminSection(),
-            const SizedBox(height: 12),
-          ],
-          _buildCatalogSection(),
-          const SizedBox(height: 12),
-          _buildCatalogRestoreSection(),
-          const SizedBox(height: 12),
-          _buildExportSection(),
-          const SizedBox(height: 12),
-          _buildSyncSection(),
-          const SizedBox(height: 12),
-          _buildGeneralSection(),
-          const SizedBox(height: 12),
-          _buildLegalSection(),
-          const SizedBox(height: 12),
-          _buildDangerSection(),
-          const SizedBox(height: 32),
+          Expanded(
+            child: SafeArea(
+              top: false,
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                children: [
+                  _buildUserSection(),
+                  const SizedBox(height: 12),
+                  _buildProSection(),
+                  if (_isAdmin) ...[
+                    _buildAdminSection(),
+                    const SizedBox(height: 12),
+                  ],
+                  _buildCatalogSection(),
+                  const SizedBox(height: 12),
+                  _buildCatalogRestoreSection(),
+                  const SizedBox(height: 12),
+                  _buildExportSection(),
+                  const SizedBox(height: 12),
+                  _buildSyncSection(),
+                  const SizedBox(height: 12),
+                  _buildGeneralSection(),
+                  const SizedBox(height: 12),
+                  _buildLegalSection(),
+                  const SizedBox(height: 12),
+                  _buildDangerSection(),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ),
+          if (!kIsWeb) const BannerAdWidget(),
         ],
-        ), // ListView
-      ), // SafeArea
+      ),
     );
   }
 

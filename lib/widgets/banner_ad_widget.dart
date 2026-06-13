@@ -4,7 +4,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../services/ad_service.dart';
 import '../services/user_service.dart';
 
-/// Banner AdMob — nascosto per utenti Pro e su Web.
+/// Banner AdMob adattivo alla larghezza — nascosto per utenti Pro e su Web.
 class BannerAdWidget extends StatefulWidget {
   const BannerAdWidget({super.key});
 
@@ -14,6 +14,7 @@ class BannerAdWidget extends StatefulWidget {
 
 class _BannerAdWidgetState extends State<BannerAdWidget> {
   BannerAd? _bannerAd;
+  AdSize? _adSize;
   bool _isAdLoaded = false;
   bool _isPro = true; // default: nascosto finché non sappiamo lo stato
 
@@ -37,10 +38,16 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   int _retryCount = 0;
   static const _maxRetries = 3;
 
-  void _loadAd() {
+  Future<void> _loadAd() async {
+    // Banner adattivo: usa tutta la larghezza disponibile dello schermo
+    final screenWidth = MediaQuery.of(context).size.width.truncate();
+    final adSize = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(screenWidth);
+    if (!mounted || adSize == null) return;
+    _adSize = adSize;
+
     final ad = BannerAd(
       adUnitId: AdService.bannerAdUnitId,
-      size: AdSize.banner,
+      size: adSize,
       request: const AdRequest(nonPersonalizedAds: true),
       listener: BannerAdListener(
         onAdLoaded: (_) {
@@ -69,13 +76,16 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb || _isPro || !_isAdLoaded || _bannerAd == null) {
+    if (kIsWeb || _isPro || !_isAdLoaded || _bannerAd == null || _adSize == null) {
       return const SizedBox.shrink();
     }
-    return SizedBox(
-      width: double.infinity,
-      height: _bannerAd!.size.height.toDouble(),
-      child: AdWidget(ad: _bannerAd!),
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        width: double.infinity,
+        height: _adSize!.height.toDouble(),
+        child: AdWidget(ad: _bannerAd!),
+      ),
     );
   }
 }

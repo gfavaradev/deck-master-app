@@ -1,5 +1,7 @@
 import '../l10n/app_localizations.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../widgets/banner_ad_widget.dart';
 import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
@@ -132,29 +134,36 @@ class _RoiPageState extends State<RoiPage> {
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
-          : RefreshIndicator(
-              onRefresh: _load,
-              color: AppColors.gold,
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(child: _buildPortfolioSection()),
-                  SliverToBoxAdapter(child: _buildRoiSummarySection()),
-                  SliverToBoxAdapter(child: _buildCardListHeader()),
-                  if (_cards.isEmpty)
-                    SliverToBoxAdapter(child: _buildEmptyRoi())
-                  else
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (ctx, i) => _buildCardTile(_cards[i]),
-                        childCount: _cards.length,
-                      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    color: AppColors.gold,
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(child: _buildPortfolioSection()),
+                        SliverToBoxAdapter(child: _buildRoiSummarySection()),
+                        SliverToBoxAdapter(child: _buildCardListHeader()),
+                        if (_cards.isEmpty)
+                          SliverToBoxAdapter(child: _buildEmptyRoi())
+                        else
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (ctx, i) => _buildCardTile(_cards[i]),
+                              childCount: _cards.length,
+                            ),
+                          ),
+                        const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                      ],
                     ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
-                ],
-              ),
-            ),
+                  ),
+          ),
+          if (!kIsWeb) const BannerAdWidget(),
+        ],
+      ),
     );
   }
 

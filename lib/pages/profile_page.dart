@@ -1,6 +1,8 @@
 import '../l10n/app_localizations.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../widgets/banner_ad_widget.dart';
 import '../models/subscription_model.dart';
 import '../models/user_model.dart';
 import '../services/subscription_service.dart';
@@ -154,10 +156,13 @@ class _ProfilePageState extends State<ProfilePage> {
           child: Container(height: 1, color: AppColors.gold.withValues(alpha: 0.2)),
         ),
       ),
-      body: SafeArea(
-        top: false,
-        bottom: true,
-        child: ListView(
+      body: Column(
+        children: [
+          Expanded(
+            child: SafeArea(
+              top: false,
+              bottom: true,
+              child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           children: [
             // ── Avatar con bordo tier e badge livello ──────────────────────────
@@ -298,6 +303,10 @@ class _ProfilePageState extends State<ProfilePage> {
           }),
         ],
       ),
+            ),
+          ),
+          if (!kIsWeb) const BannerAdWidget(),
+        ],
       ),
     );
   }

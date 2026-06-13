@@ -1,6 +1,8 @@
 import '../l10n/app_localizations.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../widgets/banner_ad_widget.dart';
 import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../services/sync_service.dart';
@@ -86,26 +88,33 @@ class _StatsPageState extends State<StatsPage> {
       appBar: AppBar(
         title: Text(l10n.statsTitle),
       ),
-      body: SafeArea(
-        top: false,
-        bottom: true,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : RefreshIndicator(
-                onRefresh: _loadStats,
-                child: ListView(
-                  padding: const EdgeInsets.all(16.0),
-                  children: [
-                    _buildStatCard(l10n.statsTotalCards, _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
-                    _buildStatCard(l10n.statsUniqueCards, _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
-                    _buildStatCard(l10n.statsEstimatedValue, CurrencyFormatter.format(_stats?['totalValue'] as double? ?? 0.0), Icons.euro, Colors.green),
-                    _buildValueChart(),
-                    if (_collectionStats.isNotEmpty) _buildCollectionBreakdown(),
-                    if (_rarityStats.isNotEmpty) _buildRarityBreakdown(),
-                    if (widget.collectionKey != null) _buildExpansioniCard(),
-                  ],
-                ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SafeArea(
+              top: false,
+              bottom: true,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : RefreshIndicator(
+                      onRefresh: _loadStats,
+                      child: ListView(
+                        padding: const EdgeInsets.all(16.0),
+                        children: [
+                          _buildStatCard(l10n.statsTotalCards, _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
+                          _buildStatCard(l10n.statsUniqueCards, _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
+                          _buildStatCard(l10n.statsEstimatedValue, CurrencyFormatter.format(_stats?['totalValue'] as double? ?? 0.0), Icons.euro, Colors.green),
+                          _buildValueChart(),
+                          if (_collectionStats.isNotEmpty) _buildCollectionBreakdown(),
+                          if (_rarityStats.isNotEmpty) _buildRarityBreakdown(),
+                          if (widget.collectionKey != null) _buildExpansioniCard(),
+                        ],
+                      ),
+                  ),
             ),
+          ),
+          if (!kIsWeb) const BannerAdWidget(),
+        ],
       ),
     );
   }

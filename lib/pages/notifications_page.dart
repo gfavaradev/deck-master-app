@@ -1,10 +1,11 @@
 import '../l10n/app_localizations.dart';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../widgets/banner_ad_widget.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import '../constants/app_constants.dart';
 import '../services/database_helper.dart';
 import '../theme/app_colors.dart';
@@ -418,12 +419,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        bottom: true,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _buildBody(),
+      body: Column(
+        children: [
+          Expanded(
+            child: SafeArea(
+              top: false,
+              bottom: true,
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _buildBody(),
+            ),
+          ),
+          if (!kIsWeb) const BannerAdWidget(),
+        ],
       ),
     );
   }

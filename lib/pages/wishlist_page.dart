@@ -1,6 +1,8 @@
 import 'dart:async' show unawaited;
 import '../l10n/app_localizations.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../widgets/banner_ad_widget.dart';
 import '../models/wishlist_model.dart';
 import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
@@ -145,11 +147,18 @@ class _WishlistPageState extends State<WishlistPage> {
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _items.isEmpty
-              ? _buildEmpty()
-              : _buildList(),
+      body: Column(
+        children: [
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _items.isEmpty
+                    ? _buildEmpty()
+                    : _buildList(),
+          ),
+          if (!kIsWeb) const BannerAdWidget(),
+        ],
+      ),
     );
   }
 
