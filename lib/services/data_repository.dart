@@ -1516,6 +1516,20 @@ class DataRepository {
     return await _dbHelper.getDecksByCollection(collection);
   }
 
+  Future<void> renameDeck(int id, String name) async {
+    if (kIsWeb) {
+      final userId = _authService.currentUserId;
+      final firestoreId = _webDeckFirestoreIdById[id];
+      if (userId != null && firestoreId != null) {
+        await _firestoreService.renameDeck(userId, firestoreId, name);
+      }
+      return;
+    }
+    await _dbHelper.renameDeck(id, name);
+    _syncService.notifyLocalChange('decks');
+    await _syncService.pushDeckChange(id, 'update');
+  }
+
   Future<int> deleteDeck(int id) async {
     if (kIsWeb) {
       final userId = _authService.currentUserId;

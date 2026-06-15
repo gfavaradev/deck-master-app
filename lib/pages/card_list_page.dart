@@ -13,6 +13,7 @@ import '../widgets/card_dialogs.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/top_undo_bar.dart';
+import '../widgets/banner_ad_widget.dart';
 import 'support_page.dart';
 import 'card_detail_page.dart';
 import '../services/language_service.dart';
@@ -719,6 +720,7 @@ class _CardListPageState extends State<CardListPage> {
           ),
         ),
         if (_isSelectionMode) _buildSelectionBar(),
+        if (!kIsWeb) const BannerAdWidget(),
       ],
     );
   }

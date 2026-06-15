@@ -126,7 +126,7 @@ class _AlbumListPageState extends State<AlbumListPage> {
         itemBuilder: (_, index) {
           final album = _albums[index];
           return ListTile(
-            leading: const Icon(Icons.book),
+            leading: const Icon(Icons.book, color: AppColors.gold, size: 40),
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
@@ -145,22 +145,26 @@ class _AlbumListPageState extends State<AlbumListPage> {
                 ),
               );
             },
-            title: Row(
-              children: [
-                Text(album.name),
-                const SizedBox(width: 8),
-                Text(
-                  '${album.currentCount}/${album.maxCapacity}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
+            title: Text(
+              album.name,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              '${album.currentCount}/${album.maxCapacity} carte',
+              style: const TextStyle(fontSize: 12, color: AppColors.textHint),
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(icon: const Icon(Icons.edit), onPressed: () => _showAddAlbumDialog(album: album)),
                 IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
+                  icon: const Icon(Icons.edit, size: 26),
+                  iconSize: 26,
+                  onPressed: () => _showAddAlbumDialog(album: album),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red, size: 26),
+                  iconSize: 26,
                   onPressed: () => _showDeleteConfirmation(album),
                 ),
               ],

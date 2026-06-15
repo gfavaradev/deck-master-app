@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/ad_service.dart';
@@ -39,10 +39,6 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   }
 
   Future<void> _checkAndLoad() async {
-    // Debug builds carry Flutter hot-reload overhead and hit the 256MB heap
-    // limit on low-memory devices before the AdMob WebView can even allocate.
-    // Real ads don't serve in debug anyway — skip entirely.
-    if (kDebugMode) return;
     if (!mounted) return;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;

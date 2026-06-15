@@ -3512,6 +3512,11 @@ class DatabaseHelper {
     return r.isNotEmpty ? r.first : null;
   }
 
+  Future<void> renameDeck(int id, String name) async {
+    final db = await database;
+    await db.update('decks', {'name': name}, where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<void> updateDeckFields(String firestoreId, String name, String collection) async {
     final db = await database;
     await db.update(
@@ -3524,7 +3529,13 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getDecksByCollection(String collection) async {
     Database db = await database;
-    return await db.query('decks', where: 'collection = ?', whereArgs: [collection]);
+    return await db.rawQuery('''
+      SELECT d.*, COUNT(dc.cardId) AS card_count
+      FROM decks d
+      LEFT JOIN deck_cards dc ON dc.deckId = d.id
+      WHERE d.collection = ?
+      GROUP BY d.id
+    ''', [collection]);
   }
 
   Future<int> deleteDeck(int id) async {

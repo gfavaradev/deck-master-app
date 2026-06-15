@@ -428,6 +428,12 @@ class FirestoreService {
         .delete();
   }
 
+  Future<void> renameDeck(String userId, String firestoreId, String name) async {
+    await _firestore
+        .doc(FirestorePaths.userDeck(userId, firestoreId))
+        .update({'name': name, 'updatedAt': FieldValue.serverTimestamp()});
+  }
+
   // ============================================================
   // Wishlist Methods
   // ============================================================

@@ -7,7 +7,9 @@ import '../services/data_repository.dart';
 import '../services/deck_sharing_service.dart';
 import '../services/subscription_service.dart';
 import '../theme/app_colors.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../widgets/app_dialog.dart';
+import '../widgets/banner_ad_widget.dart';
 import 'card_detail_page.dart';
 import 'pro_page.dart';
 
@@ -346,6 +348,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
                   Expanded(child: _buildDeckSection()),
                   Container(height: 0.5, color: AppColors.divider),
                   Expanded(child: _buildOwnedSection()),
+                  if (!kIsWeb) const BannerAdWidget(),
                 ],
               ),
       ),

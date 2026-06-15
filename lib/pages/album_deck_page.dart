@@ -12,7 +12,6 @@ import '../widgets/top_undo_bar.dart';
 import 'ai_deck_builder_page.dart';
 import 'card_list_page.dart';
 import 'deck_detail_page.dart';
-import 'shared_deck_view_page.dart';
 
 class AlbumDeckPage extends StatefulWidget {
   final String collectionName;
@@ -158,6 +157,16 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
     _refreshDecks();
   }
 
+  Future<void> _showRenameDeckDialog(Map<String, dynamic> deck) async {
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (_) => _DeckDialog(initialName: deck['name'] as String),
+    );
+    if (newName == null || !mounted) return;
+    await _repo.renameDeck(deck['id'] as int, newName);
+    _refreshDecks();
+  }
+
   Future<void> _confirmDeleteDeck(Map<String, dynamic> deck) async {
     final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
@@ -208,18 +217,11 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
         itemCount: _albums.length,
         itemBuilder: (_, i) {
           final album = _albums[i];
-          return ListTile(
-            leading: const Icon(Icons.book, color: AppColors.gold),
-            title: Row(
-              children: [
-                Flexible(child: Text(album.name)),
-                const SizedBox(width: 8),
-                Text(
-                  '${album.currentCount}/${album.maxCapacity}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
+          return _CollectionItemTile(
+            icon: Icons.book,
+            iconColor: AppColors.gold,
+            title: album.name,
+            subtitle: '${album.currentCount}/${album.maxCapacity} carte',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => Scaffold(
@@ -236,28 +238,33 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                 ),
               ),
             ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit, size: 20),
-                  onPressed: () => _showAddAlbumDialog(album: album),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                  onPressed: () => _confirmDeleteAlbum(album),
-                ),
-              ],
-            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit, size: 26),
+                iconSize: 26,
+                onPressed: () => _showAddAlbumDialog(album: album),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red, size: 26),
+                iconSize: 26,
+                onPressed: () => _confirmDeleteAlbum(album),
+              ),
+            ],
           );
         },
       );
     }
 
     final importBanner = InkWell(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const SharedDeckViewPage()),
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => AppConfirmDialog(
+          title: 'In arrivo',
+          icon: Icons.construction_outlined,
+          message: 'Funzionalità in fase di sviluppo, arriverà a breve!',
+          confirmLabel: 'Ok',
+        ),
       ),
       child: Container(
         margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
@@ -299,13 +306,12 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
         itemBuilder: (_, i) {
           if (i == 0) return importBanner;
           final deck = _decks[i - 1];
-          return ListTile(
-            leading: const Icon(Icons.style, color: AppColors.blue),
-            title: Text(deck['name']),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-              onPressed: () => _confirmDeleteDeck(deck),
-            ),
+          final cardCount = (deck['card_count'] as num?)?.toInt() ?? 0;
+          return _CollectionItemTile(
+            icon: Icons.style,
+            iconColor: AppColors.blue,
+            title: deck['name'] as String,
+            subtitle: '$cardCount carte',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -316,6 +322,19 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                 ),
               ),
             ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit, size: 26),
+                iconSize: 26,
+                onPressed: () => _showRenameDeckDialog(deck),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red, size: 26),
+                iconSize: 26,
+                onPressed: () => _confirmDeleteDeck(deck),
+              ),
+            ],
           );
         },
       );
@@ -344,34 +363,52 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
             bottom: true,
             child: Column(
               children: [
-                DecoratedBox(
-                  decoration: const BoxDecoration(
-                    color: AppColors.bgMedium,
-                    border: Border(
-                      bottom: BorderSide(color: AppColors.divider, width: 0.5),
-                    ),
-                  ),
-                  child: TabBar(
-                    controller: _tabController,
-                    labelColor: AppColors.gold,
-                    unselectedLabelColor: AppColors.textHint,
-                    indicatorColor: AppColors.gold,
-                    indicatorWeight: 2,
-                    labelStyle: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    tabs: const [
-                      Tab(
-                        text: 'Album',
-                        icon: Icon(Icons.book_outlined, size: 18),
+                AnimatedBuilder(
+                  animation: _tabController,
+                  builder: (context, _) {
+                    final isAlbum = _tabController.index == 0;
+                    final albumColor = isAlbum ? AppColors.gold : AppColors.textHint;
+                    final deckColor = isAlbum ? AppColors.textHint : AppColors.blue;
+                    return DecoratedBox(
+                      decoration: const BoxDecoration(
+                        color: AppColors.bgMedium,
+                        border: Border(
+                          bottom: BorderSide(color: AppColors.divider, width: 0.5),
+                        ),
                       ),
-                      Tab(
-                        text: 'Deck',
-                        icon: Icon(Icons.style_outlined, size: 18),
+                      child: TabBar(
+                        controller: _tabController,
+                        indicatorColor: isAlbum ? AppColors.gold : AppColors.blue,
+                        indicatorWeight: 2,
+                        labelStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        tabs: [
+                          Tab(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.book_outlined, size: 18, color: albumColor),
+                                const SizedBox(width: 6),
+                                Text('Album', style: TextStyle(color: albumColor)),
+                              ],
+                            ),
+                          ),
+                          Tab(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.style_outlined, size: 18, color: deckColor),
+                                const SizedBox(width: 6),
+                                Text('Deck', style: TextStyle(color: deckColor)),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
                 Expanded(
                   child: TabBarView(
@@ -450,7 +487,14 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                           _closeFab();
                           Future.delayed(
                             const Duration(milliseconds: 180),
-                            _showAddDeckDialog,
+                            () {
+                              if (!mounted) return;
+                              _tabController.animateTo(1);
+                              Future.delayed(
+                                const Duration(milliseconds: 300),
+                                _showAddDeckDialog,
+                              );
+                            },
                           );
                         },
                       ),
@@ -463,7 +507,14 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                           _closeFab();
                           Future.delayed(
                             const Duration(milliseconds: 180),
-                            () => _showAddAlbumDialog(),
+                            () {
+                              if (!mounted) return;
+                              _tabController.animateTo(0);
+                              Future.delayed(
+                                const Duration(milliseconds: 300),
+                                () => _showAddAlbumDialog(),
+                              );
+                            },
                           );
                         },
                       ),
@@ -490,12 +541,46 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
               elevation: 6,
               child: Transform.rotate(
                 angle: _fabAnim.value * 0.7854, // 45°
-                child: const Icon(Icons.add, size: 28),
+                child: const Icon(Icons.add, size: 36),
               ),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+// ─── Shared list tile ─────────────────────────────────────────────────────────
+
+class _CollectionItemTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final List<Widget> actions;
+
+  const _CollectionItemTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: iconColor, size: 40),
+      title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
+      onTap: onTap,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: actions,
+      ),
     );
   }
 }
@@ -843,15 +928,23 @@ class _AlbumDialogState extends State<_AlbumDialog> {
 // ─── Deck Dialog ──────────────────────────────────────────────────────────────
 
 class _DeckDialog extends StatefulWidget {
-  const _DeckDialog();
+  final String? initialName;
+
+  const _DeckDialog({this.initialName});
 
   @override
   State<_DeckDialog> createState() => _DeckDialogState();
 }
 
 class _DeckDialogState extends State<_DeckDialog> {
-  final _nameCtrl = TextEditingController();
+  late final TextEditingController _nameCtrl;
   String? _nameError;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.initialName);
+  }
 
   @override
   void dispose() {
@@ -933,7 +1026,7 @@ class _DeckDialogState extends State<_DeckDialog> {
             Navigator.pop(context, name);
           },
           style: appDialogConfirmStyle(),
-          child: Text(l10n.btnCreate),
+          child: Text(widget.initialName != null ? l10n.btnSave : l10n.btnCreate),
         ),
       ],
     );
