@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 const _channelId = 'deck_master_download';
 const _channelName = 'Download Catalogo';
@@ -44,9 +45,10 @@ class BackgroundDownloadService {
     } catch (_) {}
   }
 
-  /// Shows the progress notification.
+  /// Shows the progress notification and keeps CPU awake during download.
   static Future<void> startDownload(String operationName) async {
     if (!_isMobile) return;
+    try { await WakelockPlus.enable(); } catch (_) {}
     await _show(operationName, 'Avvio...');
   }
 
@@ -56,9 +58,10 @@ class BackgroundDownloadService {
     _show('Deck Master — Download', status);
   }
 
-  /// Cancels the notification.
+  /// Cancels the notification and releases the wake lock.
   static Future<void> stopDownload() async {
     if (!_isMobile) return;
+    try { await WakelockPlus.disable(); } catch (_) {}
     try {
       await _notifications.cancel(id: _notificationId);
     } catch (_) {}
