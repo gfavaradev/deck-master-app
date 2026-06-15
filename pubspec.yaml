@@ -92,6 +92,20 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
+
+# Native splash a tema scuro: elimina la cornice bianca all'avvio.
+# Rigenerare con: dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#12152A"
+  image: assets/icon/dm_logo_no_white.png
+  android_12:
+    color: "#12152A"
+    image: assets/icon/dm_logo_no_white.png
+    icon_background_color: "#12152A"
+  android: true
+  ios: true
+  web: false
 
 flutter_launcher_icons:
   android: true

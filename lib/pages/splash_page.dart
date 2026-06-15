@@ -20,7 +20,7 @@ class SplashPage extends StatefulWidget {
   State<SplashPage> createState() => _SplashPageState();
 }
 
-class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateMixin {
+class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   final DataRepository _repo = DataRepository();
 
   _Phase _phase = _Phase.loading;
@@ -33,6 +33,12 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
 
   late AnimationController _greetingController;
   late Animation<double> _greetingFade;
+
+  // Animazione di apertura del logo: entrata (scale+fade) + glow pulsante.
+  late AnimationController _logoController;
+  late Animation<double> _logoScale;
+  late Animation<double> _logoFade;
+  late AnimationController _glowController;
 
   static const String _lastVersionKey = 'app_last_version';
 
@@ -52,12 +58,33 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       duration: const Duration(milliseconds: 700),
     );
     _greetingFade = CurvedAnimation(parent: _greetingController, curve: Curves.easeOut);
+
+    // Entrata del logo: parte appena più piccolo e trasparente, si apre con un
+    // leggero "overshoot" elastico per dare la sensazione di apertura dell'app.
+    _logoController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _logoScale = Tween<double>(begin: 0.82, end: 1.0).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.easeOutBack),
+    );
+    _logoFade = CurvedAnimation(parent: _logoController, curve: Curves.easeOut);
+    _logoController.forward();
+
+    // Glow dorato che pulsa dolcemente dietro al logo.
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
+
     _checkAuth();
   }
 
   @override
   void dispose() {
     _greetingController.dispose();
+    _logoController.dispose();
+    _glowController.dispose();
     super.dispose();
   }
 
@@ -261,11 +288,39 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Image.asset('assets/icon/dm_logo_no_white.png', height: 180),
+          FadeTransition(
+            opacity: _logoFade,
+            child: ScaleTransition(
+              scale: _logoScale,
+              child: AnimatedBuilder(
+                animation: _glowController,
+                builder: (context, child) {
+                  final t = _glowController.value;
+                  return Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.gold.withValues(alpha: 0.20 + 0.22 * t),
+                          blurRadius: 40 + 26 * t,
+                          spreadRadius: 2 + 6 * t,
+                        ),
+                      ],
+                    ),
+                    child: child,
+                  );
+                },
+                child: Image.asset('assets/icon/dm_logo_no_white.png', height: 180),
+              ),
+            ),
+          ),
           const SizedBox(height: 20),
-          const Text(
-            'Deck Master',
-            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+          FadeTransition(
+            opacity: _logoFade,
+            child: const Text(
+              'Deck Master',
+              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+            ),
           ),
           const SizedBox(height: 10),
           if (_downloadProgress != null)
