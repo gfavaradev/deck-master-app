@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../pages/pro_page.dart';
 import '../theme/app_colors.dart';
 
@@ -17,17 +18,17 @@ void showProPromoSheet(BuildContext context) {
 class _ProPromoSheet extends StatelessWidget {
   const _ProPromoSheet();
 
-  static const _benefits = [
-    (Icons.analytics_outlined,           'Statistiche & ROI avanzati'),
-    (Icons.table_chart_outlined,         'Esportazione Excel'),
-    (Icons.auto_awesome,                 'AI Deck Builder (Yu-Gi-Oh!)'),
-    (Icons.notifications_active_outlined,'Avvisi prezzi Wishlist'),
-    (Icons.block,                        'Zero pubblicità'),
-    (Icons.share_outlined,               'Condivisione deck'),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final benefits = <(IconData, String)>[
+      (Icons.analytics_outlined,            l10n.proBenefitStats),
+      (Icons.table_chart_outlined,          l10n.proBenefitExcel),
+      (Icons.auto_awesome,                  l10n.proBenefitAi),
+      (Icons.notifications_active_outlined, l10n.proBenefitAlerts),
+      (Icons.block,                         l10n.proBenefitNoAds),
+      (Icons.share_outlined,                l10n.proBenefitShare),
+    ];
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.bgMedium,
@@ -94,10 +95,10 @@ class _ProPromoSheet extends StatelessWidget {
                                 color: const Color(0xFFFF6B35),
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              child: const Text('SCONTO LANCIO', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                              child: Text(l10n.proPromoBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
                             ),
                             const SizedBox(width: 6),
-                            const Text('da €1.67/mese', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                            Text(l10n.proPromoPriceFrom, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                           ],
                         ),
                       ],
@@ -114,7 +115,7 @@ class _ProPromoSheet extends StatelessWidget {
               child: Wrap(
                 spacing: 10,
                 runSpacing: 10,
-                children: _benefits.map((b) => _BenefitChip(icon: b.$1, label: b.$2)).toList(),
+                children: benefits.map((b) => _BenefitChip(icon: b.$1, label: b.$2)).toList(),
               ),
             ),
             const SizedBox(height: 24),
@@ -131,7 +132,7 @@ class _ProPromoSheet extends StatelessWidget {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
                   },
                   icon: const Icon(Icons.star, size: 18),
-                  label: const Text('Scopri Pro', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  label: Text(l10n.proPromoCta, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.gold,
                     foregroundColor: Colors.black,
@@ -145,7 +146,7 @@ class _ProPromoSheet extends StatelessWidget {
             // Dismiss
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('No grazie', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+              child: Text(l10n.proPromoDismiss, style: const TextStyle(color: AppColors.textHint, fontSize: 13)),
             ),
             const SizedBox(height: 8),
           ],

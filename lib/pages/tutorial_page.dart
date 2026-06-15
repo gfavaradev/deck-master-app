@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/tutorial_service.dart';
 import '../theme/app_colors.dart';
 
@@ -15,48 +16,48 @@ class _Slide {
   });
 }
 
-const _kSlides = [
+List<_Slide> _buildSlides(AppLocalizations l10n) => [
   _Slide(
     icon: Icons.style,
     iconColor: AppColors.gold,
-    title: 'Benvenuto in Deck Master',
-    description: 'La tua app per gestire, valorizzare e analizzare la tua collezione di carte collezionabili.\n\nSupporta 13 TCG: Yu-Gi-Oh!, Pokémon, One Piece, Magic e molti altri.',
+    title: l10n.tutorialSlide1Title,
+    description: l10n.tutorialSlide1Desc,
   ),
   _Slide(
     icon: Icons.collections_bookmark_outlined,
-    iconColor: Color(0xFF9B59B6),
-    title: 'Le tue Collezioni',
-    description: 'Sblocca le collezioni che possiedi. Per ogni collezione puoi aggiungere carte, sfogliare il catalogo completo e costruire mazzi.',
+    iconColor: const Color(0xFF9B59B6),
+    title: l10n.tutorialSlide2Title,
+    description: l10n.tutorialSlide2Desc,
   ),
   _Slide(
     icon: Icons.search,
     iconColor: AppColors.cardtraderTeal,
-    title: 'Catalogo Carte',
-    description: 'Sfoglia il catalogo completo con prezzi aggiornati da CardTrader.\n\nTocca il ❤️ su una carta per aggiungerla alla Wishlist direttamente dal catalogo.',
+    title: l10n.tutorialSlide3Title,
+    description: l10n.tutorialSlide3Desc,
   ),
   _Slide(
     icon: Icons.document_scanner_outlined,
     iconColor: Colors.lightBlue,
-    title: 'Scanner Carte',
-    description: 'Inquadra una carta con la fotocamera per riconoscerla automaticamente e aggiungerla alla tua collezione in un click.',
+    title: l10n.tutorialSlide4Title,
+    description: l10n.tutorialSlide4Desc,
   ),
   _Slide(
     icon: Icons.favorite,
     iconColor: Colors.redAccent,
-    title: 'Wishlist & Avvisi Prezzi',
-    description: 'Aggiungi le carte che vuoi acquistare alla Wishlist. Imposta un prezzo obiettivo e ricevi una notifica quando il prezzo scende sotto la soglia.',
+    title: l10n.tutorialSlide5Title,
+    description: l10n.tutorialSlide5Desc,
   ),
   _Slide(
     icon: Icons.trending_up,
     iconColor: AppColors.success,
-    title: 'Analisi & ROI',
-    description: 'Monitora il valore totale della tua collezione nel tempo. Scopri il tuo ritorno sull\'investimento con grafici e statistiche dettagliate.',
+    title: l10n.tutorialSlide6Title,
+    description: l10n.tutorialSlide6Desc,
   ),
   _Slide(
     icon: Icons.book_outlined,
-    iconColor: Color(0xFFFF6B35),
-    title: 'Deck Builder',
-    description: 'Costruisci e gestisci i tuoi mazzi. Analizza la composizione, il valore e tieni traccia di tutto quello che hai costruito.',
+    iconColor: const Color(0xFFFF6B35),
+    title: l10n.tutorialSlide7Title,
+    description: l10n.tutorialSlide7Desc,
   ),
 ];
 
@@ -70,6 +71,7 @@ class TutorialPage extends StatefulWidget {
 class _TutorialPageState extends State<TutorialPage> {
   final _pageCtrl = PageController();
   int _currentPage = 0;
+  late List<_Slide> _slides;
 
   @override
   void dispose() {
@@ -78,7 +80,7 @@ class _TutorialPageState extends State<TutorialPage> {
   }
 
   void _next() {
-    if (_currentPage < _kSlides.length - 1) {
+    if (_currentPage < _slides.length - 1) {
       _pageCtrl.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -95,7 +97,9 @@ class _TutorialPageState extends State<TutorialPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isLast = _currentPage == _kSlides.length - 1;
+    final l10n = AppLocalizations.of(context)!;
+    _slides = _buildSlides(l10n);
+    final isLast = _currentPage == _slides.length - 1;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       body: SafeArea(
@@ -107,7 +111,7 @@ class _TutorialPageState extends State<TutorialPage> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: _close,
-                  child: const Text('Salta', style: TextStyle(color: AppColors.textHint)),
+                  child: Text(l10n.tutorialBtnSkip, style: const TextStyle(color: AppColors.textHint)),
                 ),
               ),
             ),
@@ -115,8 +119,8 @@ class _TutorialPageState extends State<TutorialPage> {
               child: PageView.builder(
                 controller: _pageCtrl,
                 onPageChanged: (i) => setState(() => _currentPage = i),
-                itemCount: _kSlides.length,
-                itemBuilder: (_, i) => _buildSlide(_kSlides[i]),
+                itemCount: _slides.length,
+                itemBuilder: (_, i) => _buildSlide(_slides[i]),
               ),
             ),
             _buildDots(),
@@ -139,7 +143,7 @@ class _TutorialPageState extends State<TutorialPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  child: Text(isLast ? 'Inizia!' : 'Avanti'),
+                  child: Text(isLast ? l10n.tutorialBtnStart : l10n.tutorialBtnNext),
                 ),
               ),
             ),
@@ -201,9 +205,9 @@ class _TutorialPageState extends State<TutorialPage> {
               ),
             ),
             const SizedBox(height: 28),
-            const Text(
-              'Tocca per continuare',
-              style: TextStyle(color: AppColors.textHint, fontSize: 12),
+            Text(
+              AppLocalizations.of(context)!.splashTapToContinue,
+              style: const TextStyle(color: AppColors.textHint, fontSize: 12),
             ),
           ],
         ),
@@ -214,7 +218,7 @@ class _TutorialPageState extends State<TutorialPage> {
   Widget _buildDots() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(_kSlides.length, (i) {
+      children: List.generate(_slides.length, (i) {
         final active = i == _currentPage;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 200),

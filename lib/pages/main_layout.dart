@@ -386,11 +386,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       _catalogDownloadProgress = null;
     });
 
+    final l10n = AppLocalizations.of(context)!;
+    BackgroundDownloadService.startingLabel = l10n.downloadStarting;
+    BackgroundDownloadService.notificationTitle = l10n.downloadTitle;
     final total = updates.length;
     int successCount = 0;
     try {
       // Avvia il Foreground Service Android (tiene vivo il processo in background)
-      await BackgroundDownloadService.startDownload('Catalogo');
+      await BackgroundDownloadService.startDownload(l10n.downloadCatalog);
       for (int i = 0; i < updates.length; i++) {
         final info = updates[i];
         final key = info['collectionKey'] as String;
@@ -405,7 +408,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           _popoverEntry?.markNeedsBuild();
         }
         BackgroundDownloadService.updateStatus(
-          total > 1 ? 'Collezione ${i + 1}/$total: $name' : name,
+          total > 1 ? l10n.downloadCollectionProgress(i + 1, total, name) : name,
         );
         try {
           await _repo.downloadCollectionCatalog(
@@ -414,7 +417,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             onProgress: (current, colTotal) {
               final pct = colTotal > 0 ? ((current / colTotal) * 100).toInt() : 0;
               BackgroundDownloadService.updateStatus(
-                total > 1 ? 'Collezione ${i + 1}/$total: $name ($pct%)' : '$name ($pct%)',
+                total > 1 ? l10n.downloadCollectionProgressPct(i + 1, total, name, pct) : l10n.downloadProgressPct(name, pct),
               );
               if (!mounted) return;
               final now = DateTime.now();
@@ -500,12 +503,15 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       _currentDownloadingIndex = 0;
     });
 
+    final l10n = AppLocalizations.of(context)!;
+    BackgroundDownloadService.startingLabel = l10n.downloadStarting;
+    BackgroundDownloadService.notificationTitle = l10n.downloadTitle;
     () async {
       final total = keys.length;
       int successCount = 0;
       Object? lastError;
       try {
-        await BackgroundDownloadService.startDownload('Ripristino catalogo');
+        await BackgroundDownloadService.startDownload(l10n.downloadRestoreCatalog);
         for (int i = 0; i < keys.length; i++) {
           final key = keys[i];
           final name = switch (key) {
@@ -523,7 +529,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             });
             _popoverEntry?.markNeedsBuild();
           }
-          BackgroundDownloadService.updateStatus(total > 1 ? 'Ripristino ${i + 1}/$total: $name' : name);
+          BackgroundDownloadService.updateStatus(total > 1 ? l10n.downloadRestoreProgress(i + 1, total, name) : name);
 
           void onProg(int cur, int tot) {
             if (!mounted) return;

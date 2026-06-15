@@ -74,9 +74,9 @@ class CardDialogs {
                     },
                   )
                 else
-                  _infoRow('Album', albumName),
+                  _infoRow(l10n.cardLabelAlbum, albumName),
                 const SizedBox(height: 10),
-                _infoRow('Quantità', '${card.quantity}'),
+                _infoRow(l10n.cardLabelQuantity, '${card.quantity}'),
                 if (card.serialNumber.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   CardtraderAllPricesSection(
@@ -93,9 +93,9 @@ class CardDialogs {
                         Uri.parse(_ctSearchUrl(card.collection, card.name)!),
                         mode: LaunchMode.externalApplication,
                       ),
-                      child: const Text(
-                        'Cerca su CardTrader ↗', // TODO: l10n
-                        style: TextStyle(
+                      child: Text(
+                        l10n.cardSearchOnCardtrader,
+                        style: const TextStyle(
                           fontSize: 11,
                           color: AppColors.cardtraderTeal,
                           decoration: TextDecoration.underline,
@@ -106,9 +106,9 @@ class CardDialogs {
                   ],
                 ],
                 const SizedBox(height: 6),
-                _infoRow('Tipo', card.type),
+                _infoRow(l10n.cardLabelType, card.type),
                 const SizedBox(height: 4),
-                _infoRow('Rarità', card.rarity),
+                _infoRow(l10n.cardLabelRarity, card.rarity),
                 if (cardDecks.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Text(l10n.cardDialogDeck, style: const TextStyle(color: AppColors.textHint, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
@@ -504,9 +504,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
               icon: Icons.layers_outlined,
               iconColor: AppColors.warning,
               content: Text(
-                '${targetAlbum.name} ha raggiunto la capacità massima '
-                '($freshCount/${targetAlbum.maxCapacity}).\n\n'
-                'Aumenta la capacità dell\'album oppure seleziona un altro album.',
+                l10n2.cardDialogAlbumFullMsg(targetAlbum.name, freshCount, targetAlbum.maxCapacity),
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
               ),
               actions: [

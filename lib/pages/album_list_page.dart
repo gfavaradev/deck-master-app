@@ -94,10 +94,8 @@ class _AlbumListPageState extends State<AlbumListPage> {
         title: l10n.dlgDeleteAlbumTitle,
         icon: Icons.delete_outline,
         message: album.currentCount > 0
-            ? 'Sei sicuro di voler eliminare "${album.name}"?\n\n' // TODO: l10n
-                'Verranno eliminate anche tutte le ${album.currentCount} carte contenute in questo album.\n\n'
-                'Questa azione non può essere annullata.'
-            : 'Sei sicuro di voler eliminare "${album.name}"?', // TODO: l10n
+            ? l10n.dlgDeleteAlbumWithCardsMsg(album.name, album.currentCount)
+            : l10n.dlgDeleteAlbumMsg(album.name),
         confirmLabel: l10n.btnDelete,
       ),
     ).then((confirmed) async {
@@ -230,7 +228,7 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
 
   void _submit() {
     if (_nameController.text.trim().isEmpty) {
-      setState(() => _nameError = 'Il nome è obbligatorio');
+      setState(() => _nameError = AppLocalizations.of(context)!.msgNameRequired);
       return;
     }
     final result = AlbumModel(
@@ -366,9 +364,9 @@ class _AddAlbumDialogState extends State<_AddAlbumDialog> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      'CAPACITÀ MASSIMA',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context)!.albumMaxCapacityLabel,
+                      style: const TextStyle(
                         color: AppColors.textHint,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,

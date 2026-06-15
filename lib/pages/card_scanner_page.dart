@@ -223,22 +223,22 @@ class _CardScannerPageState extends State<CardScannerPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E2E),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.privacy_tip_outlined, color: AppColors.gold, size: 22),
-            SizedBox(width: 10),
-            Text(
-              'Informativa scanner AI',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
+            const Icon(Icons.privacy_tip_outlined, color: AppColors.gold, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                AppLocalizations.of(ctx)!.scannerPrivacyTitle,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
-        content: const SingleChildScrollView(
+        content: SingleChildScrollView(
           child: Text(
-            'Per identificare le tue carte, il fotogramma acquisito viene inviato temporaneamente ai servizi AI di Google (Gemini) tramite connessione cifrata.\n\n'
-            'Le immagini non vengono conservate da Deck Master né da Google oltre il tempo necessario all\'elaborazione della singola richiesta.\n\n'
-            'Continuando autorizzi questo trasferimento. Puoi rifiutare: in quel caso lo scanner non sarà disponibile.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.55),
+            AppLocalizations.of(ctx)!.scannerPrivacyBody,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.55),
           ),
         ),
         actions: [

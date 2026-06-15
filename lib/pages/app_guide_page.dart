@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_colors.dart';
 
 class _Feature {
@@ -22,144 +23,144 @@ class _Step {
   const _Step(this.text);
 }
 
-const _kFeatures = [
+List<_Feature> _buildFeatures(AppLocalizations l10n) => [
   _Feature(
     icon: Icons.collections_bookmark_outlined,
-    color: Color(0xFF9B59B6),
-    title: 'Le Collezioni',
-    description: 'Ogni collezione rappresenta un gioco di carte (Yu-Gi-Oh!, Pokémon, ecc.). Sblocca le collezioni che possiedi per iniziare a gestirle.',
+    color: const Color(0xFF9B59B6),
+    title: l10n.guideCollectionsTitle,
+    description: l10n.guideCollectionsDesc,
     steps: [
-      _Step('Vai nelle Impostazioni → Gestione Collezioni'),
-      _Step('Attiva le collezioni che possiedi'),
-      _Step('Ogni collezione apparirà nel menu principale'),
-      _Step('Puoi cambiare la collezione attiva dal selettore in alto'),
+      _Step(l10n.guideCollectionsStep1),
+      _Step(l10n.guideCollectionsStep2),
+      _Step(l10n.guideCollectionsStep3),
+      _Step(l10n.guideCollectionsStep4),
     ],
   ),
   _Feature(
     icon: Icons.add_circle_outline,
     color: AppColors.gold,
-    title: 'Aggiungere Carte',
-    description: 'Ci sono tre modi per aggiungere carte alla tua collezione: manualmente dal catalogo, tramite scanner o importando da file.',
+    title: l10n.guideAddTitle,
+    description: l10n.guideAddDesc,
     steps: [
-      _Step('Catalogo: cerca la carta, tocca "Aggiungi" e inserisci la quantità'),
-      _Step('Scanner: inquadra la carta con la fotocamera per un riconoscimento automatico'),
-      _Step('Usa il filtro per cercare per nome, set o codice seriale'),
-      _Step('Le carte aggiunte appaiono subito nella tua raccolta'),
+      _Step(l10n.guideAddStep1),
+      _Step(l10n.guideAddStep2),
+      _Step(l10n.guideAddStep3),
+      _Step(l10n.guideAddStep4),
     ],
   ),
   _Feature(
     icon: Icons.document_scanner_outlined,
     color: Colors.lightBlue,
-    title: 'Scanner Carte',
-    description: 'Fotografa una carta con la fotocamera per riconoscerla automaticamente e aggiungerla alla collezione in un tocco.',
+    title: l10n.guideScannerTitle,
+    description: l10n.guideScannerDesc,
     steps: [
-      _Step('Tocca l\'icona scanner nella barra in alto'),
-      _Step('Inquadra bene la carta — tieni la fotocamera ferma'),
-      _Step('L\'app riconosce la carta e mostra i dettagli'),
-      _Step('Conferma la quantità e aggiungi alla collezione'),
-      _Step('Funziona meglio con buona illuminazione e carta non riflettente'),
+      _Step(l10n.guideScannerStep1),
+      _Step(l10n.guideScannerStep2),
+      _Step(l10n.guideScannerStep3),
+      _Step(l10n.guideScannerStep4),
+      _Step(l10n.guideScannerStep5),
     ],
   ),
   _Feature(
     icon: Icons.search,
     color: AppColors.cardtraderTeal,
-    title: 'Catalogo & Prezzi',
-    description: 'Il catalogo mostra tutte le carte disponibili con prezzi aggiornati da CardTrader. Puoi sfogliare, filtrare e aggiungere direttamente dalla lista.',
+    title: l10n.guideCatalogTitle,
+    description: l10n.guideCatalogDesc,
     steps: [
-      _Step('Seleziona la collezione e tocca "Catalogo"'),
-      _Step('Usa la barra di ricerca per trovare una carta specifica'),
-      _Step('I prezzi si aggiornano automaticamente ogni giorno'),
-      _Step('Tocca il ❤ per aggiungere alla Wishlist direttamente dal catalogo'),
-      _Step('Tocca una carta per vedere il dettaglio completo e i prezzi per rarità'),
+      _Step(l10n.guideCatalogStep1),
+      _Step(l10n.guideCatalogStep2),
+      _Step(l10n.guideCatalogStep3),
+      _Step(l10n.guideCatalogStep4),
+      _Step(l10n.guideCatalogStep5),
     ],
   ),
   _Feature(
     icon: Icons.book_outlined,
     color: AppColors.gold,
-    title: 'Album',
-    description: 'Gli album ti permettono di organizzare le carte della tua raccolta in raccoglitori virtuali, con una capacità massima personalizzabile.',
+    title: l10n.guideAlbumTitle,
+    description: l10n.guideAlbumDesc,
     steps: [
-      _Step('Nella raccolta, vai nella tab "Album"'),
-      _Step('Tocca + per creare un nuovo album e imposta nome e capacità'),
-      _Step('Apri un album per vedere le carte contenute'),
-      _Step('Aggiungi carte all\'album dalla raccolta principale'),
-      _Step('Usa i contatori per sapere quante carte hai inserito'),
+      _Step(l10n.guideAlbumStep1),
+      _Step(l10n.guideAlbumStep2),
+      _Step(l10n.guideAlbumStep3),
+      _Step(l10n.guideAlbumStep4),
+      _Step(l10n.guideAlbumStep5),
     ],
   ),
   _Feature(
     icon: Icons.style_outlined,
     color: AppColors.blue,
-    title: 'Deck Builder',
-    description: 'Costruisci e gestisci i tuoi mazzi da gioco. Tieni traccia di ogni carta, controlla la composizione e condividi i deck con altri giocatori.',
+    title: l10n.guideDeckTitle,
+    description: l10n.guideDeckDesc,
     steps: [
-      _Step('Vai nella tab "Deck" della tua raccolta'),
-      _Step('Tocca + per creare un nuovo deck'),
-      _Step('Apri il deck e aggiungi carte dalla sezione "Carte Possedute"'),
-      _Step('Usa il pulsante condividi per generare un link condivisibile (Pro)'),
-      _Step('Per Yu-Gi-Oh! puoi usare il costruttore AI per suggerimenti automatici'),
+      _Step(l10n.guideDeckStep1),
+      _Step(l10n.guideDeckStep2),
+      _Step(l10n.guideDeckStep3),
+      _Step(l10n.guideDeckStep4),
+      _Step(l10n.guideDeckStep5),
     ],
   ),
   _Feature(
     icon: Icons.favorite_outline,
     color: Colors.redAccent,
-    title: 'Wishlist & Avvisi Prezzi',
-    description: 'Salva le carte che vuoi acquistare e ricevi notifiche quando il prezzo scende sotto la soglia che hai impostato.',
+    title: l10n.guideWishlistTitle,
+    description: l10n.guideWishlistDesc,
     steps: [
-      _Step('Tocca il ❤ su qualsiasi carta per aggiungerla alla Wishlist'),
-      _Step('Apri la Wishlist dal menu profilo in alto a destra'),
-      _Step('Imposta un prezzo obiettivo per ogni carta'),
-      _Step('Riceverai una notifica push quando il prezzo scende'),
-      _Step('Rimuovi la carta dalla Wishlist una volta acquistata'),
+      _Step(l10n.guideWishlistStep1),
+      _Step(l10n.guideWishlistStep2),
+      _Step(l10n.guideWishlistStep3),
+      _Step(l10n.guideWishlistStep4),
+      _Step(l10n.guideWishlistStep5),
     ],
   ),
   _Feature(
     icon: Icons.trending_up,
     color: AppColors.success,
-    title: 'Statistiche & ROI',
-    description: 'Monitora il valore totale della tua collezione nel tempo e calcola il rendimento del tuo investimento con grafici dettagliati.',
+    title: l10n.guideStatsTitle,
+    description: l10n.guideStatsDesc,
     steps: [
-      _Step('Tocca l\'icona grafico nella barra in alto per le statistiche'),
-      _Step('Visualizza il valore totale, le carte per rarità e i trend'),
-      _Step('Il ROI confronta il costo stimato di acquisto con il valore attuale'),
-      _Step('I dati si aggiornano automaticamente con ogni sync prezzi'),
-      _Step('Disponibile solo con piano Pro'),
+      _Step(l10n.guideStatsStep1),
+      _Step(l10n.guideStatsStep2),
+      _Step(l10n.guideStatsStep3),
+      _Step(l10n.guideStatsStep4),
+      _Step(l10n.guideStatsStep5),
     ],
   ),
   _Feature(
     icon: Icons.notifications_outlined,
-    color: Color(0xFFFF6D00),
-    title: 'Notifiche',
-    description: 'Deck Master ti avvisa quando i prezzi cambiano, quando ci sono aggiornamenti del catalogo o nuove funzionalità disponibili.',
+    color: const Color(0xFFFF6D00),
+    title: l10n.guideNotifTitle,
+    description: l10n.guideNotifDesc,
     steps: [
-      _Step('Abilita le notifiche nelle Impostazioni → Notifiche'),
-      _Step('Le notifiche di prezzo arrivano quando un articolo in Wishlist scende'),
-      _Step('Puoi vedere tutte le notifiche passate nella sezione Notifiche'),
-      _Step('Tocca una notifica per andare direttamente alla carta'),
+      _Step(l10n.guideNotifStep1),
+      _Step(l10n.guideNotifStep2),
+      _Step(l10n.guideNotifStep3),
+      _Step(l10n.guideNotifStep4),
     ],
   ),
   _Feature(
     icon: Icons.file_download_outlined,
-    color: Color(0xFF1D6F42),
-    title: 'Esportazione Excel',
-    description: 'Esporta tutta la tua raccolta in un file Excel (.xlsx) per analisi esterne, backup o condivisione con altri collezionisti.',
+    color: const Color(0xFF1D6F42),
+    title: l10n.guideExportTitle,
+    description: l10n.guideExportDesc,
     steps: [
-      _Step('Vai in Impostazioni → Esportazione'),
-      _Step('Tocca "Esporta in Excel"'),
-      _Step('Il file viene generato con Nome, Codice, Collezione, Rarità, Quantità e Valore'),
-      _Step('Scegli dove salvare o condividere il file dal pannello di sistema'),
-      _Step('Disponibile solo con piano Pro'),
+      _Step(l10n.guideExportStep1),
+      _Step(l10n.guideExportStep2),
+      _Step(l10n.guideExportStep3),
+      _Step(l10n.guideExportStep4),
+      _Step(l10n.guideExportStep5),
     ],
   ),
   _Feature(
     icon: Icons.sync,
     color: AppColors.blue,
-    title: 'Sincronizzazione Cloud',
-    description: 'I tuoi dati vengono sincronizzati automaticamente su tutti i dispositivi tramite il tuo account. Non perderai mai la tua raccolta.',
+    title: l10n.guideSyncTitle,
+    description: l10n.guideSyncDesc,
     steps: [
-      _Step('La sync avviene automaticamente all\'avvio e dopo ogni modifica'),
-      _Step('Vai in Impostazioni → Sincronizzazione per forzarla manualmente'),
-      _Step('Se vedi l\'icona ⚠️ c\'è un conflitto: scegli quale versione tenere'),
-      _Step('Funziona anche offline: le modifiche si sincronizzano al ritorno della connessione'),
+      _Step(l10n.guideSyncStep1),
+      _Step(l10n.guideSyncStep2),
+      _Step(l10n.guideSyncStep3),
+      _Step(l10n.guideSyncStep4),
     ],
   ),
 ];
@@ -176,10 +177,12 @@ class _AppGuidePageState extends State<AppGuidePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final features = _buildFeatures(l10n);
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Guida alle Funzionalità'),
+        title: Text(l10n.guideAppBarTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
@@ -194,10 +197,10 @@ class _AppGuidePageState extends State<AppGuidePage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
-            _buildHeader(),
+            _buildHeader(l10n),
             const SizedBox(height: 20),
-            ...List.generate(_kFeatures.length, (i) {
-              final feature = _kFeatures[i];
+            ...List.generate(features.length, (i) {
+              final feature = features[i];
               final isOpen = _expanded.contains(i);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -220,7 +223,7 @@ class _AppGuidePageState extends State<AppGuidePage> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -239,22 +242,22 @@ class _AppGuidePageState extends State<AppGuidePage> {
             child: const Icon(Icons.menu_book_outlined, color: AppColors.gold, size: 28),
           ),
           const SizedBox(width: 16),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Come funziona Deck Master',
-                  style: TextStyle(
+                  l10n.guideHeaderTitle,
+                  style: const TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Tocca una funzionalità per scoprire come usarla passo per passo.',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
+                  l10n.guideHeaderSubtitle,
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
                 ),
               ],
             ),

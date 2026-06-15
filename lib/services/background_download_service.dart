@@ -45,17 +45,22 @@ class BackgroundDownloadService {
     } catch (_) {}
   }
 
+  /// Localized strings injected by the UI layer (which has a BuildContext).
+  /// Default to Italian so admin-only flows keep working without wiring l10n.
+  static String startingLabel = 'Avvio...';
+  static String notificationTitle = 'Deck Master — Download';
+
   /// Shows the progress notification and keeps CPU awake during download.
   static Future<void> startDownload(String operationName) async {
     if (!_isMobile) return;
     try { await WakelockPlus.enable(); } catch (_) {}
-    await _show(operationName, 'Avvio...');
+    await _show(operationName, startingLabel);
   }
 
   /// Updates the notification text.
   static void updateStatus(String status) {
     if (!_isMobile) return;
-    _show('Deck Master — Download', status);
+    _show(notificationTitle, status);
   }
 
   /// Cancels the notification and releases the wake lock.

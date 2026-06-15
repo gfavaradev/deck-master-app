@@ -60,15 +60,15 @@ class SupportPage extends StatelessWidget {
                 children: [
                   const Icon(Icons.support_agent, size: 52, color: AppColors.gold),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Come possiamo aiutarti?',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  Text(
+                    l10n.supportHeaderTitle,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Contattaci per qualsiasi problema o suggerimento.',
+                    l10n.supportHeaderSubtitle,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                 ],
               ),
@@ -76,7 +76,7 @@ class SupportPage extends StatelessWidget {
             const SizedBox(height: 24),
 
             // ── Contattaci ────────────────────────────────────────────────────
-            _SectionLabel(label: 'CONTATTACI', color: AppColors.gold),
+            _SectionLabel(label: l10n.supportSectionContact, color: AppColors.gold),
             const SizedBox(height: 8),
             _SupportCard(children: [
               _SupportTile(
@@ -85,8 +85,8 @@ class SupportPage extends StatelessWidget {
                 title: l10n.supportReportBugTitle,
                 subtitle: l10n.supportReportBugSubtitle,
                 onTap: () => _sendEmail(context,
-                  subject: 'Segnalazione Problema - Deck Master',
-                  body: 'Ciao,\n\nHo riscontrato il seguente problema:\n\n[Descrivi il problema qui]\n\n---\nAccount: $userEmail',
+                  subject: l10n.supportBugEmailSubject,
+                  body: l10n.supportBugEmailBody(userEmail),
                 ),
               ),
               _Divider(),
@@ -97,106 +97,83 @@ class SupportPage extends StatelessWidget {
                 subtitle: l10n.supportMissingCardsSubtitle,
                 isLast: true,
                 onTap: () => _sendEmail(context,
-                  subject: 'Carte Mancanti - Deck Master',
-                  body: 'Ciao,\n\nVorrei segnalare le seguenti carte mancanti/errate:\n\nCollezione: [Yu-Gi-Oh! / One Piece / ...]\nCarta: [Nome carta]\nSet: [Numero Codice]\nMotivo: [Mancante / Dati errati / Immagine sbagliata]\n\n---\nAccount: $userEmail',
+                  subject: l10n.supportMissingEmailSubject,
+                  body: l10n.supportMissingEmailBody(userEmail),
                 ),
               ),
             ]),
             const SizedBox(height: 24),
 
             // ── La tua opinione conta ─────────────────────────────────────────
-            const _SectionLabel(label: 'LA TUA OPINIONE CONTA', color: Colors.redAccent),
+            _SectionLabel(label: l10n.supportSectionOpinion, color: Colors.redAccent),
             const SizedBox(height: 8),
             _SupportCard(children: [
               _SupportTile(
                 icon: Icons.star_outline,
                 iconColor: AppColors.gold,
-                title: 'Lascia una recensione',
-                subtitle: 'Hai apprezzato l\'app? Aiutaci con una valutazione sullo store',
+                title: l10n.supportReviewTitle,
+                subtitle: l10n.supportReviewSubtitle,
                 onTap: () => _sendEmail(context,
-                  subject: 'Recensione - Deck Master',
-                  body: 'Ciao,\n\nVorrei lasciare il seguente feedback sull\'app:\n\nValutazione: [⭐⭐⭐⭐⭐]\n\n[Scrivi qui la tua opinione]\n\n---\nAccount: $userEmail',
+                  subject: l10n.supportReviewEmailSubject,
+                  body: l10n.supportReviewEmailBody(userEmail),
                 ),
               ),
               _Divider(),
               _SupportTile(
                 icon: Icons.share_outlined,
                 iconColor: AppColors.blue,
-                title: 'Condividi Deck Master',
-                subtitle: 'Consiglia l\'app ad altri collezionisti',
+                title: l10n.supportShareTitle,
+                subtitle: l10n.supportShareSubtitle,
                 onTap: () => SharePlus.instance.share(
-                  ShareParams(
-                    text: '🃏 Gestisco la mia collezione di carte con Deck Master!\n\nSupporta Yu-Gi-Oh!, Pokémon, One Piece, Magic e molti altri TCG. Prezzi aggiornati, scanner, deck builder e tanto altro.\n\nScaricalo su App Store e Google Play: cerca "Deck Master TCG"',
-                  ),
+                  ShareParams(text: l10n.supportShareText),
                 ),
               ),
               _Divider(),
               _SupportTile(
                 icon: Icons.lightbulb_outline,
                 iconColor: AppColors.gold,
-                title: 'Suggerimenti',
-                subtitle: 'Hai idee per migliorare l\'app? Scrivici',
+                title: l10n.supportSuggestionsTitle,
+                subtitle: l10n.supportSuggestionsSubtitle,
                 isLast: true,
                 onTap: () => _sendEmail(context,
-                  subject: 'Suggerimenti - Deck Master',
-                  body: 'Ciao,\n\nVorrei suggerire la seguente funzionalità o miglioramento:\n\n[Descrivi il suggerimento qui]\n\n---\nAccount: $userEmail',
+                  subject: l10n.supportSuggestEmailSubject,
+                  body: l10n.supportSuggestEmailBody(userEmail),
                 ),
               ),
             ]),
             const SizedBox(height: 24),
 
             // ── Domande frequenti ─────────────────────────────────────────────
-            const _SectionLabel(label: 'DOMANDE FREQUENTI', color: AppColors.blue),
+            _SectionLabel(label: l10n.supportSectionFaq, color: AppColors.blue),
             const SizedBox(height: 8),
-            _FaqCard(items: const [
-              _FaqItem(
-                question: 'Come aggiungo una carta alla mia collezione?',
-                answer: 'Puoi aggiungere carte in tre modi: cerca dal Catalogo e tocca "Aggiungi", usa lo Scanner per fotografare la carta, oppure tocca una carta nel dettaglio del set. Specifica la quantità e conferma.',
-              ),
-              _FaqItem(
-                question: 'Come funziona la Wishlist?',
-                answer: 'Tocca il ❤ su qualsiasi carta per aggiungerla alla Wishlist. Puoi impostare un prezzo obiettivo: riceverai una notifica push quando il prezzo scende sotto la soglia impostata.',
-              ),
-              _FaqItem(
-                question: 'Come costruisco un deck?',
-                answer: 'Vai nella raccolta della tua collezione, seleziona la tab "Deck" e tocca + per creare un nuovo mazzo. Apri il deck e aggiungi le carte dalla sezione "Carte Possedute" in basso.',
-              ),
-              _FaqItem(
-                question: 'Come sincronizzo i dati su più dispositivi?',
-                answer: 'La sincronizzazione avviene automaticamente quando sei connesso. Accedi con lo stesso account su ogni dispositivo. Puoi anche forzarla manualmente da Impostazioni → Sincronizzazione.',
-              ),
-              _FaqItem(
-                question: 'Cos\'è il piano Pro?',
-                answer: 'Il piano Pro sblocca: esportazione Excel, statistiche avanzate, ROI, condivisione deck, costruttore AI per Yu-Gi-Oh! e nessuna pubblicità. Lo trovi in Impostazioni → Passa a Pro.',
-              ),
-              _FaqItem(
-                question: 'Come funziona lo scanner?',
-                answer: 'Tocca l\'icona scanner in alto. Inquadra la carta con la fotocamera in buona illuminazione e tienila ferma. L\'app la riconosce automaticamente e ti propone di aggiungerla alla raccolta.',
-              ),
-              _FaqItem(
-                question: 'I prezzi sono aggiornati?',
-                answer: 'Sì, i prezzi vengono sincronizzati ogni giorno da CardTrader. Se vuoi aggiornare manualmente, vai in Impostazioni → Sincronizzazione e tocca "Aggiorna Prezzi".',
-              ),
+            _FaqCard(items: [
+              _FaqItem(question: l10n.supportFaqQ1, answer: l10n.supportFaqA1),
+              _FaqItem(question: l10n.supportFaqQ2, answer: l10n.supportFaqA2),
+              _FaqItem(question: l10n.supportFaqQ3, answer: l10n.supportFaqA3),
+              _FaqItem(question: l10n.supportFaqQ4, answer: l10n.supportFaqA4),
+              _FaqItem(question: l10n.supportFaqQ5, answer: l10n.supportFaqA5),
+              _FaqItem(question: l10n.supportFaqQ6, answer: l10n.supportFaqA6),
+              _FaqItem(question: l10n.supportFaqQ7, answer: l10n.supportFaqA7),
             ]),
             const SizedBox(height: 24),
 
             // ── Altro ─────────────────────────────────────────────────────────
-            const _SectionLabel(label: 'ALTRO', color: AppColors.textHint),
+            _SectionLabel(label: l10n.supportSectionOther, color: AppColors.textHint),
             const SizedBox(height: 8),
             _SupportCard(children: [
               _SupportTile(
                 icon: Icons.menu_book_outlined,
-                iconColor: Color(0xFF9B59B6),
-                title: 'Guida alle funzionalità',
-                subtitle: 'Scopri passo per passo come usare ogni funzione dell\'app',
+                iconColor: const Color(0xFF9B59B6),
+                title: l10n.supportGuideTitle,
+                subtitle: l10n.supportGuideSubtitle,
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AppGuidePage())),
               ),
               _Divider(),
               _SupportTile(
                 icon: Icons.play_circle_outline,
                 iconColor: AppColors.gold,
-                title: 'Rivedi il tutorial',
-                subtitle: 'Guarda di nuovo la presentazione iniziale dell\'app',
+                title: l10n.supportTutorialTitle,
+                subtitle: l10n.supportTutorialSubtitle,
                 isLast: true,
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TutorialPage())),
               ),

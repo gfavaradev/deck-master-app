@@ -167,14 +167,14 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _deleteAccount() async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => const AppConfirmDialog(
-        title: 'Elimina Account',
+      builder: (_) => AppConfirmDialog(
+        title: l10n.dlgDeleteAccountTitle,
         icon: Icons.person_remove_outlined,
-        message: 'Questa azione è irreversibile.\n\n'
-            'Il tuo account e tutti i dati associati verranno eliminati definitivamente.',
-        confirmLabel: 'Elimina',
+        message: l10n.dlgDeleteAccountMsg,
+        confirmLabel: l10n.btnDelete,
       ),
     );
 
@@ -237,16 +237,15 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _resetAndResync() async {
+    final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => const AppConfirmDialog(
-        title: 'Ripristina Sincronizzazione',
+      builder: (_) => AppConfirmDialog(
+        title: l10n.dlgResetSyncTitle,
         icon: Icons.sync_problem_outlined,
         iconColor: AppColors.blue,
-        message: 'Questa operazione deduplicerà le carte/album/deck presenti due volte, '
-            'ripulirà il cloud e ricaricherà i dati corretti.\n\n'
-            'Procedi solo se vedi elementi duplicati.',
-        confirmLabel: 'Ripristina',
+        message: l10n.dlgResetSyncMsg,
+        confirmLabel: l10n.btnRestore,
         confirmColor: AppColors.blue,
       ),
     );
@@ -254,7 +253,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     setState(() {
       _isResetting = true;
-      _resetStatus = 'Avvio...';
+      _resetStatus = l10n.settingsResetStarting;
     });
 
     try {
@@ -302,6 +301,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _showRestoreDialog() {
     if (_isOffline) return;
+    final l10n = AppLocalizations.of(context)!;
 
     final unlocked = _catalogMeta
         .where((m) => _unlockedCatalogKeys.contains(m.key))
@@ -331,25 +331,25 @@ class _SettingsPageState extends State<SettingsPage> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
-            child: Text('Ripristina Catalogo', style: TextStyle(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+            child: Text(l10n.settingsRestoreDialogTitle, style: const TextStyle(
               color: AppColors.textPrimary,
               fontSize: 17,
               fontWeight: FontWeight.w600,
             )),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 20, 14),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
             child: Text(
-              'Il catalogo locale verrà cancellato e riscaricato dal server.',
+              l10n.settingsRestoreDialogSubtitle,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
           ),
           Container(height: 0.5, color: AppColors.divider),
           if (unlocked.length >= 2) ...[
-            _catalogOption(ctx, Icons.cloud_download_outlined, 'Tutti i Cataloghi', 'all', AppColors.blue),
+            _catalogOption(ctx, Icons.cloud_download_outlined, l10n.settingsRestoreAllCatalogs, 'all', AppColors.blue),
             Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 56)),
           ],
           for (int i = 0; i < unlocked.length; i++) ...[
@@ -400,6 +400,7 @@ class _SettingsPageState extends State<SettingsPage> {
   // Mostrata solo agli utenti non-Pro: porta alla pagina di upgrade.
   Widget _buildProSection() {
     if (_isPro) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -439,13 +440,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Passa a Pro', style: TextStyle(
+                      Text(l10n.settingsUpgradePro, style: const TextStyle(
                         color: AppColors.gold,
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                       )),
                       const SizedBox(height: 2),
-                      Text('Sblocca tutte le funzionalità premium', style: const TextStyle(
+                      Text(l10n.settingsUpgradeProSubtitle, style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12.5,
                         height: 1.4,
@@ -993,8 +994,8 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         _buildTile(
           icon: Icons.table_chart_outlined,
-          title: 'Esporta in Excel',
-          subtitle: 'Scarica la raccolta come file .xlsx',
+          title: l10n.settingsExportExcel,
+          subtitle: l10n.settingsExportExcelSubtitle,
           iconColor: AppColors.blue,
           enabled: !_isExporting,
           isLast: true,
@@ -1101,10 +1102,10 @@ class _SettingsPageState extends State<SettingsPage> {
               color: AppColors.textHint, borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
-            child: Text('Valuta',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Text(AppLocalizations.of(context)!.settingsCurrencyDialogTitle,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
           ),
           Container(height: 0.5, color: AppColors.divider),
           for (final curr in AppPreferences.currencies) ...[
@@ -1156,20 +1157,21 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildGeneralSection() {
+    final l10n = AppLocalizations.of(context)!;
     final langEntry = AppPreferences.languages.firstWhere(
       (l) => l.code == _languageCode, orElse: () => AppPreferences.languages.first);
     final currEntry = AppPreferences.currencies.firstWhere(
       (c) => c.code == _currencyCode, orElse: () => AppPreferences.currencies.first);
 
     return _buildSectionCard(
-      title: 'Generale',
+      title: l10n.settingsSectionGeneral,
       icon: Icons.tune,
       accentColor: AppColors.purple,
       children: [
         _buildSwitchTile(
           icon: Icons.notifications_outlined,
-          title: 'Notifiche Push',
-          subtitle: 'Ricevi notifiche dall\'app',
+          title: l10n.settingsPushNotifications,
+          subtitle: l10n.settingsPushNotificationsSubtitle,
           value: _notificationsEnabled,
           onChanged: _toggleNotifications,
           iconColor: AppColors.purple,
@@ -1187,8 +1189,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   _buildSubSwitchTile(
                     icon: Icons.system_update_outlined,
-                    title: 'Aggiornamenti App',
-                    subtitle: 'Nuove versioni disponibili',
+                    title: l10n.settingsNotifAppUpdates,
+                    subtitle: l10n.settingsNotifAppUpdatesSubtitle,
                     value: _notifAppUpdates,
                     onChanged: (v) async {
                       await _notifService.setAppUpdates(v);
@@ -1201,8 +1203,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   _buildSubSwitchTile(
                     icon: Icons.new_releases_outlined,
-                    title: 'Aggiornamenti Catalogo',
-                    subtitle: 'Nuove carte e aggiornamenti prezzi',
+                    title: l10n.settingsNotifCatalogUpdates,
+                    subtitle: l10n.settingsNotifCatalogUpdatesSubtitle,
                     value: _notifCatalogUpdates,
                     onChanged: (v) async {
                       await _notifService.setCatalogUpdates(v);
@@ -1217,7 +1219,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _tileDivider(),
         _buildTile(
           icon: Icons.language,
-          title: 'Lingua App',
+          title: l10n.settingsLanguage,
           subtitle: '${langEntry.flag}  ${langEntry.name}',
           iconColor: AppColors.purple,
           trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
@@ -1226,7 +1228,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _tileDivider(),
         _buildTile(
           icon: Icons.monetization_on_outlined,
-          title: 'Valuta',
+          title: l10n.settingsCurrency,
           subtitle: '${currEntry.symbol}  ${currEntry.code} — ${currEntry.name}',
           iconColor: AppColors.purple,
           trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
@@ -1235,8 +1237,8 @@ class _SettingsPageState extends State<SettingsPage> {
         _tileDivider(),
         _buildTile(
           icon: Icons.help_outline,
-          title: 'Guida all\'App',
-          subtitle: 'Rivedi la guida alle funzionalità dell\'app',
+          title: l10n.settingsAppGuide,
+          subtitle: l10n.settingsAppGuideSubtitle,
           iconColor: AppColors.purple,
           isLast: true,
           trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
@@ -1258,22 +1260,23 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Impossibile aprire la pagina. Riprova più tardi.')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.settingsPrivacyOpenError)),
         );
       }
     }
   }
 
   Widget _buildLegalSection() {
+    final l10n = AppLocalizations.of(context)!;
     return _buildSectionCard(
-      title: 'Legale',
+      title: l10n.settingsSectionLegal,
       icon: Icons.gavel_outlined,
       accentColor: AppColors.textHint,
       children: [
         _buildTile(
           icon: Icons.privacy_tip_outlined,
-          title: 'Informativa sulla Privacy',
-          subtitle: 'Come raccogliamo e utilizziamo i tuoi dati',
+          title: l10n.settingsPrivacyPolicy,
+          subtitle: l10n.settingsPrivacyPolicySubtitle,
           iconColor: AppColors.textHint,
           isLast: true,
           trailing: const Icon(Icons.open_in_new, color: AppColors.textHint, size: 18),
@@ -1284,16 +1287,17 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildDangerSection() {
+    final l10n = AppLocalizations.of(context)!;
     return _buildSectionCard(
-      title: 'Zona Pericolosa',
+      title: l10n.settingsSectionDanger,
       icon: Icons.warning_amber_rounded,
       accentColor: AppColors.error,
       borderColor: AppColors.error.withValues(alpha:0.2),
       children: [
         _buildTile(
           icon: Icons.delete_forever,
-          title: 'Elimina Account',
-          subtitle: 'Elimina definitivamente il tuo account e tutti i dati',
+          title: l10n.settingsDeleteAccount,
+          subtitle: l10n.settingsDeleteAccountSubtitle,
           iconColor: AppColors.error,
           enabled: !_isOffline,
           isLast: true,

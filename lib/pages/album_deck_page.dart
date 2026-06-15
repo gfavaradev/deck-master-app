@@ -130,10 +130,8 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
         title: l10n.dlgDeleteAlbumTitle,
         icon: Icons.delete_outline,
         message: album.currentCount > 0
-            ? 'Sei sicuro di voler eliminare "${album.name}"?\n\n' // TODO: l10n
-                'Verranno eliminate anche tutte le ${album.currentCount} carte contenute.\n\n'
-                'Questa azione non può essere annullata.'
-            : 'Sei sicuro di voler eliminare "${album.name}"?', // TODO: l10n
+            ? l10n.dlgDeleteAlbumWithCardsMsg(album.name, album.currentCount)
+            : l10n.dlgDeleteAlbumMsg(album.name),
         confirmLabel: l10n.btnDelete,
       ),
     ).then((confirmed) async {
@@ -260,10 +258,10 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
       onTap: () => showDialog<void>(
         context: context,
         builder: (_) => AppConfirmDialog(
-          title: 'In arrivo',
+          title: AppLocalizations.of(context)!.comingSoonTitle,
           icon: Icons.construction_outlined,
-          message: 'Funzionalità in fase di sviluppo, arriverà a breve!',
-          confirmLabel: 'Ok',
+          message: AppLocalizations.of(context)!.comingSoonMsg,
+          confirmLabel: AppLocalizations.of(context)!.btnOk,
         ),
       ),
       child: Container(
@@ -694,7 +692,7 @@ class _AlbumDialogState extends State<_AlbumDialog> {
 
   void _submit() {
     if (_nameCtrl.text.trim().isEmpty) {
-      setState(() => _nameError = 'Il nome è obbligatorio');
+      setState(() => _nameError = AppLocalizations.of(context)!.msgNameRequired);
       return;
     }
     Navigator.pop(
@@ -1020,7 +1018,7 @@ class _DeckDialogState extends State<_DeckDialog> {
           onPressed: () {
             final name = _nameCtrl.text.trim();
             if (name.isEmpty) {
-              setState(() => _nameError = 'Il nome è obbligatorio');
+              setState(() => _nameError = l10n.msgNameRequired);
               return;
             }
             Navigator.pop(context, name);

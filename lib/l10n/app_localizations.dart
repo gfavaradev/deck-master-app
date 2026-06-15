@@ -3469,6 +3469,1247 @@ abstract class AppLocalizations {
   /// In it, this message translates to:
   /// **'Inserisci il prezzo per singola copia'**
   String get roiPurchasePriceHelper;
+
+  /// Restore button label
+  ///
+  /// In it, this message translates to:
+  /// **'Ripristina'**
+  String get btnRestore;
+
+  /// Legal section title in settings
+  ///
+  /// In it, this message translates to:
+  /// **'Legale'**
+  String get settingsSectionLegal;
+
+  /// Privacy policy tile title
+  ///
+  /// In it, this message translates to:
+  /// **'Informativa sulla Privacy'**
+  String get settingsPrivacyPolicy;
+
+  /// Privacy policy tile subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Come raccogliamo e utilizziamo i tuoi dati'**
+  String get settingsPrivacyPolicySubtitle;
+
+  /// Error when privacy page cannot open
+  ///
+  /// In it, this message translates to:
+  /// **'Impossibile aprire la pagina. Riprova più tardi.'**
+  String get settingsPrivacyOpenError;
+
+  /// Export to Excel tile title
+  ///
+  /// In it, this message translates to:
+  /// **'Esporta in Excel'**
+  String get settingsExportExcel;
+
+  /// Export to Excel tile subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Scarica la raccolta come file .xlsx'**
+  String get settingsExportExcelSubtitle;
+
+  /// Upgrade to Pro tile title in settings
+  ///
+  /// In it, this message translates to:
+  /// **'Passa a Pro'**
+  String get settingsUpgradePro;
+
+  /// Upgrade to Pro tile subtitle in settings
+  ///
+  /// In it, this message translates to:
+  /// **'Sblocca tutte le funzionalità premium'**
+  String get settingsUpgradeProSubtitle;
+
+  /// Initial status text when an operation starts
+  ///
+  /// In it, this message translates to:
+  /// **'Avvio...'**
+  String get settingsResetStarting;
+
+  /// Launch discount badge in pro promo
+  ///
+  /// In it, this message translates to:
+  /// **'SCONTO LANCIO'**
+  String get proPromoBadge;
+
+  /// Starting price label in pro promo
+  ///
+  /// In it, this message translates to:
+  /// **'da €1.67/mese'**
+  String get proPromoPriceFrom;
+
+  /// CTA button in pro promo sheet
+  ///
+  /// In it, this message translates to:
+  /// **'Scopri Pro'**
+  String get proPromoCta;
+
+  /// Dismiss button in pro promo sheet
+  ///
+  /// In it, this message translates to:
+  /// **'No grazie'**
+  String get proPromoDismiss;
+
+  /// Pro benefit: advanced stats and ROI
+  ///
+  /// In it, this message translates to:
+  /// **'Statistiche & ROI avanzati'**
+  String get proBenefitStats;
+
+  /// Pro benefit: Excel export
+  ///
+  /// In it, this message translates to:
+  /// **'Esportazione Excel'**
+  String get proBenefitExcel;
+
+  /// Pro benefit: AI deck builder
+  ///
+  /// In it, this message translates to:
+  /// **'AI Deck Builder (Yu-Gi-Oh!)'**
+  String get proBenefitAi;
+
+  /// Pro benefit: wishlist price alerts
+  ///
+  /// In it, this message translates to:
+  /// **'Avvisi prezzi Wishlist'**
+  String get proBenefitAlerts;
+
+  /// Pro benefit: no ads
+  ///
+  /// In it, this message translates to:
+  /// **'Zero pubblicità'**
+  String get proBenefitNoAds;
+
+  /// Pro benefit: deck sharing
+  ///
+  /// In it, this message translates to:
+  /// **'Condivisione deck'**
+  String get proBenefitShare;
+
+  /// Pro page header subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Porta la tua collezione al livello successivo'**
+  String get proHeaderSubtitle;
+
+  /// Launch discount badge in pro page header
+  ///
+  /// In it, this message translates to:
+  /// **'SCONTO LANCIO — OFFERTA LIMITATA'**
+  String get proLaunchBadge;
+
+  /// Features section title in pro page
+  ///
+  /// In it, this message translates to:
+  /// **'TUTTO INCLUSO NEL PRO'**
+  String get proAllIncluded;
+
+  /// Pricing section title in pro page
+  ///
+  /// In it, this message translates to:
+  /// **'SCEGLI IL TUO PIANO'**
+  String get proChoosePlan;
+
+  /// Semiannual plan title
+  ///
+  /// In it, this message translates to:
+  /// **'Semestrale'**
+  String get proSemiannualLabel;
+
+  /// Semiannual plan period
+  ///
+  /// In it, this message translates to:
+  /// **'6 mesi'**
+  String get proSemiannualPeriod;
+
+  /// Monthly plan note
+  ///
+  /// In it, this message translates to:
+  /// **'Flessibile, disdici quando vuoi'**
+  String get proMonthlyNote;
+
+  /// Plan saving note
+  ///
+  /// In it, this message translates to:
+  /// **'€{price}/mese · risparmia il {percent}%'**
+  String proSaveNote(String price, String percent);
+
+  /// Launch tag on plan card
+  ///
+  /// In it, this message translates to:
+  /// **'LANCIO'**
+  String get proLaunchTag;
+
+  /// Purchase processing label
+  ///
+  /// In it, this message translates to:
+  /// **'Elaborazione...'**
+  String get proProcessing;
+
+  /// Subscribe CTA button
+  ///
+  /// In it, this message translates to:
+  /// **'Abbonati ora'**
+  String get proSubscribeNow;
+
+  /// Already subscribed message
+  ///
+  /// In it, this message translates to:
+  /// **'✓ Sei già abbonato a Pro!'**
+  String get proAlreadySubscribed;
+
+  /// Footer cancel anytime
+  ///
+  /// In it, this message translates to:
+  /// **'Annulla in qualsiasi momento · Nessun vincolo'**
+  String get proFooterCancel;
+
+  /// Footer payment disclaimer
+  ///
+  /// In it, this message translates to:
+  /// **'Il pagamento verrà addebitato tramite App Store / Google Play'**
+  String get proFooterPayment;
+
+  /// Restore purchases button
+  ///
+  /// In it, this message translates to:
+  /// **'Ripristina acquisti'**
+  String get proRestorePurchases;
+
+  /// Pro feature title: Excel export
+  ///
+  /// In it, this message translates to:
+  /// **'Esportazione Excel'**
+  String get proFeatExcelTitle;
+
+  /// Pro feature subtitle: Excel export
+  ///
+  /// In it, this message translates to:
+  /// **'Scarica la raccolta in .xlsx'**
+  String get proFeatExcelSub;
+
+  /// Pro feature title: advanced stats
+  ///
+  /// In it, this message translates to:
+  /// **'Statistiche Avanzate'**
+  String get proFeatStatsTitle;
+
+  /// Pro feature subtitle: advanced stats
+  ///
+  /// In it, this message translates to:
+  /// **'Valore, rarità, trend nel tempo'**
+  String get proFeatStatsSub;
+
+  /// Pro feature title: ROI
+  ///
+  /// In it, this message translates to:
+  /// **'ROI & Investimento'**
+  String get proFeatRoiTitle;
+
+  /// Pro feature subtitle: ROI
+  ///
+  /// In it, this message translates to:
+  /// **'Calcola il rendimento della raccolta'**
+  String get proFeatRoiSub;
+
+  /// Pro feature title: deck sharing
+  ///
+  /// In it, this message translates to:
+  /// **'Condivisione Deck'**
+  String get proFeatShareTitle;
+
+  /// Pro feature subtitle: deck sharing
+  ///
+  /// In it, this message translates to:
+  /// **'Genera link condivisibili per i mazzi'**
+  String get proFeatShareSub;
+
+  /// Pro feature title: AI deck builder
+  ///
+  /// In it, this message translates to:
+  /// **'AI Deck Builder'**
+  String get proFeatAiTitle;
+
+  /// Pro feature subtitle: AI deck builder
+  ///
+  /// In it, this message translates to:
+  /// **'Costruttore automatico per Yu-Gi-Oh!'**
+  String get proFeatAiSub;
+
+  /// Pro feature title: wishlist price alerts
+  ///
+  /// In it, this message translates to:
+  /// **'Avvisi Prezzi Wishlist'**
+  String get proFeatAlertsTitle;
+
+  /// Pro feature subtitle: wishlist price alerts
+  ///
+  /// In it, this message translates to:
+  /// **'Notifiche quando il prezzo scende'**
+  String get proFeatAlertsSub;
+
+  /// Pro feature title: no ads
+  ///
+  /// In it, this message translates to:
+  /// **'Senza Pubblicità'**
+  String get proFeatNoAdsTitle;
+
+  /// Pro feature subtitle: no ads
+  ///
+  /// In it, this message translates to:
+  /// **'Esperienza pulita senza interruzioni'**
+  String get proFeatNoAdsSub;
+
+  /// Pro feature title: priority support
+  ///
+  /// In it, this message translates to:
+  /// **'Supporto Prioritario'**
+  String get proFeatSupportTitle;
+
+  /// Pro feature subtitle: priority support
+  ///
+  /// In it, this message translates to:
+  /// **'Risposta garantita entro 24h'**
+  String get proFeatSupportSub;
+
+  /// Support page header title
+  ///
+  /// In it, this message translates to:
+  /// **'Come possiamo aiutarti?'**
+  String get supportHeaderTitle;
+
+  /// Support page header subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Contattaci per qualsiasi problema o suggerimento.'**
+  String get supportHeaderSubtitle;
+
+  /// Support contact section label
+  ///
+  /// In it, this message translates to:
+  /// **'CONTATTACI'**
+  String get supportSectionContact;
+
+  /// Support opinion section label
+  ///
+  /// In it, this message translates to:
+  /// **'LA TUA OPINIONE CONTA'**
+  String get supportSectionOpinion;
+
+  /// Support FAQ section label
+  ///
+  /// In it, this message translates to:
+  /// **'DOMANDE FREQUENTI'**
+  String get supportSectionFaq;
+
+  /// Support other section label
+  ///
+  /// In it, this message translates to:
+  /// **'ALTRO'**
+  String get supportSectionOther;
+
+  /// Leave a review tile title
+  ///
+  /// In it, this message translates to:
+  /// **'Lascia una recensione'**
+  String get supportReviewTitle;
+
+  /// Leave a review tile subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Hai apprezzato l\'app? Aiutaci con una valutazione sullo store'**
+  String get supportReviewSubtitle;
+
+  /// Share app tile title
+  ///
+  /// In it, this message translates to:
+  /// **'Condividi Deck Master'**
+  String get supportShareTitle;
+
+  /// Share app tile subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Consiglia l\'app ad altri collezionisti'**
+  String get supportShareSubtitle;
+
+  /// Suggestions tile title
+  ///
+  /// In it, this message translates to:
+  /// **'Suggerimenti'**
+  String get supportSuggestionsTitle;
+
+  /// Suggestions tile subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Hai idee per migliorare l\'app? Scrivici'**
+  String get supportSuggestionsSubtitle;
+
+  /// Feature guide tile title
+  ///
+  /// In it, this message translates to:
+  /// **'Guida alle funzionalità'**
+  String get supportGuideTitle;
+
+  /// Feature guide tile subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Scopri passo per passo come usare ogni funzione dell\'app'**
+  String get supportGuideSubtitle;
+
+  /// Replay tutorial tile title
+  ///
+  /// In it, this message translates to:
+  /// **'Rivedi il tutorial'**
+  String get supportTutorialTitle;
+
+  /// Replay tutorial tile subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Guarda di nuovo la presentazione iniziale dell\'app'**
+  String get supportTutorialSubtitle;
+
+  /// Bug report email subject
+  ///
+  /// In it, this message translates to:
+  /// **'Segnalazione Problema - Deck Master'**
+  String get supportBugEmailSubject;
+
+  /// Bug report email body
+  ///
+  /// In it, this message translates to:
+  /// **'Ciao,\n\nHo riscontrato il seguente problema:\n\n[Descrivi il problema qui]\n\n---\nAccount: {email}'**
+  String supportBugEmailBody(String email);
+
+  /// Missing cards email subject
+  ///
+  /// In it, this message translates to:
+  /// **'Carte Mancanti - Deck Master'**
+  String get supportMissingEmailSubject;
+
+  /// Missing cards email body
+  ///
+  /// In it, this message translates to:
+  /// **'Ciao,\n\nVorrei segnalare le seguenti carte mancanti/errate:\n\nCollezione: [Yu-Gi-Oh! / One Piece / ...]\nCarta: [Nome carta]\nSet: [Numero Codice]\nMotivo: [Mancante / Dati errati / Immagine sbagliata]\n\n---\nAccount: {email}'**
+  String supportMissingEmailBody(String email);
+
+  /// Review email subject
+  ///
+  /// In it, this message translates to:
+  /// **'Recensione - Deck Master'**
+  String get supportReviewEmailSubject;
+
+  /// Review email body
+  ///
+  /// In it, this message translates to:
+  /// **'Ciao,\n\nVorrei lasciare il seguente feedback sull\'app:\n\nValutazione: [⭐⭐⭐⭐⭐]\n\n[Scrivi qui la tua opinione]\n\n---\nAccount: {email}'**
+  String supportReviewEmailBody(String email);
+
+  /// Suggestion email subject
+  ///
+  /// In it, this message translates to:
+  /// **'Suggerimenti - Deck Master'**
+  String get supportSuggestEmailSubject;
+
+  /// Suggestion email body
+  ///
+  /// In it, this message translates to:
+  /// **'Ciao,\n\nVorrei suggerire la seguente funzionalità o miglioramento:\n\n[Descrivi il suggerimento qui]\n\n---\nAccount: {email}'**
+  String supportSuggestEmailBody(String email);
+
+  /// Share app text
+  ///
+  /// In it, this message translates to:
+  /// **'🃏 Gestisco la mia collezione di carte con Deck Master!\n\nSupporta Yu-Gi-Oh!, Pokémon, One Piece, Magic e molti altri TCG. Prezzi aggiornati, scanner, deck builder e tanto altro.\n\nScaricalo su App Store e Google Play: cerca \"Deck Master TCG\"'**
+  String get supportShareText;
+
+  /// FAQ question 1
+  ///
+  /// In it, this message translates to:
+  /// **'Come aggiungo una carta alla mia collezione?'**
+  String get supportFaqQ1;
+
+  /// FAQ answer 1
+  ///
+  /// In it, this message translates to:
+  /// **'Puoi aggiungere carte in tre modi: cerca dal Catalogo e tocca \"Aggiungi\", usa lo Scanner per fotografare la carta, oppure tocca una carta nel dettaglio del set. Specifica la quantità e conferma.'**
+  String get supportFaqA1;
+
+  /// FAQ question 2
+  ///
+  /// In it, this message translates to:
+  /// **'Come funziona la Wishlist?'**
+  String get supportFaqQ2;
+
+  /// FAQ answer 2
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca il ❤ su qualsiasi carta per aggiungerla alla Wishlist. Puoi impostare un prezzo obiettivo: riceverai una notifica push quando il prezzo scende sotto la soglia impostata.'**
+  String get supportFaqA2;
+
+  /// FAQ question 3
+  ///
+  /// In it, this message translates to:
+  /// **'Come costruisco un deck?'**
+  String get supportFaqQ3;
+
+  /// FAQ answer 3
+  ///
+  /// In it, this message translates to:
+  /// **'Vai nella raccolta della tua collezione, seleziona la tab \"Deck\" e tocca + per creare un nuovo mazzo. Apri il deck e aggiungi le carte dalla sezione \"Carte Possedute\" in basso.'**
+  String get supportFaqA3;
+
+  /// FAQ question 4
+  ///
+  /// In it, this message translates to:
+  /// **'Come sincronizzo i dati su più dispositivi?'**
+  String get supportFaqQ4;
+
+  /// FAQ answer 4
+  ///
+  /// In it, this message translates to:
+  /// **'La sincronizzazione avviene automaticamente quando sei connesso. Accedi con lo stesso account su ogni dispositivo. Puoi anche forzarla manualmente da Impostazioni → Sincronizzazione.'**
+  String get supportFaqA4;
+
+  /// FAQ question 5
+  ///
+  /// In it, this message translates to:
+  /// **'Cos\'è il piano Pro?'**
+  String get supportFaqQ5;
+
+  /// FAQ answer 5
+  ///
+  /// In it, this message translates to:
+  /// **'Il piano Pro sblocca: esportazione Excel, statistiche avanzate, ROI, condivisione deck, costruttore AI per Yu-Gi-Oh! e nessuna pubblicità. Lo trovi in Impostazioni → Passa a Pro.'**
+  String get supportFaqA5;
+
+  /// FAQ question 6
+  ///
+  /// In it, this message translates to:
+  /// **'Come funziona lo scanner?'**
+  String get supportFaqQ6;
+
+  /// FAQ answer 6
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca l\'icona scanner in alto. Inquadra la carta con la fotocamera in buona illuminazione e tienila ferma. L\'app la riconosce automaticamente e ti propone di aggiungerla alla raccolta.'**
+  String get supportFaqA6;
+
+  /// FAQ question 7
+  ///
+  /// In it, this message translates to:
+  /// **'I prezzi sono aggiornati?'**
+  String get supportFaqQ7;
+
+  /// FAQ answer 7
+  ///
+  /// In it, this message translates to:
+  /// **'Sì, i prezzi vengono sincronizzati ogni giorno da CardTrader. Se vuoi aggiornare manualmente, vai in Impostazioni → Sincronizzazione e tocca \"Aggiorna Prezzi\".'**
+  String get supportFaqA7;
+
+  /// App guide appbar title
+  ///
+  /// In it, this message translates to:
+  /// **'Guida alle Funzionalità'**
+  String get guideAppBarTitle;
+
+  /// App guide header title
+  ///
+  /// In it, this message translates to:
+  /// **'Come funziona Deck Master'**
+  String get guideHeaderTitle;
+
+  /// App guide header subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca una funzionalità per scoprire come usarla passo per passo.'**
+  String get guideHeaderSubtitle;
+
+  /// Guide: collections title
+  ///
+  /// In it, this message translates to:
+  /// **'Le Collezioni'**
+  String get guideCollectionsTitle;
+
+  /// Guide: collections description
+  ///
+  /// In it, this message translates to:
+  /// **'Ogni collezione rappresenta un gioco di carte (Yu-Gi-Oh!, Pokémon, ecc.). Sblocca le collezioni che possiedi per iniziare a gestirle.'**
+  String get guideCollectionsDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Vai nelle Impostazioni → Gestione Collezioni'**
+  String get guideCollectionsStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Attiva le collezioni che possiedi'**
+  String get guideCollectionsStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Ogni collezione apparirà nel menu principale'**
+  String get guideCollectionsStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Puoi cambiare la collezione attiva dal selettore in alto'**
+  String get guideCollectionsStep4;
+
+  /// Guide: add cards title
+  ///
+  /// In it, this message translates to:
+  /// **'Aggiungere Carte'**
+  String get guideAddTitle;
+
+  /// Guide: add cards description
+  ///
+  /// In it, this message translates to:
+  /// **'Ci sono tre modi per aggiungere carte alla tua collezione: manualmente dal catalogo, tramite scanner o importando da file.'**
+  String get guideAddDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Catalogo: cerca la carta, tocca \"Aggiungi\" e inserisci la quantità'**
+  String get guideAddStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Scanner: inquadra la carta con la fotocamera per un riconoscimento automatico'**
+  String get guideAddStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Usa il filtro per cercare per nome, set o codice seriale'**
+  String get guideAddStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Le carte aggiunte appaiono subito nella tua raccolta'**
+  String get guideAddStep4;
+
+  /// Guide: scanner title
+  ///
+  /// In it, this message translates to:
+  /// **'Scanner Carte'**
+  String get guideScannerTitle;
+
+  /// Guide: scanner description
+  ///
+  /// In it, this message translates to:
+  /// **'Fotografa una carta con la fotocamera per riconoscerla automaticamente e aggiungerla alla collezione in un tocco.'**
+  String get guideScannerDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca l\'icona scanner nella barra in alto'**
+  String get guideScannerStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Inquadra bene la carta — tieni la fotocamera ferma'**
+  String get guideScannerStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'L\'app riconosce la carta e mostra i dettagli'**
+  String get guideScannerStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Conferma la quantità e aggiungi alla collezione'**
+  String get guideScannerStep4;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Funziona meglio con buona illuminazione e carta non riflettente'**
+  String get guideScannerStep5;
+
+  /// Guide: catalog title
+  ///
+  /// In it, this message translates to:
+  /// **'Catalogo & Prezzi'**
+  String get guideCatalogTitle;
+
+  /// Guide: catalog description
+  ///
+  /// In it, this message translates to:
+  /// **'Il catalogo mostra tutte le carte disponibili con prezzi aggiornati da CardTrader. Puoi sfogliare, filtrare e aggiungere direttamente dalla lista.'**
+  String get guideCatalogDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Seleziona la collezione e tocca \"Catalogo\"'**
+  String get guideCatalogStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Usa la barra di ricerca per trovare una carta specifica'**
+  String get guideCatalogStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'I prezzi si aggiornano automaticamente ogni giorno'**
+  String get guideCatalogStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca il ❤ per aggiungere alla Wishlist direttamente dal catalogo'**
+  String get guideCatalogStep4;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca una carta per vedere il dettaglio completo e i prezzi per rarità'**
+  String get guideCatalogStep5;
+
+  /// Guide: album title
+  ///
+  /// In it, this message translates to:
+  /// **'Album'**
+  String get guideAlbumTitle;
+
+  /// Guide: album description
+  ///
+  /// In it, this message translates to:
+  /// **'Gli album ti permettono di organizzare le carte della tua raccolta in raccoglitori virtuali, con una capacità massima personalizzabile.'**
+  String get guideAlbumDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Nella raccolta, vai nella tab \"Album\"'**
+  String get guideAlbumStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca + per creare un nuovo album e imposta nome e capacità'**
+  String get guideAlbumStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Apri un album per vedere le carte contenute'**
+  String get guideAlbumStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Aggiungi carte all\'album dalla raccolta principale'**
+  String get guideAlbumStep4;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Usa i contatori per sapere quante carte hai inserito'**
+  String get guideAlbumStep5;
+
+  /// Guide: deck title
+  ///
+  /// In it, this message translates to:
+  /// **'Deck Builder'**
+  String get guideDeckTitle;
+
+  /// Guide: deck description
+  ///
+  /// In it, this message translates to:
+  /// **'Costruisci e gestisci i tuoi mazzi da gioco. Tieni traccia di ogni carta, controlla la composizione e condividi i deck con altri giocatori.'**
+  String get guideDeckDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Vai nella tab \"Deck\" della tua raccolta'**
+  String get guideDeckStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca + per creare un nuovo deck'**
+  String get guideDeckStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Apri il deck e aggiungi carte dalla sezione \"Carte Possedute\"'**
+  String get guideDeckStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Usa il pulsante condividi per generare un link condivisibile (Pro)'**
+  String get guideDeckStep4;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Per Yu-Gi-Oh! puoi usare il costruttore AI per suggerimenti automatici'**
+  String get guideDeckStep5;
+
+  /// Guide: wishlist title
+  ///
+  /// In it, this message translates to:
+  /// **'Wishlist & Avvisi Prezzi'**
+  String get guideWishlistTitle;
+
+  /// Guide: wishlist description
+  ///
+  /// In it, this message translates to:
+  /// **'Salva le carte che vuoi acquistare e ricevi notifiche quando il prezzo scende sotto la soglia che hai impostato.'**
+  String get guideWishlistDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca il ❤ su qualsiasi carta per aggiungerla alla Wishlist'**
+  String get guideWishlistStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Apri la Wishlist dal menu profilo in alto a destra'**
+  String get guideWishlistStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Imposta un prezzo obiettivo per ogni carta'**
+  String get guideWishlistStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Riceverai una notifica push quando il prezzo scende'**
+  String get guideWishlistStep4;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Rimuovi la carta dalla Wishlist una volta acquistata'**
+  String get guideWishlistStep5;
+
+  /// Guide: stats title
+  ///
+  /// In it, this message translates to:
+  /// **'Statistiche & ROI'**
+  String get guideStatsTitle;
+
+  /// Guide: stats description
+  ///
+  /// In it, this message translates to:
+  /// **'Monitora il valore totale della tua collezione nel tempo e calcola il rendimento del tuo investimento con grafici dettagliati.'**
+  String get guideStatsDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca l\'icona grafico nella barra in alto per le statistiche'**
+  String get guideStatsStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Visualizza il valore totale, le carte per rarità e i trend'**
+  String get guideStatsStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Il ROI confronta il costo stimato di acquisto con il valore attuale'**
+  String get guideStatsStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'I dati si aggiornano automaticamente con ogni sync prezzi'**
+  String get guideStatsStep4;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Disponibile solo con piano Pro'**
+  String get guideStatsStep5;
+
+  /// Guide: notifications title
+  ///
+  /// In it, this message translates to:
+  /// **'Notifiche'**
+  String get guideNotifTitle;
+
+  /// Guide: notifications description
+  ///
+  /// In it, this message translates to:
+  /// **'Deck Master ti avvisa quando i prezzi cambiano, quando ci sono aggiornamenti del catalogo o nuove funzionalità disponibili.'**
+  String get guideNotifDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Abilita le notifiche nelle Impostazioni → Notifiche'**
+  String get guideNotifStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Le notifiche di prezzo arrivano quando un articolo in Wishlist scende'**
+  String get guideNotifStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Puoi vedere tutte le notifiche passate nella sezione Notifiche'**
+  String get guideNotifStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca una notifica per andare direttamente alla carta'**
+  String get guideNotifStep4;
+
+  /// Guide: export title
+  ///
+  /// In it, this message translates to:
+  /// **'Esportazione Excel'**
+  String get guideExportTitle;
+
+  /// Guide: export description
+  ///
+  /// In it, this message translates to:
+  /// **'Esporta tutta la tua raccolta in un file Excel (.xlsx) per analisi esterne, backup o condivisione con altri collezionisti.'**
+  String get guideExportDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Vai in Impostazioni → Esportazione'**
+  String get guideExportStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Tocca \"Esporta in Excel\"'**
+  String get guideExportStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Il file viene generato con Nome, Codice, Collezione, Rarità, Quantità e Valore'**
+  String get guideExportStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Scegli dove salvare o condividere il file dal pannello di sistema'**
+  String get guideExportStep4;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Disponibile solo con piano Pro'**
+  String get guideExportStep5;
+
+  /// Guide: sync title
+  ///
+  /// In it, this message translates to:
+  /// **'Sincronizzazione Cloud'**
+  String get guideSyncTitle;
+
+  /// Guide: sync description
+  ///
+  /// In it, this message translates to:
+  /// **'I tuoi dati vengono sincronizzati automaticamente su tutti i dispositivi tramite il tuo account. Non perderai mai la tua raccolta.'**
+  String get guideSyncDesc;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'La sync avviene automaticamente all\'avvio e dopo ogni modifica'**
+  String get guideSyncStep1;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Vai in Impostazioni → Sincronizzazione per forzarla manualmente'**
+  String get guideSyncStep2;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Se vedi l\'icona ⚠️ c\'è un conflitto: scegli quale versione tenere'**
+  String get guideSyncStep3;
+
+  /// step
+  ///
+  /// In it, this message translates to:
+  /// **'Funziona anche offline: le modifiche si sincronizzano al ritorno della connessione'**
+  String get guideSyncStep4;
+
+  /// Delete album confirm message
+  ///
+  /// In it, this message translates to:
+  /// **'Sei sicuro di voler eliminare \"{name}\"?'**
+  String dlgDeleteAlbumMsg(String name);
+
+  /// Delete album with cards confirm message
+  ///
+  /// In it, this message translates to:
+  /// **'Sei sicuro di voler eliminare \"{name}\"?\n\nVerranno eliminate anche tutte le {count} carte contenute.\n\nQuesta azione non può essere annullata.'**
+  String dlgDeleteAlbumWithCardsMsg(String name, int count);
+
+  /// Coming soon dialog title
+  ///
+  /// In it, this message translates to:
+  /// **'In arrivo'**
+  String get comingSoonTitle;
+
+  /// Coming soon dialog message
+  ///
+  /// In it, this message translates to:
+  /// **'Funzionalità in fase di sviluppo, arriverà a breve!'**
+  String get comingSoonMsg;
+
+  /// Name required validation
+  ///
+  /// In it, this message translates to:
+  /// **'Il nome è obbligatorio'**
+  String get msgNameRequired;
+
+  /// Download starting status
+  ///
+  /// In it, this message translates to:
+  /// **'Avvio...'**
+  String get downloadStarting;
+
+  /// Download notification title
+  ///
+  /// In it, this message translates to:
+  /// **'Deck Master — Download'**
+  String get downloadTitle;
+
+  /// Tutorial skip button
+  ///
+  /// In it, this message translates to:
+  /// **'Salta'**
+  String get tutorialBtnSkip;
+
+  /// Tutorial next button
+  ///
+  /// In it, this message translates to:
+  /// **'Avanti'**
+  String get tutorialBtnNext;
+
+  /// Tutorial start button
+  ///
+  /// In it, this message translates to:
+  /// **'Inizia!'**
+  String get tutorialBtnStart;
+
+  /// Tutorial slide 1 title
+  ///
+  /// In it, this message translates to:
+  /// **'Benvenuto in Deck Master'**
+  String get tutorialSlide1Title;
+
+  /// Tutorial slide 1 description
+  ///
+  /// In it, this message translates to:
+  /// **'La tua app per gestire, valorizzare e analizzare la tua collezione di carte collezionabili.\n\nSupporta 13 TCG: Yu-Gi-Oh!, Pokémon, One Piece, Magic e molti altri.'**
+  String get tutorialSlide1Desc;
+
+  /// Tutorial slide 2 title
+  ///
+  /// In it, this message translates to:
+  /// **'Le tue Collezioni'**
+  String get tutorialSlide2Title;
+
+  /// Tutorial slide 2 description
+  ///
+  /// In it, this message translates to:
+  /// **'Sblocca le collezioni che possiedi. Per ogni collezione puoi aggiungere carte, sfogliare il catalogo completo e costruire mazzi.'**
+  String get tutorialSlide2Desc;
+
+  /// Tutorial slide 3 title
+  ///
+  /// In it, this message translates to:
+  /// **'Catalogo Carte'**
+  String get tutorialSlide3Title;
+
+  /// Tutorial slide 3 description
+  ///
+  /// In it, this message translates to:
+  /// **'Sfoglia il catalogo completo con prezzi aggiornati da CardTrader.\n\nTocca il ❤️ su una carta per aggiungerla alla Wishlist direttamente dal catalogo.'**
+  String get tutorialSlide3Desc;
+
+  /// Tutorial slide 4 title
+  ///
+  /// In it, this message translates to:
+  /// **'Scanner Carte'**
+  String get tutorialSlide4Title;
+
+  /// Tutorial slide 4 description
+  ///
+  /// In it, this message translates to:
+  /// **'Inquadra una carta con la fotocamera per riconoscerla automaticamente e aggiungerla alla tua collezione in un click.'**
+  String get tutorialSlide4Desc;
+
+  /// Tutorial slide 5 title
+  ///
+  /// In it, this message translates to:
+  /// **'Wishlist & Avvisi Prezzi'**
+  String get tutorialSlide5Title;
+
+  /// Tutorial slide 5 description
+  ///
+  /// In it, this message translates to:
+  /// **'Aggiungi le carte che vuoi acquistare alla Wishlist. Imposta un prezzo obiettivo e ricevi una notifica quando il prezzo scende sotto la soglia.'**
+  String get tutorialSlide5Desc;
+
+  /// Tutorial slide 6 title
+  ///
+  /// In it, this message translates to:
+  /// **'Analisi & ROI'**
+  String get tutorialSlide6Title;
+
+  /// Tutorial slide 6 description
+  ///
+  /// In it, this message translates to:
+  /// **'Monitora il valore totale della tua collezione nel tempo. Scopri il tuo ritorno sull\'investimento con grafici e statistiche dettagliate.'**
+  String get tutorialSlide6Desc;
+
+  /// Tutorial slide 7 title
+  ///
+  /// In it, this message translates to:
+  /// **'Deck Builder'**
+  String get tutorialSlide7Title;
+
+  /// Tutorial slide 7 description
+  ///
+  /// In it, this message translates to:
+  /// **'Costruisci e gestisci i tuoi mazzi. Analizza la composizione, il valore e tieni traccia di tutto quello che hai costruito.'**
+  String get tutorialSlide7Desc;
+
+  /// Catalog download operation label
+  ///
+  /// In it, this message translates to:
+  /// **'Catalogo'**
+  String get downloadCatalog;
+
+  /// Catalog restore operation label
+  ///
+  /// In it, this message translates to:
+  /// **'Ripristino catalogo'**
+  String get downloadRestoreCatalog;
+
+  /// Catalog restore progress
+  ///
+  /// In it, this message translates to:
+  /// **'Ripristino {current}/{total}: {name}'**
+  String downloadRestoreProgress(int current, int total, String name);
+
+  /// Collection download progress
+  ///
+  /// In it, this message translates to:
+  /// **'Collezione {current}/{total}: {name}'**
+  String downloadCollectionProgress(int current, int total, String name);
+
+  /// Collection download progress with percent
+  ///
+  /// In it, this message translates to:
+  /// **'Collezione {current}/{total}: {name} ({pct}%)'**
+  String downloadCollectionProgressPct(
+    int current,
+    int total,
+    String name,
+    int pct,
+  );
+
+  /// Single collection download progress with percent
+  ///
+  /// In it, this message translates to:
+  /// **'{name} ({pct}%)'**
+  String downloadProgressPct(String name, int pct);
+
+  /// Card info row label: album
+  ///
+  /// In it, this message translates to:
+  /// **'Album'**
+  String get cardLabelAlbum;
+
+  /// Card info row label: quantity
+  ///
+  /// In it, this message translates to:
+  /// **'Quantità'**
+  String get cardLabelQuantity;
+
+  /// Card info row label: type
+  ///
+  /// In it, this message translates to:
+  /// **'Tipo'**
+  String get cardLabelType;
+
+  /// Card info row label: rarity
+  ///
+  /// In it, this message translates to:
+  /// **'Rarità'**
+  String get cardLabelRarity;
+
+  /// Search on CardTrader link
+  ///
+  /// In it, this message translates to:
+  /// **'Cerca su CardTrader ↗'**
+  String get cardSearchOnCardtrader;
+
+  /// Album full message
+  ///
+  /// In it, this message translates to:
+  /// **'{name} ha raggiunto la capacità massima ({current}/{max}).\n\nAumenta la capacità dell\'album oppure seleziona un altro album.'**
+  String cardDialogAlbumFullMsg(String name, int current, int max);
+
+  /// Album max capacity field label
+  ///
+  /// In it, this message translates to:
+  /// **'CAPACITÀ MASSIMA'**
+  String get albumMaxCapacityLabel;
+
+  /// AI scanner privacy dialog title
+  ///
+  /// In it, this message translates to:
+  /// **'Informativa scanner AI'**
+  String get scannerPrivacyTitle;
+
+  /// AI scanner privacy dialog body
+  ///
+  /// In it, this message translates to:
+  /// **'Per identificare le tue carte, il fotogramma acquisito viene inviato temporaneamente ai servizi AI di Google (Gemini) tramite connessione cifrata.\n\nLe immagini non vengono conservate da Deck Master né da Google oltre il tempo necessario all\'elaborazione della singola richiesta.\n\nContinuando autorizzi questo trasferimento. Puoi rifiutare: in quel caso lo scanner non sarà disponibile.'**
+  String get scannerPrivacyBody;
+
+  /// AI deck builder note about using only owned cards
+  ///
+  /// In it, this message translates to:
+  /// **'L\'AI costruirà un deck usando solo le carte nella tua collezione.'**
+  String get aiDeckOnlyOwnedNote;
 }
 
 class _AppLocalizationsDelegate

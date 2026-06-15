@@ -145,6 +145,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   // ─── Header ───────────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
         AnimatedBuilder(
@@ -164,10 +165,10 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.gold, letterSpacing: 2.0),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Porta la tua collezione al livello successivo',
+        Text(
+          l10n.proHeaderSubtitle,
           textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 15),
         ),
         const SizedBox(height: 12),
         // Sconto lancio badge
@@ -182,14 +183,14 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
               BoxShadow(color: const Color(0xFFFF6B35).withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4)),
             ],
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.local_fire_department, color: Colors.white, size: 15),
-              SizedBox(width: 5),
+              const Icon(Icons.local_fire_department, color: Colors.white, size: 15),
+              const SizedBox(width: 5),
               Text(
-                'SCONTO LANCIO — OFFERTA LIMITATA',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.8),
+                l10n.proLaunchBadge,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.8),
               ),
             ],
           ),
@@ -201,15 +202,16 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   // ─── Features ─────────────────────────────────────────────────────────────
 
   Widget _buildFeatures() {
-    const features = [
-      _Feature(Icons.table_chart_outlined,        'Esportazione Excel',       'Scarica la raccolta in .xlsx'),
-      _Feature(Icons.analytics_outlined,           'Statistiche Avanzate',     'Valore, rarità, trend nel tempo'),
-      _Feature(Icons.trending_up,                  'ROI & Investimento',       'Calcola il rendimento della raccolta'),
-      _Feature(Icons.share_outlined,               'Condivisione Deck',        'Genera link condivisibili per i mazzi'),
-      _Feature(Icons.auto_awesome,                 'AI Deck Builder',          'Costruttore automatico per Yu-Gi-Oh!'),
-      _Feature(Icons.notifications_active_outlined,'Avvisi Prezzi Wishlist',   'Notifiche quando il prezzo scende'),
-      _Feature(Icons.block,                        'Senza Pubblicità',         'Esperienza pulita senza interruzioni'),
-      _Feature(Icons.support_agent,                'Supporto Prioritario',     'Risposta garantita entro 24h'),
+    final l10n = AppLocalizations.of(context)!;
+    final features = [
+      _Feature(Icons.table_chart_outlined,         l10n.proFeatExcelTitle,   l10n.proFeatExcelSub),
+      _Feature(Icons.analytics_outlined,           l10n.proFeatStatsTitle,   l10n.proFeatStatsSub),
+      _Feature(Icons.trending_up,                  l10n.proFeatRoiTitle,     l10n.proFeatRoiSub),
+      _Feature(Icons.share_outlined,               l10n.proFeatShareTitle,   l10n.proFeatShareSub),
+      _Feature(Icons.auto_awesome,                 l10n.proFeatAiTitle,      l10n.proFeatAiSub),
+      _Feature(Icons.notifications_active_outlined,l10n.proFeatAlertsTitle,  l10n.proFeatAlertsSub),
+      _Feature(Icons.block,                        l10n.proFeatNoAdsTitle,   l10n.proFeatNoAdsSub),
+      _Feature(Icons.support_agent,                l10n.proFeatSupportTitle, l10n.proFeatSupportSub),
     ];
 
     return Container(
@@ -222,9 +224,9 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'TUTTO INCLUSO NEL PRO',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.gold, letterSpacing: 1.5),
+          Text(
+            l10n.proAllIncluded,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.gold, letterSpacing: 1.5),
           ),
           const SizedBox(height: 16),
           ...features.map((f) => _FeatureTile(feature: f)),
@@ -236,33 +238,34 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   // ─── Pricing ──────────────────────────────────────────────────────────────
 
   Widget _buildPricingSection() {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 2, bottom: 12),
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 12),
           child: Text(
-            'SCEGLI IL TUO PIANO',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textHint, letterSpacing: 1.2),
+            l10n.proChoosePlan,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textHint, letterSpacing: 1.2),
           ),
         ),
         _PlanCard(
           plan: _Plan.monthly,
           selected: _selectedPlan == _Plan.monthly,
-          title: 'Mensile',
+          title: l10n.proMonthlyLabel,
           price: _monthly,
-          period: 'mese',
-          note: 'Flessibile, disdici quando vuoi',
+          period: l10n.proMonthPeriod,
+          note: l10n.proMonthlyNote,
           onTap: () => setState(() => _selectedPlan = _Plan.monthly),
         ),
         const SizedBox(height: 10),
         _PlanCard(
           plan: _Plan.semiannual,
           selected: _selectedPlan == _Plan.semiannual,
-          title: 'Semestrale',
+          title: l10n.proSemiannualLabel,
           price: _semiannual,
-          period: '6 mesi',
-          note: '€${(_semiannual / 6).toStringAsFixed(2)}/mese · risparmia il 27%',
+          period: l10n.proSemiannualPeriod,
+          note: l10n.proSaveNote((_semiannual / 6).toStringAsFixed(2), '27'),
           badge: '−27%',
           onTap: () => setState(() => _selectedPlan = _Plan.semiannual),
         ),
@@ -270,11 +273,11 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
         _PlanCard(
           plan: _Plan.annual,
           selected: _selectedPlan == _Plan.annual,
-          title: 'Annuale',
+          title: l10n.proYearlyLabel,
           price: _annual,
-          period: 'anno',
+          period: l10n.proYearPeriod,
           originalPrice: _annualOriginal,
-          note: '€${(_annual / 12).toStringAsFixed(2)}/mese · risparmia il 44%',
+          note: l10n.proSaveNote((_annual / 12).toStringAsFixed(2), '44'),
           badge: '−44%',
           isLaunchDeal: true,
           onTap: () => setState(() => _selectedPlan = _Plan.annual),
@@ -286,6 +289,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   // ─── CTA ──────────────────────────────────────────────────────────────────
 
   Widget _buildCTA() {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
         SizedBox(
@@ -297,7 +301,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
                 : const Icon(Icons.star, size: 20),
             label: Text(
-              _isPurchasing ? 'Elaborazione...' : 'Abbonati ora',
+              _isPurchasing ? l10n.proProcessing : l10n.proSubscribeNow,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             style: FilledButton.styleFrom(
@@ -312,7 +316,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           future: _proStatusFuture,
           builder: (context, snap) {
             if (snap.data == true) {
-              return const Text('✓ Sei già abbonato a Pro!', style: TextStyle(color: AppColors.gold, fontSize: 13));
+              return Text(l10n.proAlreadySubscribed, style: const TextStyle(color: AppColors.gold, fontSize: 13));
             }
             return const SizedBox.shrink();
           },
@@ -324,23 +328,24 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   // ─── Footer ───────────────────────────────────────────────────────────────
 
   Widget _buildFooter() {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
-        const Text(
-          'Annulla in qualsiasi momento · Nessun vincolo',
-          style: TextStyle(color: AppColors.textHint, fontSize: 12),
+        Text(
+          l10n.proFooterCancel,
+          style: const TextStyle(color: AppColors.textHint, fontSize: 12),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Il pagamento verrà addebitato tramite App Store / Google Play',
-          style: TextStyle(color: AppColors.textHint, fontSize: 11),
+        Text(
+          l10n.proFooterPayment,
+          style: const TextStyle(color: AppColors.textHint, fontSize: 11),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 12),
         TextButton(
           onPressed: _isPurchasing ? null : _onRestoreTap,
-          child: const Text('Ripristina acquisti', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          child: Text(l10n.proRestorePurchases, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
         ),
       ],
     );
@@ -427,7 +432,7 @@ class _PlanCard extends StatelessWidget {
                             color: const Color(0xFFFF6B35),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text('LANCIO', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                          child: Text(AppLocalizations.of(context)!.proLaunchTag, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
                         ),
                       ],
                     ],

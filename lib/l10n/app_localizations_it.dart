@@ -1910,4 +1910,732 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get roiPurchasePriceHelper => 'Inserisci il prezzo per singola copia';
+
+  @override
+  String get btnRestore => 'Ripristina';
+
+  @override
+  String get settingsSectionLegal => 'Legale';
+
+  @override
+  String get settingsPrivacyPolicy => 'Informativa sulla Privacy';
+
+  @override
+  String get settingsPrivacyPolicySubtitle =>
+      'Come raccogliamo e utilizziamo i tuoi dati';
+
+  @override
+  String get settingsPrivacyOpenError =>
+      'Impossibile aprire la pagina. Riprova più tardi.';
+
+  @override
+  String get settingsExportExcel => 'Esporta in Excel';
+
+  @override
+  String get settingsExportExcelSubtitle =>
+      'Scarica la raccolta come file .xlsx';
+
+  @override
+  String get settingsUpgradePro => 'Passa a Pro';
+
+  @override
+  String get settingsUpgradeProSubtitle =>
+      'Sblocca tutte le funzionalità premium';
+
+  @override
+  String get settingsResetStarting => 'Avvio...';
+
+  @override
+  String get proPromoBadge => 'SCONTO LANCIO';
+
+  @override
+  String get proPromoPriceFrom => 'da €1.67/mese';
+
+  @override
+  String get proPromoCta => 'Scopri Pro';
+
+  @override
+  String get proPromoDismiss => 'No grazie';
+
+  @override
+  String get proBenefitStats => 'Statistiche & ROI avanzati';
+
+  @override
+  String get proBenefitExcel => 'Esportazione Excel';
+
+  @override
+  String get proBenefitAi => 'AI Deck Builder (Yu-Gi-Oh!)';
+
+  @override
+  String get proBenefitAlerts => 'Avvisi prezzi Wishlist';
+
+  @override
+  String get proBenefitNoAds => 'Zero pubblicità';
+
+  @override
+  String get proBenefitShare => 'Condivisione deck';
+
+  @override
+  String get proHeaderSubtitle =>
+      'Porta la tua collezione al livello successivo';
+
+  @override
+  String get proLaunchBadge => 'SCONTO LANCIO — OFFERTA LIMITATA';
+
+  @override
+  String get proAllIncluded => 'TUTTO INCLUSO NEL PRO';
+
+  @override
+  String get proChoosePlan => 'SCEGLI IL TUO PIANO';
+
+  @override
+  String get proSemiannualLabel => 'Semestrale';
+
+  @override
+  String get proSemiannualPeriod => '6 mesi';
+
+  @override
+  String get proMonthlyNote => 'Flessibile, disdici quando vuoi';
+
+  @override
+  String proSaveNote(String price, String percent) {
+    return '€$price/mese · risparmia il $percent%';
+  }
+
+  @override
+  String get proLaunchTag => 'LANCIO';
+
+  @override
+  String get proProcessing => 'Elaborazione...';
+
+  @override
+  String get proSubscribeNow => 'Abbonati ora';
+
+  @override
+  String get proAlreadySubscribed => '✓ Sei già abbonato a Pro!';
+
+  @override
+  String get proFooterCancel => 'Annulla in qualsiasi momento · Nessun vincolo';
+
+  @override
+  String get proFooterPayment =>
+      'Il pagamento verrà addebitato tramite App Store / Google Play';
+
+  @override
+  String get proRestorePurchases => 'Ripristina acquisti';
+
+  @override
+  String get proFeatExcelTitle => 'Esportazione Excel';
+
+  @override
+  String get proFeatExcelSub => 'Scarica la raccolta in .xlsx';
+
+  @override
+  String get proFeatStatsTitle => 'Statistiche Avanzate';
+
+  @override
+  String get proFeatStatsSub => 'Valore, rarità, trend nel tempo';
+
+  @override
+  String get proFeatRoiTitle => 'ROI & Investimento';
+
+  @override
+  String get proFeatRoiSub => 'Calcola il rendimento della raccolta';
+
+  @override
+  String get proFeatShareTitle => 'Condivisione Deck';
+
+  @override
+  String get proFeatShareSub => 'Genera link condivisibili per i mazzi';
+
+  @override
+  String get proFeatAiTitle => 'AI Deck Builder';
+
+  @override
+  String get proFeatAiSub => 'Costruttore automatico per Yu-Gi-Oh!';
+
+  @override
+  String get proFeatAlertsTitle => 'Avvisi Prezzi Wishlist';
+
+  @override
+  String get proFeatAlertsSub => 'Notifiche quando il prezzo scende';
+
+  @override
+  String get proFeatNoAdsTitle => 'Senza Pubblicità';
+
+  @override
+  String get proFeatNoAdsSub => 'Esperienza pulita senza interruzioni';
+
+  @override
+  String get proFeatSupportTitle => 'Supporto Prioritario';
+
+  @override
+  String get proFeatSupportSub => 'Risposta garantita entro 24h';
+
+  @override
+  String get supportHeaderTitle => 'Come possiamo aiutarti?';
+
+  @override
+  String get supportHeaderSubtitle =>
+      'Contattaci per qualsiasi problema o suggerimento.';
+
+  @override
+  String get supportSectionContact => 'CONTATTACI';
+
+  @override
+  String get supportSectionOpinion => 'LA TUA OPINIONE CONTA';
+
+  @override
+  String get supportSectionFaq => 'DOMANDE FREQUENTI';
+
+  @override
+  String get supportSectionOther => 'ALTRO';
+
+  @override
+  String get supportReviewTitle => 'Lascia una recensione';
+
+  @override
+  String get supportReviewSubtitle =>
+      'Hai apprezzato l\'app? Aiutaci con una valutazione sullo store';
+
+  @override
+  String get supportShareTitle => 'Condividi Deck Master';
+
+  @override
+  String get supportShareSubtitle => 'Consiglia l\'app ad altri collezionisti';
+
+  @override
+  String get supportSuggestionsTitle => 'Suggerimenti';
+
+  @override
+  String get supportSuggestionsSubtitle =>
+      'Hai idee per migliorare l\'app? Scrivici';
+
+  @override
+  String get supportGuideTitle => 'Guida alle funzionalità';
+
+  @override
+  String get supportGuideSubtitle =>
+      'Scopri passo per passo come usare ogni funzione dell\'app';
+
+  @override
+  String get supportTutorialTitle => 'Rivedi il tutorial';
+
+  @override
+  String get supportTutorialSubtitle =>
+      'Guarda di nuovo la presentazione iniziale dell\'app';
+
+  @override
+  String get supportBugEmailSubject => 'Segnalazione Problema - Deck Master';
+
+  @override
+  String supportBugEmailBody(String email) {
+    return 'Ciao,\n\nHo riscontrato il seguente problema:\n\n[Descrivi il problema qui]\n\n---\nAccount: $email';
+  }
+
+  @override
+  String get supportMissingEmailSubject => 'Carte Mancanti - Deck Master';
+
+  @override
+  String supportMissingEmailBody(String email) {
+    return 'Ciao,\n\nVorrei segnalare le seguenti carte mancanti/errate:\n\nCollezione: [Yu-Gi-Oh! / One Piece / ...]\nCarta: [Nome carta]\nSet: [Numero Codice]\nMotivo: [Mancante / Dati errati / Immagine sbagliata]\n\n---\nAccount: $email';
+  }
+
+  @override
+  String get supportReviewEmailSubject => 'Recensione - Deck Master';
+
+  @override
+  String supportReviewEmailBody(String email) {
+    return 'Ciao,\n\nVorrei lasciare il seguente feedback sull\'app:\n\nValutazione: [⭐⭐⭐⭐⭐]\n\n[Scrivi qui la tua opinione]\n\n---\nAccount: $email';
+  }
+
+  @override
+  String get supportSuggestEmailSubject => 'Suggerimenti - Deck Master';
+
+  @override
+  String supportSuggestEmailBody(String email) {
+    return 'Ciao,\n\nVorrei suggerire la seguente funzionalità o miglioramento:\n\n[Descrivi il suggerimento qui]\n\n---\nAccount: $email';
+  }
+
+  @override
+  String get supportShareText =>
+      '🃏 Gestisco la mia collezione di carte con Deck Master!\n\nSupporta Yu-Gi-Oh!, Pokémon, One Piece, Magic e molti altri TCG. Prezzi aggiornati, scanner, deck builder e tanto altro.\n\nScaricalo su App Store e Google Play: cerca \"Deck Master TCG\"';
+
+  @override
+  String get supportFaqQ1 => 'Come aggiungo una carta alla mia collezione?';
+
+  @override
+  String get supportFaqA1 =>
+      'Puoi aggiungere carte in tre modi: cerca dal Catalogo e tocca \"Aggiungi\", usa lo Scanner per fotografare la carta, oppure tocca una carta nel dettaglio del set. Specifica la quantità e conferma.';
+
+  @override
+  String get supportFaqQ2 => 'Come funziona la Wishlist?';
+
+  @override
+  String get supportFaqA2 =>
+      'Tocca il ❤ su qualsiasi carta per aggiungerla alla Wishlist. Puoi impostare un prezzo obiettivo: riceverai una notifica push quando il prezzo scende sotto la soglia impostata.';
+
+  @override
+  String get supportFaqQ3 => 'Come costruisco un deck?';
+
+  @override
+  String get supportFaqA3 =>
+      'Vai nella raccolta della tua collezione, seleziona la tab \"Deck\" e tocca + per creare un nuovo mazzo. Apri il deck e aggiungi le carte dalla sezione \"Carte Possedute\" in basso.';
+
+  @override
+  String get supportFaqQ4 => 'Come sincronizzo i dati su più dispositivi?';
+
+  @override
+  String get supportFaqA4 =>
+      'La sincronizzazione avviene automaticamente quando sei connesso. Accedi con lo stesso account su ogni dispositivo. Puoi anche forzarla manualmente da Impostazioni → Sincronizzazione.';
+
+  @override
+  String get supportFaqQ5 => 'Cos\'è il piano Pro?';
+
+  @override
+  String get supportFaqA5 =>
+      'Il piano Pro sblocca: esportazione Excel, statistiche avanzate, ROI, condivisione deck, costruttore AI per Yu-Gi-Oh! e nessuna pubblicità. Lo trovi in Impostazioni → Passa a Pro.';
+
+  @override
+  String get supportFaqQ6 => 'Come funziona lo scanner?';
+
+  @override
+  String get supportFaqA6 =>
+      'Tocca l\'icona scanner in alto. Inquadra la carta con la fotocamera in buona illuminazione e tienila ferma. L\'app la riconosce automaticamente e ti propone di aggiungerla alla raccolta.';
+
+  @override
+  String get supportFaqQ7 => 'I prezzi sono aggiornati?';
+
+  @override
+  String get supportFaqA7 =>
+      'Sì, i prezzi vengono sincronizzati ogni giorno da CardTrader. Se vuoi aggiornare manualmente, vai in Impostazioni → Sincronizzazione e tocca \"Aggiorna Prezzi\".';
+
+  @override
+  String get guideAppBarTitle => 'Guida alle Funzionalità';
+
+  @override
+  String get guideHeaderTitle => 'Come funziona Deck Master';
+
+  @override
+  String get guideHeaderSubtitle =>
+      'Tocca una funzionalità per scoprire come usarla passo per passo.';
+
+  @override
+  String get guideCollectionsTitle => 'Le Collezioni';
+
+  @override
+  String get guideCollectionsDesc =>
+      'Ogni collezione rappresenta un gioco di carte (Yu-Gi-Oh!, Pokémon, ecc.). Sblocca le collezioni che possiedi per iniziare a gestirle.';
+
+  @override
+  String get guideCollectionsStep1 =>
+      'Vai nelle Impostazioni → Gestione Collezioni';
+
+  @override
+  String get guideCollectionsStep2 => 'Attiva le collezioni che possiedi';
+
+  @override
+  String get guideCollectionsStep3 =>
+      'Ogni collezione apparirà nel menu principale';
+
+  @override
+  String get guideCollectionsStep4 =>
+      'Puoi cambiare la collezione attiva dal selettore in alto';
+
+  @override
+  String get guideAddTitle => 'Aggiungere Carte';
+
+  @override
+  String get guideAddDesc =>
+      'Ci sono tre modi per aggiungere carte alla tua collezione: manualmente dal catalogo, tramite scanner o importando da file.';
+
+  @override
+  String get guideAddStep1 =>
+      'Catalogo: cerca la carta, tocca \"Aggiungi\" e inserisci la quantità';
+
+  @override
+  String get guideAddStep2 =>
+      'Scanner: inquadra la carta con la fotocamera per un riconoscimento automatico';
+
+  @override
+  String get guideAddStep3 =>
+      'Usa il filtro per cercare per nome, set o codice seriale';
+
+  @override
+  String get guideAddStep4 =>
+      'Le carte aggiunte appaiono subito nella tua raccolta';
+
+  @override
+  String get guideScannerTitle => 'Scanner Carte';
+
+  @override
+  String get guideScannerDesc =>
+      'Fotografa una carta con la fotocamera per riconoscerla automaticamente e aggiungerla alla collezione in un tocco.';
+
+  @override
+  String get guideScannerStep1 => 'Tocca l\'icona scanner nella barra in alto';
+
+  @override
+  String get guideScannerStep2 =>
+      'Inquadra bene la carta — tieni la fotocamera ferma';
+
+  @override
+  String get guideScannerStep3 =>
+      'L\'app riconosce la carta e mostra i dettagli';
+
+  @override
+  String get guideScannerStep4 =>
+      'Conferma la quantità e aggiungi alla collezione';
+
+  @override
+  String get guideScannerStep5 =>
+      'Funziona meglio con buona illuminazione e carta non riflettente';
+
+  @override
+  String get guideCatalogTitle => 'Catalogo & Prezzi';
+
+  @override
+  String get guideCatalogDesc =>
+      'Il catalogo mostra tutte le carte disponibili con prezzi aggiornati da CardTrader. Puoi sfogliare, filtrare e aggiungere direttamente dalla lista.';
+
+  @override
+  String get guideCatalogStep1 =>
+      'Seleziona la collezione e tocca \"Catalogo\"';
+
+  @override
+  String get guideCatalogStep2 =>
+      'Usa la barra di ricerca per trovare una carta specifica';
+
+  @override
+  String get guideCatalogStep3 =>
+      'I prezzi si aggiornano automaticamente ogni giorno';
+
+  @override
+  String get guideCatalogStep4 =>
+      'Tocca il ❤ per aggiungere alla Wishlist direttamente dal catalogo';
+
+  @override
+  String get guideCatalogStep5 =>
+      'Tocca una carta per vedere il dettaglio completo e i prezzi per rarità';
+
+  @override
+  String get guideAlbumTitle => 'Album';
+
+  @override
+  String get guideAlbumDesc =>
+      'Gli album ti permettono di organizzare le carte della tua raccolta in raccoglitori virtuali, con una capacità massima personalizzabile.';
+
+  @override
+  String get guideAlbumStep1 => 'Nella raccolta, vai nella tab \"Album\"';
+
+  @override
+  String get guideAlbumStep2 =>
+      'Tocca + per creare un nuovo album e imposta nome e capacità';
+
+  @override
+  String get guideAlbumStep3 => 'Apri un album per vedere le carte contenute';
+
+  @override
+  String get guideAlbumStep4 =>
+      'Aggiungi carte all\'album dalla raccolta principale';
+
+  @override
+  String get guideAlbumStep5 =>
+      'Usa i contatori per sapere quante carte hai inserito';
+
+  @override
+  String get guideDeckTitle => 'Deck Builder';
+
+  @override
+  String get guideDeckDesc =>
+      'Costruisci e gestisci i tuoi mazzi da gioco. Tieni traccia di ogni carta, controlla la composizione e condividi i deck con altri giocatori.';
+
+  @override
+  String get guideDeckStep1 => 'Vai nella tab \"Deck\" della tua raccolta';
+
+  @override
+  String get guideDeckStep2 => 'Tocca + per creare un nuovo deck';
+
+  @override
+  String get guideDeckStep3 =>
+      'Apri il deck e aggiungi carte dalla sezione \"Carte Possedute\"';
+
+  @override
+  String get guideDeckStep4 =>
+      'Usa il pulsante condividi per generare un link condivisibile (Pro)';
+
+  @override
+  String get guideDeckStep5 =>
+      'Per Yu-Gi-Oh! puoi usare il costruttore AI per suggerimenti automatici';
+
+  @override
+  String get guideWishlistTitle => 'Wishlist & Avvisi Prezzi';
+
+  @override
+  String get guideWishlistDesc =>
+      'Salva le carte che vuoi acquistare e ricevi notifiche quando il prezzo scende sotto la soglia che hai impostato.';
+
+  @override
+  String get guideWishlistStep1 =>
+      'Tocca il ❤ su qualsiasi carta per aggiungerla alla Wishlist';
+
+  @override
+  String get guideWishlistStep2 =>
+      'Apri la Wishlist dal menu profilo in alto a destra';
+
+  @override
+  String get guideWishlistStep3 => 'Imposta un prezzo obiettivo per ogni carta';
+
+  @override
+  String get guideWishlistStep4 =>
+      'Riceverai una notifica push quando il prezzo scende';
+
+  @override
+  String get guideWishlistStep5 =>
+      'Rimuovi la carta dalla Wishlist una volta acquistata';
+
+  @override
+  String get guideStatsTitle => 'Statistiche & ROI';
+
+  @override
+  String get guideStatsDesc =>
+      'Monitora il valore totale della tua collezione nel tempo e calcola il rendimento del tuo investimento con grafici dettagliati.';
+
+  @override
+  String get guideStatsStep1 =>
+      'Tocca l\'icona grafico nella barra in alto per le statistiche';
+
+  @override
+  String get guideStatsStep2 =>
+      'Visualizza il valore totale, le carte per rarità e i trend';
+
+  @override
+  String get guideStatsStep3 =>
+      'Il ROI confronta il costo stimato di acquisto con il valore attuale';
+
+  @override
+  String get guideStatsStep4 =>
+      'I dati si aggiornano automaticamente con ogni sync prezzi';
+
+  @override
+  String get guideStatsStep5 => 'Disponibile solo con piano Pro';
+
+  @override
+  String get guideNotifTitle => 'Notifiche';
+
+  @override
+  String get guideNotifDesc =>
+      'Deck Master ti avvisa quando i prezzi cambiano, quando ci sono aggiornamenti del catalogo o nuove funzionalità disponibili.';
+
+  @override
+  String get guideNotifStep1 =>
+      'Abilita le notifiche nelle Impostazioni → Notifiche';
+
+  @override
+  String get guideNotifStep2 =>
+      'Le notifiche di prezzo arrivano quando un articolo in Wishlist scende';
+
+  @override
+  String get guideNotifStep3 =>
+      'Puoi vedere tutte le notifiche passate nella sezione Notifiche';
+
+  @override
+  String get guideNotifStep4 =>
+      'Tocca una notifica per andare direttamente alla carta';
+
+  @override
+  String get guideExportTitle => 'Esportazione Excel';
+
+  @override
+  String get guideExportDesc =>
+      'Esporta tutta la tua raccolta in un file Excel (.xlsx) per analisi esterne, backup o condivisione con altri collezionisti.';
+
+  @override
+  String get guideExportStep1 => 'Vai in Impostazioni → Esportazione';
+
+  @override
+  String get guideExportStep2 => 'Tocca \"Esporta in Excel\"';
+
+  @override
+  String get guideExportStep3 =>
+      'Il file viene generato con Nome, Codice, Collezione, Rarità, Quantità e Valore';
+
+  @override
+  String get guideExportStep4 =>
+      'Scegli dove salvare o condividere il file dal pannello di sistema';
+
+  @override
+  String get guideExportStep5 => 'Disponibile solo con piano Pro';
+
+  @override
+  String get guideSyncTitle => 'Sincronizzazione Cloud';
+
+  @override
+  String get guideSyncDesc =>
+      'I tuoi dati vengono sincronizzati automaticamente su tutti i dispositivi tramite il tuo account. Non perderai mai la tua raccolta.';
+
+  @override
+  String get guideSyncStep1 =>
+      'La sync avviene automaticamente all\'avvio e dopo ogni modifica';
+
+  @override
+  String get guideSyncStep2 =>
+      'Vai in Impostazioni → Sincronizzazione per forzarla manualmente';
+
+  @override
+  String get guideSyncStep3 =>
+      'Se vedi l\'icona ⚠️ c\'è un conflitto: scegli quale versione tenere';
+
+  @override
+  String get guideSyncStep4 =>
+      'Funziona anche offline: le modifiche si sincronizzano al ritorno della connessione';
+
+  @override
+  String dlgDeleteAlbumMsg(String name) {
+    return 'Sei sicuro di voler eliminare \"$name\"?';
+  }
+
+  @override
+  String dlgDeleteAlbumWithCardsMsg(String name, int count) {
+    return 'Sei sicuro di voler eliminare \"$name\"?\n\nVerranno eliminate anche tutte le $count carte contenute.\n\nQuesta azione non può essere annullata.';
+  }
+
+  @override
+  String get comingSoonTitle => 'In arrivo';
+
+  @override
+  String get comingSoonMsg =>
+      'Funzionalità in fase di sviluppo, arriverà a breve!';
+
+  @override
+  String get msgNameRequired => 'Il nome è obbligatorio';
+
+  @override
+  String get downloadStarting => 'Avvio...';
+
+  @override
+  String get downloadTitle => 'Deck Master — Download';
+
+  @override
+  String get tutorialBtnSkip => 'Salta';
+
+  @override
+  String get tutorialBtnNext => 'Avanti';
+
+  @override
+  String get tutorialBtnStart => 'Inizia!';
+
+  @override
+  String get tutorialSlide1Title => 'Benvenuto in Deck Master';
+
+  @override
+  String get tutorialSlide1Desc =>
+      'La tua app per gestire, valorizzare e analizzare la tua collezione di carte collezionabili.\n\nSupporta 13 TCG: Yu-Gi-Oh!, Pokémon, One Piece, Magic e molti altri.';
+
+  @override
+  String get tutorialSlide2Title => 'Le tue Collezioni';
+
+  @override
+  String get tutorialSlide2Desc =>
+      'Sblocca le collezioni che possiedi. Per ogni collezione puoi aggiungere carte, sfogliare il catalogo completo e costruire mazzi.';
+
+  @override
+  String get tutorialSlide3Title => 'Catalogo Carte';
+
+  @override
+  String get tutorialSlide3Desc =>
+      'Sfoglia il catalogo completo con prezzi aggiornati da CardTrader.\n\nTocca il ❤️ su una carta per aggiungerla alla Wishlist direttamente dal catalogo.';
+
+  @override
+  String get tutorialSlide4Title => 'Scanner Carte';
+
+  @override
+  String get tutorialSlide4Desc =>
+      'Inquadra una carta con la fotocamera per riconoscerla automaticamente e aggiungerla alla tua collezione in un click.';
+
+  @override
+  String get tutorialSlide5Title => 'Wishlist & Avvisi Prezzi';
+
+  @override
+  String get tutorialSlide5Desc =>
+      'Aggiungi le carte che vuoi acquistare alla Wishlist. Imposta un prezzo obiettivo e ricevi una notifica quando il prezzo scende sotto la soglia.';
+
+  @override
+  String get tutorialSlide6Title => 'Analisi & ROI';
+
+  @override
+  String get tutorialSlide6Desc =>
+      'Monitora il valore totale della tua collezione nel tempo. Scopri il tuo ritorno sull\'investimento con grafici e statistiche dettagliate.';
+
+  @override
+  String get tutorialSlide7Title => 'Deck Builder';
+
+  @override
+  String get tutorialSlide7Desc =>
+      'Costruisci e gestisci i tuoi mazzi. Analizza la composizione, il valore e tieni traccia di tutto quello che hai costruito.';
+
+  @override
+  String get downloadCatalog => 'Catalogo';
+
+  @override
+  String get downloadRestoreCatalog => 'Ripristino catalogo';
+
+  @override
+  String downloadRestoreProgress(int current, int total, String name) {
+    return 'Ripristino $current/$total: $name';
+  }
+
+  @override
+  String downloadCollectionProgress(int current, int total, String name) {
+    return 'Collezione $current/$total: $name';
+  }
+
+  @override
+  String downloadCollectionProgressPct(
+    int current,
+    int total,
+    String name,
+    int pct,
+  ) {
+    return 'Collezione $current/$total: $name ($pct%)';
+  }
+
+  @override
+  String downloadProgressPct(String name, int pct) {
+    return '$name ($pct%)';
+  }
+
+  @override
+  String get cardLabelAlbum => 'Album';
+
+  @override
+  String get cardLabelQuantity => 'Quantità';
+
+  @override
+  String get cardLabelType => 'Tipo';
+
+  @override
+  String get cardLabelRarity => 'Rarità';
+
+  @override
+  String get cardSearchOnCardtrader => 'Cerca su CardTrader ↗';
+
+  @override
+  String cardDialogAlbumFullMsg(String name, int current, int max) {
+    return '$name ha raggiunto la capacità massima ($current/$max).\n\nAumenta la capacità dell\'album oppure seleziona un altro album.';
+  }
+
+  @override
+  String get albumMaxCapacityLabel => 'CAPACITÀ MASSIMA';
+
+  @override
+  String get scannerPrivacyTitle => 'Informativa scanner AI';
+
+  @override
+  String get scannerPrivacyBody =>
+      'Per identificare le tue carte, il fotogramma acquisito viene inviato temporaneamente ai servizi AI di Google (Gemini) tramite connessione cifrata.\n\nLe immagini non vengono conservate da Deck Master né da Google oltre il tempo necessario all\'elaborazione della singola richiesta.\n\nContinuando autorizzi questo trasferimento. Puoi rifiutare: in quel caso lo scanner non sarà disponibile.';
+
+  @override
+  String get aiDeckOnlyOwnedNote =>
+      'L\'AI costruirà un deck usando solo le carte nella tua collezione.';
 }

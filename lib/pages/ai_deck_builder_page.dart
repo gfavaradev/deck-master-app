@@ -418,9 +418,9 @@ Rispondi SOLO con un oggetto JSON valido (no markdown, no testo extra):
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'L\'AI costruirà un deck usando solo le carte nella tua collezione.',
-          style: TextStyle(color: AppColors.textHint, fontSize: 11),
+        Text(
+          AppLocalizations.of(context)!.aiDeckOnlyOwnedNote,
+          style: const TextStyle(color: AppColors.textHint, fontSize: 11),
         ),
       ],
     );
