@@ -1,6 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/ad_service.dart';
 import '../services/user_service.dart';
 
@@ -16,35 +18,75 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   BannerAd? _bannerAd;
   AdSize? _adSize;
   bool _isAdLoaded = false;
-  bool _isPro = true; // default: nascosto finché non sappiamo lo stato
+  bool _isPro = false;
+
+  int _retryCount = 0;
+  static const _maxRetries = 3;
+  static const _kProCacheKey = 'banner_is_pro_';
 
   @override
   void initState() {
     super.initState();
-    _checkAndLoad();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkAndLoad();
+    });
+  }
+
+  Future<AdSize?> _computeAdSize() {
+    final mq = MediaQuery.of(context);
+    final width = (mq.size.width - mq.padding.left - mq.padding.right).truncate();
+    return AdSize.getLargeAnchoredAdaptiveBannerAdSizeWithOrientation(mq.orientation, width);
   }
 
   Future<void> _checkAndLoad() async {
-    final user = await UserService().getCurrentUser();
     if (!mounted) return;
-    if (user?.isPro == true) {
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final prefs = await SharedPreferences.getInstance();
+    final cachedPro = uid != null && (prefs.getBool('$_kProCacheKey$uid') ?? false);
+
+    if (!mounted) return;
+
+    if (cachedPro) {
       setState(() => _isPro = true);
+      _verifyProInBackground(uid, prefs);
       return;
     }
-    setState(() => _isPro = false);
-    _loadAd();
-  }
 
-  int _retryCount = 0;
-  static const _maxRetries = 3;
-
-  Future<void> _loadAd() async {
-    // Banner adattivo: usa tutta la larghezza disponibile dello schermo
-    final screenWidth = MediaQuery.of(context).size.width.truncate();
-    final adSize = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(screenWidth);
+    // Non Pro dalla cache → carica subito l'ad e verifica Firestore in parallelo
+    final adSize = await _computeAdSize();
     if (!mounted || adSize == null) return;
     _adSize = adSize;
+    _createBannerAd(adSize);
 
+    _verifyProInBackground(uid, prefs);
+  }
+
+  Future<void> _verifyProInBackground(String? uid, SharedPreferences prefs) async {
+    final user = await UserService().getCurrentUser();
+    final isProNow = user?.isPro == true;
+    if (uid != null) {
+      if (isProNow) {
+        await prefs.setBool('$_kProCacheKey$uid', true);
+      } else {
+        await prefs.remove('$_kProCacheKey$uid');
+      }
+    }
+    if (!mounted) return;
+    if (isProNow) {
+      setState(() => _isPro = true);
+      _bannerAd?.dispose();
+      _bannerAd = null;
+    } else if (_isPro) {
+      setState(() => _isPro = false);
+      final adSize = await _computeAdSize();
+      if (!mounted || adSize == null) return;
+      _adSize = adSize;
+      _createBannerAd(adSize);
+    }
+  }
+
+  void _createBannerAd(AdSize adSize) {
     final ad = BannerAd(
       adUnitId: AdService.bannerAdUnitId,
       size: adSize,
@@ -58,7 +100,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
           if (mounted && _retryCount < _maxRetries) {
             _retryCount++;
             Future.delayed(Duration(seconds: _retryCount * 5), () {
-              if (mounted) _loadAd();
+              if (mounted && _adSize != null) _createBannerAd(_adSize!);
             });
           }
         },
@@ -79,13 +121,10 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     if (kIsWeb || _isPro || !_isAdLoaded || _bannerAd == null || _adSize == null) {
       return const SizedBox.shrink();
     }
-    return SafeArea(
-      top: false,
-      child: SizedBox(
-        width: double.infinity,
-        height: _adSize!.height.toDouble(),
-        child: AdWidget(ad: _bannerAd!),
-      ),
+    return SizedBox(
+      width: double.infinity,
+      height: _adSize!.height.toDouble(),
+      child: AdWidget(ad: _bannerAd!),
     );
   }
 }

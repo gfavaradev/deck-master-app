@@ -219,6 +219,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get menuProfile => 'Profilo';
 
   @override
+  String get menuWishlist => ' Preferiti';
+
+  @override
   String get menuSettings => 'Impostazioni';
 
   @override

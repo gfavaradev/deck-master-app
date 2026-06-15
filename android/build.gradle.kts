@@ -3,6 +3,11 @@ allprojects {
         google()
         mavenCentral()
     }
+    configurations.all {
+        // Pin version to local Gradle cache to avoid Maven metadata fetch failures
+        // when Maven repos are unreachable (DNS/network issues).
+        resolutionStrategy.force("androidx.test:runner:1.3.0")
+    }
 }
 
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()

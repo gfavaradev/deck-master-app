@@ -147,17 +147,21 @@ class _WishlistPageState extends State<WishlistPage> {
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _items.isEmpty
-                    ? _buildEmpty()
-                    : _buildList(),
-          ),
-          if (!kIsWeb) const BannerAdWidget(),
-        ],
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Column(
+          children: [
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _items.isEmpty
+                      ? _buildEmpty()
+                      : _buildList(),
+            ),
+            if (!kIsWeb) const BannerAdWidget(),
+          ],
+        ),
       ),
     );
   }
@@ -170,7 +174,7 @@ class _WishlistPageState extends State<WishlistPage> {
           Icon(Icons.favorite_border, size: 72, color: AppColors.textHint),
           const SizedBox(height: 16),
           const Text(
-            'La tua Wishlist è vuota', // TODO: l10n
+            'Non hai ancora aggiunto carte hai preferiti ',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 18),
           ),
           const SizedBox(height: 8),
@@ -194,7 +198,7 @@ class _WishlistPageState extends State<WishlistPage> {
       onRefresh: _load,
       color: AppColors.gold,
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
         itemCount: _items.length + (alerts.isNotEmpty ? 1 : 0),
         itemBuilder: (ctx, i) {
           if (alerts.isNotEmpty && i == 0) return _buildAlertBanner(alerts.length);

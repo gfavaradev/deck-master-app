@@ -10,6 +10,7 @@ import '../theme/app_colors.dart';
 import '../utils/currency_formatter.dart';
 import '../widgets/collection_value_chart.dart';
 import 'set_completion_page.dart';
+import 'roi_page.dart';
 
 class StatsPage extends StatefulWidget {
   final String? collectionKey;
@@ -87,13 +88,23 @@ class _StatsPageState extends State<StatsPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.statsTitle),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.trending_up),
+            tooltip: l10n.tooltipRoi,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RoiPage()),
+            ),
+          ),
+        ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SafeArea(
-              top: false,
-              bottom: true,
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Column(
+          children: [
+            Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : RefreshIndicator(
@@ -112,9 +123,9 @@ class _StatsPageState extends State<StatsPage> {
                       ),
                   ),
             ),
-          ),
-          if (!kIsWeb) const BannerAdWidget(),
-        ],
+            if (!kIsWeb) const BannerAdWidget(),
+          ],
+        ),
       ),
     );
   }

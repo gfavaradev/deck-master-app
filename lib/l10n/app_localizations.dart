@@ -500,6 +500,12 @@ abstract class AppLocalizations {
   /// **'Profilo'**
   String get menuProfile;
 
+  /// Wishlist menu item
+  ///
+  /// In it, this message translates to:
+  /// **' Preferiti'**
+  String get menuWishlist;
+
   /// Settings menu item
   ///
   /// In it, this message translates to:

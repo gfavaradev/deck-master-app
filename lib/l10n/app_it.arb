@@ -197,6 +197,9 @@
   "menuProfile": "Profilo",
   "@menuProfile": { "description": "Profile menu item" },
 
+  "menuWishlist": " Preferiti",
+  "@menuWishlist": { "description": "Wishlist menu item" },
+
   "menuSettings": "Impostazioni",
   "@menuSettings": { "description": "Settings menu item" },
 

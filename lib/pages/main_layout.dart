@@ -32,7 +32,6 @@ import '../widgets/user_avatar_widget.dart';
 import 'notifications_page.dart';
 import 'card_scanner_page.dart';
 import 'wishlist_page.dart';
-import 'roi_page.dart';
 import '../services/price_alert_service.dart';
 import 'tutorial_page.dart';
 
@@ -770,22 +769,6 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 ),
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.favorite_border),
-            tooltip: l10n.tooltipWishlist,
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const WishlistPage()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.trending_up),
-            tooltip: l10n.tooltipRoi,
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const RoiPage()),
-            ),
-          ),
           Stack(
             alignment: Alignment.center,
             children: [
@@ -909,6 +892,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
               if (value == 'profile') {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
                 if (mounted) setState(() => _avatarVersion++);
+              } else if (value == 'wishlist') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const WishlistPage()));
               } else if (value == 'check_update') {
                 final messenger = ScaffoldMessenger.of(context);
                 final shown = await _checkForAppUpdate(force: true);
@@ -939,6 +924,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 child: ListTile(
                   leading: const Icon(Icons.manage_accounts_outlined),
                   title: Text(l10n.menuProfile),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'wishlist',
+                child: ListTile(
+                  leading: const Icon(Icons.favorite_border),
+                  title: Text(l10n.menuWishlist),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -996,17 +989,15 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SafeArea(
-              top: false,
-              bottom: true,
-              child: pageBody,
-            ),
-          ),
-          if (!kIsWeb) const BannerAdWidget(),
-        ],
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Column(
+          children: [
+            Expanded(child: pageBody),
+            if (!kIsWeb) const BannerAdWidget(),
+          ],
+        ),
       ),
       // Bottom nav only shown on narrow screens inside a collection
       bottomNavigationBar: (!isWide && inCollection)
