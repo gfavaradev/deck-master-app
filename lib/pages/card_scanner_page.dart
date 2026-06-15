@@ -333,7 +333,6 @@ class _CardScannerPageState extends State<CardScannerPage> {
     final collectionName = _collectionLabels[collection] ?? collection;
 
     final albums = await _repo.getAlbumsByCollection(collection);
-    final allCards = await _repo.getCardsByCollection(collection);
 
     if (!mounted) return;
 
@@ -352,7 +351,6 @@ class _CardScannerPageState extends State<CardScannerPage> {
       collectionName: collectionName,
       collectionKey: collection,
       availableAlbums: albums,
-      allCards: allCards,
       initialCatalogCard: result.catalogCard,
       onCardAdded: (albumId, serial) {
         if (mounted) {

@@ -1801,6 +1801,80 @@ class DatabaseHelper {
     return maps.map((row) => CardModel.fromMap(row)).toList();
   }
 
+  /// Returns a lightweight map of catalogId+serialNumber → total quantity owned
+  /// for a collection. Used by the catalog page badge overlay without loading
+  /// full CardModel objects into memory.
+  Future<Map<String, int>> getOwnedQuantityMap(String collection) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT c.catalogId, c.serialNumber, SUM(c.quantity) as qty
+      FROM cards c
+      LEFT JOIN albums a ON a.id = c.albumId
+      WHERE c.collection = ? OR a.collection = ?
+      GROUP BY c.catalogId, c.serialNumber
+    ''', [collection, collection]);
+    final map = <String, int>{};
+    for (final r in rows) {
+      final key = '${r['catalogId']}-${r['serialNumber']}';
+      map[key] = (r['qty'] as num?)?.toInt() ?? 0;
+    }
+    return map;
+  }
+
+  /// Finds cards matching the given serial+rarity+catalogId inside a set of album IDs.
+  /// Used by adjustCardQuantity to avoid loading the entire collection into memory.
+  Future<List<CardModel>> findCardsInAlbumsBySerial(
+    Set<int> albumIds,
+    String serialNumber,
+    String rarity,
+    String? catalogId,
+  ) async {
+    if (albumIds.isEmpty) return [];
+    final db = await database;
+    final placeholders = List.filled(albumIds.length, '?').join(',');
+    final args = <dynamic>[...albumIds, serialNumber.toLowerCase(), rarity.toLowerCase()];
+    final catalogClause = catalogId != null ? 'AND (catalogId IS NULL OR catalogId = ?)' : '';
+    if (catalogId != null) args.add(catalogId);
+    final rows = await db.rawQuery('''
+      SELECT * FROM cards
+      WHERE albumId IN ($placeholders)
+        AND LOWER(serialNumber) = ?
+        AND LOWER(rarity) = ?
+        $catalogClause
+    ''', args);
+    return rows.map(CardModel.fromMap).toList();
+  }
+
+  /// Finds all cards across all albums matching serial+rarity+catalogId for a collection.
+  Future<List<CardModel>> findRelatedCardsBySerial(
+    String collection,
+    String serialNumber,
+    String rarity,
+    String? catalogId,
+  ) async {
+    final db = await database;
+    final args = <dynamic>[collection, serialNumber.toLowerCase(), rarity.toLowerCase()];
+    final catalogClause = catalogId != null ? 'AND (catalogId IS NULL OR catalogId = ?)' : '';
+    if (catalogId != null) args.add(catalogId);
+    final rows = await db.rawQuery('''
+      SELECT c.* FROM cards c
+      LEFT JOIN albums a ON a.id = c.albumId
+      WHERE (c.collection = ? OR a.collection = ?)
+        AND LOWER(c.serialNumber) = ?
+        AND LOWER(c.rarity) = ?
+        $catalogClause
+    ''', [collection, collection, ...args.skip(1)]);
+    return rows.map(CardModel.fromMap).toList();
+  }
+
+  /// Deletes multiple cards by ID in a single SQL statement.
+  Future<void> batchDeleteCardsByIds(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.rawDelete('DELETE FROM cards WHERE id IN ($placeholders)', ids);
+  }
+
   Future<List<CardModel>> getCardsByCollection(String collection, {String language = 'en'}) async {
     Database db = await database;
     if (collection == 'yugioh') {
@@ -1808,7 +1882,18 @@ class DatabaseHelper {
         SELECT u.*,
                COALESCE(u.name, yc.name) as name,
                COALESCE(u.type, yc.type) as type,
-               COALESCE(u.description, yc.description) as description,
+               COALESCE(
+                 CASE '$language'
+                   WHEN 'it' THEN NULLIF(yc.description_it, '')
+                   WHEN 'fr' THEN NULLIF(yc.description_fr, '')
+                   WHEN 'de' THEN NULLIF(yc.description_de, '')
+                   WHEN 'pt' THEN NULLIF(yc.description_pt, '')
+                   WHEN 'es' THEN NULLIF(yc.description_sp, '')
+                   WHEN 'sp' THEN NULLIF(yc.description_sp, '')
+                 END,
+                 u.description,
+                 yc.description
+               ) as description,
                COALESCE(u.collection, a.collection, 'yugioh') as collection,
                COALESCE(
                  NULLIF(u.value, 0),
@@ -1982,6 +2067,36 @@ class DatabaseHelper {
       return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
     }
 
+    // v36 generic catalogs (digimon, lorcana, fab, etc.) use {prefix}_cards tables,
+    // not catalog_cards. Join directly to get localized effect/description.
+    final prefix = genericTablePrefix(collection);
+    if (prefix != null) {
+      final effectCol = switch (language) {
+        'it' => 'effect_it',
+        'fr' => 'effect_fr',
+        'de' => 'effect_de',
+        'pt' => 'effect_pt',
+        _    => null,
+      };
+      final descExpr = effectCol != null
+          ? 'COALESCE(NULLIF(gc.$effectCol, ""), gc.effect, u.description)'
+          : 'COALESCE(gc.effect, u.description)';
+      final maps = await db.rawQuery('''
+        SELECT u.*,
+               COALESCE(gc.name, u.name)        as name,
+               COALESCE(gc.card_type, u.type)   as type,
+               $descExpr                         as description,
+               COALESCE(u.collection, a.collection, ?) as collection,
+               COALESCE(gc.image_url, u.imageUrl) as imageUrl
+        FROM cards u
+        LEFT JOIN ${prefix}_cards gc ON gc.id = CAST(u.catalogId AS INTEGER)
+        LEFT JOIN albums a ON a.id = u.albumId
+        WHERE u.collection = ? OR a.collection = ?
+      ''', [collection, collection, collection]);
+      return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
+    }
+
+    // Legacy catalog_cards fallback (old YGO-style schema).
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT u.*,
              COALESCE(c.name, u.name) as name,

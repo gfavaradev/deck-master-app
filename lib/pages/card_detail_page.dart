@@ -211,11 +211,9 @@ class _CardDetailPageState extends State<CardDetailPage> {
                       : null,
                 ),
 
-                // Descrizione
-                if (card.description.isNotEmpty) ...[
-                  const Divider(color: AppColors.divider, height: 1),
-                  _DescriptionPanel(description: card.description),
-                ],
+                // Descrizione — sempre visibile anche se vuota
+                const Divider(color: AppColors.divider, height: 1),
+                _DescriptionPanel(description: card.description),
 
                 const Divider(color: AppColors.divider, height: 1),
 

@@ -182,7 +182,6 @@ class _CardListPageState extends State<CardListPage> {
       collectionName: widget.collectionName,
       collectionKey: widget.collectionKey,
       availableAlbums: _availableAlbums,
-      allCards: _allCards,
       lastUsedAlbumId: _lastUsedAlbumId,
       initialCatalogCard: catalogCard,
       onCardAdded: (int usedAlbumId, String _) {

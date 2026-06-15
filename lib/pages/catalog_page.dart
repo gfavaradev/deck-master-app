@@ -12,7 +12,6 @@ import '../widgets/card_dialogs.dart';
 import '../widgets/full_screen_gallery.dart';
 import '../widgets/op_lang_badge.dart';
 import '../models/album_model.dart';
-import '../models/card_model.dart';
 import '../models/wishlist_model.dart';
 
 class CatalogPage extends StatefulWidget {
@@ -42,8 +41,7 @@ class _CatalogPageState extends State<CatalogPage> {
   static const int _pageSize = 100; // Carica 100 carte alla volta
 
   List<AlbumModel> _availableAlbums = [];
-  List<CardModel> _allOwnedCards = [];
-  // key: "catalogId-serialNumber-rarity" → total quantity owned (all albums)
+  // key: "catalogId-serialNumber" → total quantity owned (all albums)
   Map<String, int> _ownedQuantityMap = {};
   String _preferredLanguage = 'EN';
   List<String> _supportedLanguages = [];   // tutte le lingue per questa collezione
@@ -323,20 +321,13 @@ class _CatalogPageState extends State<CatalogPage> {
     }
   }
 
-  /// Load albums and owned cards (only once, not on every search)
+  /// Load albums and owned quantity map (lightweight — no full CardModel load).
   Future<void> _loadAlbumsAndOwned() async {
     final albums = await _dbHelper.getAlbumsByCollection(widget.collectionKey);
-    final owned = await _dbHelper.getCardsWithCatalog(widget.collectionKey);
-    // key: "catalogId-serialNumber" → total quantity across all albums
-    final map = <String, int>{};
-    for (final c in owned) {
-      final key = '${c.catalogId}-${c.serialNumber}';
-      map[key] = (map[key] ?? 0) + c.quantity;
-    }
+    final map = await _dbHelper.getOwnedQuantityMap(widget.collectionKey);
     if (mounted) {
       setState(() {
         _availableAlbums = albums;
-        _allOwnedCards = owned;
         _ownedQuantityMap = map;
       });
     }
@@ -402,15 +393,16 @@ class _CatalogPageState extends State<CatalogPage> {
       }
 
       if (mounted && cards.isNotEmpty) {
+        // Sort outside setState to avoid O(n log n) inside a build-blocking call.
+        final merged = [..._catalogCards, ...cards];
+        merged.sort((a, b) {
+          final setCodeA = (a['localizedSetCode'] ?? a['setCode'] ?? '').toString();
+          final setCodeB = (b['localizedSetCode'] ?? b['setCode'] ?? '').toString();
+          return setCodeA.compareTo(setCodeB);
+        });
         setState(() {
-          _catalogCards.addAll(cards);
+          _catalogCards = merged;
           _currentOffset += cards.length;
-          // Sort by localized setCode ascending (YSKR-IT001, YSKR-IT002, etc.)
-          _catalogCards.sort((a, b) {
-            final setCodeA = (a['localizedSetCode'] ?? a['setCode'] ?? '').toString();
-            final setCodeB = (b['localizedSetCode'] ?? b['setCode'] ?? '').toString();
-            return setCodeA.compareTo(setCodeB);
-          });
         });
       }
     } catch (e) { // ignore: empty_catches
@@ -1324,7 +1316,6 @@ class _CatalogPageState extends State<CatalogPage> {
       collectionName: widget.collectionName,
       collectionKey: widget.collectionKey,
       availableAlbums: _availableAlbums,
-      allCards: _allOwnedCards,
       lastUsedAlbumId: _lastUsedAlbumId,
       initialCatalogCard: catalogCard.isEmpty ? null : catalogCard,
       onCardAdded: (int usedAlbumId, String serialNumber) async {

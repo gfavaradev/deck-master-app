@@ -1,6 +1,7 @@
 import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../theme/app_colors.dart';
 
 /// Barra di notifica in stile app — appare in alto sotto la AppBar.
@@ -16,12 +17,15 @@ class TopUndoBar {
     VoidCallback? onUndo,
     Color accentColor = AppColors.error,
   }) {
-    _entry?.remove();
-    _entry = null;
+    _safeRemove();
 
     late final OverlayEntry entry;
     entry = OverlayEntry(
-      builder: (_) => _UndoBarWidget(
+      builder: (ctx) => _UndoBarWidget(
+        // Pass the outer context so SafeArea/MediaQuery use the page's
+        // viewPadding rather than the anonymous OverlayEntry builder context,
+        // which may have stale insets on some OEM devices.
+        pageContext: context,
         message: message,
         onUndo: onUndo != null
             ? () { onUndo(); _dismiss(); }
@@ -31,22 +35,54 @@ class TopUndoBar {
       ),
     );
     _entry = entry;
-    Overlay.of(context).insert(entry);
+    // rootOverlay: true ensures we always get the root Navigator's overlay,
+    // even when called from a context inside a nested Navigator.
+    try {
+      Overlay.of(context, rootOverlay: true).insert(entry);
+    } catch (_) {
+      // Fallback: try without rootOverlay (e.g., nested-only navigator setups).
+      try {
+        Overlay.of(context).insert(entry);
+      } catch (_) {
+        _entry = null;
+      }
+    }
   }
 
   static void _dismiss() {
-    _entry?.remove();
+    // Defer removal to after the current frame to avoid
+    // "remove called during build" assertions on some devices.
+    final entry = _entry;
     _entry = null;
+    if (entry == null) return;
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _safeEntry(entry));
+    } else {
+      _safeEntry(entry);
+    }
+  }
+
+  static void _safeRemove() {
+    final entry = _entry;
+    _entry = null;
+    if (entry == null) return;
+    _safeEntry(entry);
+  }
+
+  static void _safeEntry(OverlayEntry entry) {
+    try { entry.remove(); } catch (_) {}
   }
 }
 
 class _UndoBarWidget extends StatefulWidget {
+  final BuildContext pageContext;
   final String message;
   final VoidCallback? onUndo;
   final VoidCallback onExpired;
   final Color accentColor;
 
   const _UndoBarWidget({
+    required this.pageContext,
     required this.message,
     required this.onUndo,
     required this.onExpired,
@@ -83,8 +119,12 @@ class _UndoBarWidgetState extends State<_UndoBarWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final topPad = MediaQuery.of(context).padding.top;
+    // Use pageContext for localization and viewPadding — the anonymous OverlayEntry
+    // builder context may lack localizations or return stale insets on some OEMs.
+    final l10n = AppLocalizations.of(widget.pageContext) ?? AppLocalizations.of(context);
+    final undoLabel = l10n?.undoBarUndo ?? 'Annulla';
+    // viewPadding.top is unaffected by keyboard insets — safer than padding.top.
+    final topPad = MediaQuery.viewPaddingOf(widget.pageContext).top;
     return Positioned(
       top: topPad + kToolbarHeight + 8,
       left: 16,
@@ -144,7 +184,7 @@ class _UndoBarWidgetState extends State<_UndoBarWidget> {
                     foregroundColor: Colors.orange.shade300,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  child: Text(l10n.undoBarUndo, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  child: Text(undoLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
             ],
           ),

@@ -763,6 +763,11 @@ class DataRepository {
     return cards.map(_fixOnepieceCardImage).toList();
   }
 
+  Future<Map<String, int>> getOwnedQuantityMap(String collection) async {
+    if (kIsWeb) return {};
+    return _dbHelper.getOwnedQuantityMap(collection);
+  }
+
   Future<List<CardModel>> findOwnedInstances(String collection, String name, String serialNumber, String rarity) async {
     if (kIsWeb) {
       final all = await getCardsByCollection(collection);
@@ -825,15 +830,10 @@ class DataRepository {
     bool allRelated = false,
   }) async {
     if (allRelated) {
-      final allCards = await getCardsByCollection(collectionKey);
-      final toDelete = allCards.where((c) =>
-        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
-        c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
-        (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
-      ).toList();
-      for (final c in toDelete) {
-        await deleteCard(c.id!);
-      }
+      final toDelete = await _dbHelper.findRelatedCardsBySerial(
+        collectionKey, card.serialNumber, card.rarity, card.catalogId,
+      );
+      await _dbHelper.batchDeleteCardsByIds(toDelete.map((c) => c.id!).toList());
       return toDelete;
     } else {
       await deleteCard(card.id!);
@@ -863,14 +863,10 @@ class DataRepository {
 
     if (delta < 0 && !isDoppioni) {
       if (!isAlbumView) {
-        final allCards = await getCardsByCollection(collectionKey);
         final doppioniIds = albums.where((a) => a.name == 'Doppioni').map((a) => a.id!).toSet();
-        final doppioniMatch = allCards.where((c) =>
-          doppioniIds.contains(c.albumId) &&
-          c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
-          c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
-          (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
-        ).toList();
+        final doppioniMatch = await _dbHelper.findCardsInAlbumsBySerial(
+          doppioniIds, card.serialNumber, card.rarity, card.catalogId,
+        );
         if (doppioniMatch.isNotEmpty) {
           final d = doppioniMatch.first;
           if (d.quantity - 1 <= 0) {
@@ -887,13 +883,9 @@ class DataRepository {
 
     if (delta > 0 && !isDoppioni && card.quantity >= 1) {
       final doppioniAlbumId = await getOrCreateDoppioniAlbum(collectionKey);
-      final allCards = await getCardsByCollection(collectionKey);
-      final existingInDoppioni = allCards.where((c) =>
-        c.albumId == doppioniAlbumId &&
-        c.serialNumber.toLowerCase() == card.serialNumber.toLowerCase() &&
-        c.rarity.toLowerCase() == card.rarity.toLowerCase() &&
-        (c.catalogId == null || card.catalogId == null || c.catalogId == card.catalogId)
-      ).toList();
+      final existingInDoppioni = await _dbHelper.findCardsInAlbumsBySerial(
+        {doppioniAlbumId}, card.serialNumber, card.rarity, card.catalogId,
+      );
       if (existingInDoppioni.isNotEmpty) {
         await updateCard(existingInDoppioni.first.copyWith(
           quantity: existingInDoppioni.first.quantity + delta,

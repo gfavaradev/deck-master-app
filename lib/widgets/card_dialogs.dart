@@ -178,7 +178,6 @@ class CardDialogs {
     required List<AlbumModel> availableAlbums,
     required Function(int albumId, String serialNumber) onCardAdded,
     required Future<int> Function() getOrCreateDuplicatesAlbum,
-    required List<CardModel> allCards,
     Map<String, dynamic>? initialCatalogCard,
     int? lastUsedAlbumId,
   }) {
@@ -225,7 +224,6 @@ class CardDialogs {
         collectionName: collectionName,
         collectionKey: collectionKey,
         availableAlbums: availableAlbums,
-        allCards: allCards,
         initialCatalogCard: initialCatalogCard,
         onCardAdded: onCardAdded,
         getOrCreateDuplicatesAlbum: getOrCreateDuplicatesAlbum,
@@ -239,7 +237,6 @@ class _AddCardDialog extends StatefulWidget {
   final String collectionName;
   final String collectionKey;
   final List<AlbumModel> availableAlbums;
-  final List<CardModel> allCards;
   final Map<String, dynamic>? initialCatalogCard;
   final Function(int albumId, String serialNumber) onCardAdded;
   final Future<int> Function() getOrCreateDuplicatesAlbum;
@@ -249,7 +246,6 @@ class _AddCardDialog extends StatefulWidget {
     required this.collectionName,
     required this.collectionKey,
     required this.availableAlbums,
-    required this.allCards,
     this.initialCatalogCard,
     required this.onCardAdded,
     required this.getOrCreateDuplicatesAlbum,
