@@ -200,10 +200,10 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _exportData(String format) async {
+  Future<void> _exportExcel() async {
     setState(() => _isExporting = true);
     try {
-      final result = await ExportService().exportToClipboard(format);
+      final result = await ExportService().exportToExcel();
       if (!mounted) return;
       if (result.requiresPro) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -211,10 +211,12 @@ class _SettingsPageState extends State<SettingsPage> {
         );
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.msgCardsExported(result.cardCount, result.format))),
-      );
-    } catch (e) { // ignore: empty_catches
+      if (result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.msgCardsExported(result.cardCount, result.format))),
+        );
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context)!.msgExportError(e.toString()))),
@@ -474,12 +476,12 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
                       color: accentColor.withValues(alpha:0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(icon, color: accentColor, size: 14),
+                    child: Icon(icon, color: accentColor, size: 18),
                   ),
                   const SizedBox(width: 10),
                   Text(
@@ -526,13 +528,13 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Row(
               children: [
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
                     color: iconColor.withValues(alpha:0.12),
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(11),
                   ),
-                  child: Icon(icon, color: iconColor, size: 19),
+                  child: Icon(icon, color: iconColor, size: 24),
                 ),
                 const SizedBox(width: 13),
                 Expanded(
@@ -587,13 +589,13 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   color: iconColor.withValues(alpha:0.12),
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(icon, color: iconColor, size: 19),
+                child: Icon(icon, color: iconColor, size: 24),
               ),
               const SizedBox(width: 13),
               Expanded(
@@ -646,7 +648,7 @@ class _SettingsPageState extends State<SettingsPage> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
-              Icon(icon, color: AppColors.textSecondary, size: 17),
+              Icon(icon, color: AppColors.textSecondary, size: 22),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -919,23 +921,13 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         _buildTile(
           icon: Icons.table_chart_outlined,
-          title: l10n.settingsExportCsv,
-          subtitle: l10n.settingsExportCsvSubtitle,
-          iconColor: AppColors.blue,
-          enabled: !_isExporting,
-          trailing: _isExporting ? spinner : const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
-          onTap: () => _exportData('csv'),
-        ),
-        _tileDivider(),
-        _buildTile(
-          icon: Icons.data_object,
-          title: l10n.settingsExportJson,
-          subtitle: l10n.settingsExportJsonSubtitle,
+          title: 'Esporta in Excel',
+          subtitle: 'Scarica la raccolta come file .xlsx',
           iconColor: AppColors.blue,
           enabled: !_isExporting,
           isLast: true,
           trailing: _isExporting ? spinner : const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
-          onTap: () => _exportData('json'),
+          onTap: _exportExcel,
         ),
       ],
     );

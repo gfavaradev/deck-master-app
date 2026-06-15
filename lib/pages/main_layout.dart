@@ -33,6 +33,9 @@ import 'card_scanner_page.dart';
 import 'wishlist_page.dart';
 import '../services/price_alert_service.dart';
 import 'tutorial_page.dart';
+import 'pro_page.dart';
+import '../widgets/pro_promo_sheet.dart';
+import '../services/subscription_service.dart' show SubscriptionService;
 
 /// Layout principale con barra di navigazione persistente
 class MainLayout extends StatefulWidget {
@@ -60,6 +63,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   String? _currentCollectionKey;
   String? _currentCollectionName;
   bool _isAdmin = false;
+  bool _isPro = false;
   int _unreadCount = 0;
   final AuthService _authService = AuthService();
   final DataRepository _repo = DataRepository();
@@ -89,6 +93,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _currentCollectionName = widget.collectionName;
     _currentUser = FirebaseAuth.instance.currentUser;
     _checkAdminAndNotifications();
+    SubscriptionService().currentUserHasPro().then((v) { if (mounted) setState(() => _isPro = v); });
     _levelUpSub = XpService().onLevelUp.listen(_onLevelUp);
     _remoteSub = SyncService().onRemoteChange.listen((event) {
       if (event == 'catalog_update_pending' && mounted) _loadPersistedPendingUpdates();
@@ -141,6 +146,15 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         );
       });
     }
+
+    // Popup promozionale Pro — mostrato ad ogni avvio per utenti non-Pro
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(seconds: 6));
+      if (!mounted || _isAdmin) return;
+      final isPro = await SubscriptionService().currentUserHasPro();
+      if (!mounted || isPro) return;
+      showProPromoSheet(context);
+    });
   }
 
 
@@ -892,6 +906,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           ),
           PopupMenuButton<String>(
             tooltip: l10n.tooltipUserMenu,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            menuPadding: const EdgeInsets.symmetric(vertical: 6),
             onSelected: (value) async {
               if (value == 'profile') {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
@@ -916,55 +932,80 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 }
               } else if (value == 'support') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportPage()));
+              } else if (value == 'pro') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage()));
               } else if (value == 'logout') {
                 _logout();
               }
             },
             itemBuilder: (_) => [
+              if (!_isPro)
+                PopupMenuItem(
+                  value: 'pro',
+                  height: 36,
+                  child: ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.workspace_premium, size: 26, color: AppColors.gold),
+                    title: const Text('Diventa Pro', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w700)),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
               PopupMenuItem(
                 value: 'profile',
+                height: 36,
                 child: ListTile(
-                  leading: const Icon(Icons.manage_accounts_outlined),
+                  dense: true,
+                  leading: const Icon(Icons.manage_accounts_outlined, size: 26),
                   title: Text(l10n.menuProfile),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
               PopupMenuItem(
                 value: 'wishlist',
+                height: 36,
                 child: ListTile(
-                  leading: const Icon(Icons.favorite_border),
+                  dense: true,
+                  leading: const Icon(Icons.favorite_border, size: 26),
                   title: Text(l10n.menuWishlist),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
               PopupMenuItem(
                 value: 'settings',
+                height: 36,
                 child: ListTile(
-                  leading: const Icon(Icons.settings),
+                  dense: true,
+                  leading: const Icon(Icons.settings, size: 26),
                   title: Text(l10n.menuSettings),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
               PopupMenuItem(
                 value: 'check_update',
+                height: 36,
                 child: ListTile(
-                  leading: const Icon(Icons.system_update_alt_rounded),
+                  dense: true,
+                  leading: const Icon(Icons.system_update_alt_rounded, size: 26),
                   title: Text(l10n.menuCheckUpdates),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
               PopupMenuItem(
                 value: 'support',
+                height: 36,
                 child: ListTile(
-                  leading: const Icon(Icons.support_agent),
+                  dense: true,
+                  leading: const Icon(Icons.support_agent, size: 26),
                   title: Text(l10n.menuSupport),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
               PopupMenuItem(
                 value: 'logout',
+                height: 36,
                 child: ListTile(
-                  leading: const Icon(Icons.logout, color: Colors.red),
+                  dense: true,
+                  leading: const Icon(Icons.logout, color: Colors.red, size: 26),
                   title: Text(l10n.btnLogout, style: const TextStyle(color: Colors.red)),
                   contentPadding: EdgeInsets.zero,
                 ),

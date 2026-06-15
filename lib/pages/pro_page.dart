@@ -5,6 +5,8 @@ import '../services/subscription_service.dart';
 import '../services/revenue_cat_service.dart';
 import '../theme/app_colors.dart';
 
+enum _Plan { monthly, semiannual, annual }
+
 class ProPage extends StatefulWidget {
   const ProPage({super.key});
 
@@ -13,15 +15,17 @@ class ProPage extends StatefulWidget {
 }
 
 class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
-  final bool _annual = true;
+  _Plan _selectedPlan = _Plan.annual;
   bool _isPurchasing = false;
   Offerings? _offerings;
   late AnimationController _shimmerController;
   late final Future<bool> _proStatusFuture;
 
-  static const double _monthlyPrice = 2.99;
-  static const double _annualPrice = 24.99;
-  static const double _annualMonthly = _annualPrice / 12;
+  // ─── Prezzi ───────────────────────────────────────────────────────────────
+  static const double _monthly        = 2.99;
+  static const double _semiannual     = 12.99;  // €2.17/mese  −27%
+  static const double _annual         = 19.99;  // €1.67/mese  −44%
+  static const double _annualOriginal = 35.88;  // 2.99 × 12
 
   @override
   void initState() {
@@ -47,16 +51,14 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
       final current = offerings.current;
       if (current != null) {
         final packages = current.availablePackages;
-        if (packages.isEmpty) {
-          // RevenueCat offering exists but no packages configured yet
-        } else if (_annual) {
+        if (packages.isNotEmpty) {
+          final id = switch (_selectedPlan) {
+            _Plan.monthly    => kProductMonthly,
+            _Plan.semiannual => kProductSemiannual,
+            _Plan.annual     => kProductAnnual,
+          };
           package = packages.firstWhere(
-            (p) => p.storeProduct.identifier == kProductAnnual,
-            orElse: () => packages.first,
-          );
-        } else {
-          package = packages.firstWhere(
-            (p) => p.storeProduct.identifier == kProductMonthly,
+            (p) => p.storeProduct.identifier == id,
             orElse: () => packages.first,
           );
         }
@@ -64,7 +66,6 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
     }
 
     if (package == null) {
-      // Prodotti non ancora configurati in RevenueCat
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppLocalizations.of(context)!.proNotAvailable)),
       );
@@ -122,100 +123,93 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
         top: false,
         bottom: true,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
           child: Column(
             children: [
-            _buildHeader(),
-            const SizedBox(height: 32),
-            _buildFeatures(),
-            const SizedBox(height: 32),
-            _buildPricingToggle(),
-            const SizedBox(height: 16),
-            _buildPricingCards(),
-            const SizedBox(height: 24),
-            _buildCTA(),
-            const SizedBox(height: 16),
-            _buildFooter(),
-          ],
+              _buildHeader(),
+              const SizedBox(height: 28),
+              _buildFeatures(),
+              const SizedBox(height: 28),
+              _buildPricingSection(),
+              const SizedBox(height: 24),
+              _buildCTA(),
+              const SizedBox(height: 16),
+              _buildFooter(),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
+
+  // ─── Header ───────────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
     return Column(
       children: [
         AnimatedBuilder(
           animation: _shimmerController,
-          builder: (_, _) {
-            return ShaderMask(
-              shaderCallback: (bounds) => LinearGradient(
-                colors: const [
-                  Color(0xFFD4AF37),
-                  Color(0xFFF5E27A),
-                  Color(0xFFD4AF37),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-                transform: GradientRotation(_shimmerController.value * 6.28),
-              ).createShader(bounds),
-              child: const Icon(
-                Icons.workspace_premium,
-                size: 72,
-                color: Colors.white,
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'DECK MASTER PRO',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w900,
-            color: AppColors.gold,
-            letterSpacing: 2.0,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Porta la tua collezione al livello successivo',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 15,
+          builder: (_, _) => ShaderMask(
+            shaderCallback: (bounds) => LinearGradient(
+              colors: const [Color(0xFFD4AF37), Color(0xFFF5E27A), Color(0xFFD4AF37)],
+              stops: const [0.0, 0.5, 1.0],
+              transform: GradientRotation(_shimmerController.value * 6.28),
+            ).createShader(bounds),
+            child: const Icon(Icons.workspace_premium, size: 72, color: Colors.white),
           ),
         ),
         const SizedBox(height: 14),
+        const Text(
+          'DECK MASTER PRO',
+          style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.gold, letterSpacing: 2.0),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Porta la tua collezione al livello successivo',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+        ),
+        const SizedBox(height: 12),
+        // Sconto lancio badge
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
-            color: AppColors.gold.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(50),
-            border: Border.all(color: AppColors.gold.withValues(alpha: 0.5)),
-          ),
-          child: const Text(
-            '🚀  PROSSIMAMENTE',
-            style: TextStyle(
-              color: AppColors.gold,
-              fontWeight: FontWeight.w800,
-              fontSize: 13,
-              letterSpacing: 1.2,
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFF6B35), Color(0xFFFF3D00)],
             ),
+            borderRadius: BorderRadius.circular(50),
+            boxShadow: [
+              BoxShadow(color: const Color(0xFFFF6B35).withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4)),
+            ],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.local_fire_department, color: Colors.white, size: 15),
+              SizedBox(width: 5),
+              Text(
+                'SCONTO LANCIO — OFFERTA LIMITATA',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.8),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
+  // ─── Features ─────────────────────────────────────────────────────────────
+
   Widget _buildFeatures() {
-    final features = [
-      _Feature(Icons.style, 'Deck Builder', 'Crea e condividi i tuoi mazzi da gioco', true),
-      _Feature(Icons.analytics_outlined, 'Statistiche Avanzate', 'Analisi dettagliata del valore e delle rarità', true),
-      _Feature(Icons.compare_arrows, 'Confronto Collezioni', 'Confronta la tua collezione con altri utenti', true),
-      _Feature(Icons.cloud_sync, 'Backup Prioritario', 'Sincronizzazione cloud sempre aggiornata', true),
-      _Feature(Icons.new_releases_outlined, 'Accesso Anticipato', 'Prime nuove funzioni in anteprima', true),
-      _Feature(Icons.support_agent, 'Supporto Prioritario', 'Risposte garantite entro 24 ore', true),
+    const features = [
+      _Feature(Icons.table_chart_outlined,        'Esportazione Excel',       'Scarica la raccolta in .xlsx'),
+      _Feature(Icons.analytics_outlined,           'Statistiche Avanzate',     'Valore, rarità, trend nel tempo'),
+      _Feature(Icons.trending_up,                  'ROI & Investimento',       'Calcola il rendimento della raccolta'),
+      _Feature(Icons.share_outlined,               'Condivisione Deck',        'Genera link condivisibili per i mazzi'),
+      _Feature(Icons.auto_awesome,                 'AI Deck Builder',          'Costruttore automatico per Yu-Gi-Oh!'),
+      _Feature(Icons.notifications_active_outlined,'Avvisi Prezzi Wishlist',   'Notifiche quando il prezzo scende'),
+      _Feature(Icons.block,                        'Senza Pubblicità',         'Esperienza pulita senza interruzioni'),
+      _Feature(Icons.support_agent,                'Supporto Prioritario',     'Risposta garantita entro 24h'),
     ];
 
     return Container(
@@ -223,21 +217,14 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
       decoration: BoxDecoration(
         color: AppColors.bgMedium,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.gold.withValues(alpha: 0.25),
-        ),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'TUTTO INCLUSO',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: AppColors.gold,
-              letterSpacing: 1.5,
-            ),
+            'TUTTO INCLUSO NEL PRO',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.gold, letterSpacing: 1.5),
           ),
           const SizedBox(height: 16),
           ...features.map((f) => _FeatureTile(feature: f)),
@@ -246,51 +233,57 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _buildPricingToggle() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.bgMedium,
-        borderRadius: BorderRadius.circular(50),
-        border: Border.all(color: AppColors.gold.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          _ToggleOption(
-            label: AppLocalizations.of(context)!.proMonthlyLabel,
-            selected: !_annual,
-            onTap: null,
+  // ─── Pricing ──────────────────────────────────────────────────────────────
+
+  Widget _buildPricingSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 2, bottom: 12),
+          child: Text(
+            'SCEGLI IL TUO PIANO',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textHint, letterSpacing: 1.2),
           ),
-          _ToggleOption(
-            label: AppLocalizations.of(context)!.proYearlyLabel,
-            selected: _annual,
-            onTap: null,
-            badge: '-30%',
-          ),
-        ],
-      ),
+        ),
+        _PlanCard(
+          plan: _Plan.monthly,
+          selected: _selectedPlan == _Plan.monthly,
+          title: 'Mensile',
+          price: _monthly,
+          period: 'mese',
+          note: 'Flessibile, disdici quando vuoi',
+          onTap: () => setState(() => _selectedPlan = _Plan.monthly),
+        ),
+        const SizedBox(height: 10),
+        _PlanCard(
+          plan: _Plan.semiannual,
+          selected: _selectedPlan == _Plan.semiannual,
+          title: 'Semestrale',
+          price: _semiannual,
+          period: '6 mesi',
+          note: '€${(_semiannual / 6).toStringAsFixed(2)}/mese · risparmia il 27%',
+          badge: '−27%',
+          onTap: () => setState(() => _selectedPlan = _Plan.semiannual),
+        ),
+        const SizedBox(height: 10),
+        _PlanCard(
+          plan: _Plan.annual,
+          selected: _selectedPlan == _Plan.annual,
+          title: 'Annuale',
+          price: _annual,
+          period: 'anno',
+          originalPrice: _annualOriginal,
+          note: '€${(_annual / 12).toStringAsFixed(2)}/mese · risparmia il 44%',
+          badge: '−44%',
+          isLaunchDeal: true,
+          onTap: () => setState(() => _selectedPlan = _Plan.annual),
+        ),
+      ],
     );
   }
 
-  Widget _buildPricingCards() {
-    final l10n = AppLocalizations.of(context)!;
-    if (_annual) {
-      return _PricingCard(
-        title: l10n.proYearlyTitle,
-        price: _annualPrice,
-        period: l10n.proYearPeriod,
-        subText: l10n.proYearSubtext(_annualMonthly.toStringAsFixed(2)),
-        highlight: true,
-      );
-    }
-    return _PricingCard(
-      title: l10n.proMonthlyTitle,
-      price: _monthlyPrice,
-      period: l10n.proMonthPeriod,
-      subText: l10n.proMonthSubtext,
-      highlight: false,
-    );
-  }
+  // ─── CTA ──────────────────────────────────────────────────────────────────
 
   Widget _buildCTA() {
     return Column(
@@ -301,15 +294,11 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           child: FilledButton.icon(
             onPressed: _isPurchasing ? null : _onPurchaseTap,
             icon: _isPurchasing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                  )
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
                 : const Icon(Icons.star, size: 20),
             label: Text(
               _isPurchasing ? 'Elaborazione...' : 'Abbonati ora',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.gold,
@@ -323,10 +312,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           future: _proStatusFuture,
           builder: (context, snap) {
             if (snap.data == true) {
-              return const Text(
-                '✓ Sei già abbonato a Pro!',
-                style: TextStyle(color: AppColors.gold, fontSize: 13),
-              );
+              return const Text('✓ Sei già abbonato a Pro!', style: TextStyle(color: AppColors.gold, fontSize: 13));
             }
             return const SizedBox.shrink();
           },
@@ -334,6 +320,8 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
       ],
     );
   }
+
+  // ─── Footer ───────────────────────────────────────────────────────────────
 
   Widget _buildFooter() {
     return Column(
@@ -343,7 +331,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           style: TextStyle(color: AppColors.textHint, fontSize: 12),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         const Text(
           'Il pagamento verrà addebitato tramite App Store / Google Play',
           style: TextStyle(color: AppColors.textHint, fontSize: 11),
@@ -352,24 +340,159 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
         const SizedBox(height: 12),
         TextButton(
           onPressed: _isPurchasing ? null : _onRestoreTap,
-          child: const Text(
-            'Ripristina acquisti',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
+          child: const Text('Ripristina acquisti', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
         ),
       ],
     );
   }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Plan Card ────────────────────────────────────────────────────────────────
+
+class _PlanCard extends StatelessWidget {
+  final _Plan plan;
+  final bool selected;
+  final String title;
+  final double price;
+  final String period;
+  final String note;
+  final String? badge;
+  final double? originalPrice;
+  final bool isLaunchDeal;
+  final VoidCallback onTap;
+
+  const _PlanCard({
+    required this.plan,
+    required this.selected,
+    required this.title,
+    required this.price,
+    required this.period,
+    required this.note,
+    required this.onTap,
+    this.badge,
+    this.originalPrice,
+    this.isLaunchDeal = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = selected ? AppColors.gold : AppColors.border;
+    final bgColor = selected ? AppColors.gold.withValues(alpha: 0.08) : AppColors.bgMedium;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor, width: selected ? 1.5 : 0.5),
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: selected ? AppColors.gold : AppColors.border, width: 2),
+                color: selected ? AppColors.gold : Colors.transparent,
+              ),
+              child: selected
+                  ? const Icon(Icons.check, size: 13, color: Colors.black)
+                  : null,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: selected ? AppColors.gold : AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      if (isLaunchDeal) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF6B35),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text('LANCIO', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(note, style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (originalPrice != null)
+                  Text(
+                    '€${originalPrice!.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: AppColors.textHint,
+                      fontSize: 12,
+                      decoration: TextDecoration.lineThrough,
+                    ),
+                  ),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '€${price.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          color: selected ? AppColors.gold : AppColors.textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      TextSpan(
+                        text: '/$period',
+                        style: const TextStyle(color: AppColors.textHint, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                if (badge != null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(badge!, style: const TextStyle(color: AppColors.success, fontSize: 10, fontWeight: FontWeight.w800)),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Feature tile ─────────────────────────────────────────────────────────────
 
 class _Feature {
   final IconData icon;
   final String title;
   final String subtitle;
-  final bool included;
-  const _Feature(this.icon, this.title, this.subtitle, this.included);
+  const _Feature(this.icon, this.title, this.subtitle);
 }
 
 class _FeatureTile extends StatelessWidget {
@@ -383,186 +506,26 @@ class _FeatureTile extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: AppColors.gold.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(feature.icon, color: AppColors.gold, size: 18),
+            child: Icon(feature.icon, color: AppColors.gold, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  feature.title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  feature.subtitle,
-                  style: const TextStyle(
-                    color: AppColors.textHint,
-                    fontSize: 12,
-                  ),
-                ),
+                Text(feature.title, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+                Text(feature.subtitle, style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
               ],
             ),
           ),
-          Icon(
-            feature.included ? Icons.check_circle : Icons.cancel,
-            color: feature.included ? AppColors.gold : Colors.red.shade400,
-            size: 20,
-          ),
+          const Icon(Icons.check_circle, color: AppColors.gold, size: 20),
         ],
-      ),
-    );
-  }
-}
-
-class _PricingCard extends StatelessWidget {
-  final String title;
-  final double price;
-  final String period;
-  final String subText;
-  final bool highlight;
-
-  const _PricingCard({
-    required this.title,
-    required this.price,
-    required this.period,
-    required this.subText,
-    required this.highlight,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: highlight
-            ? AppColors.gold.withValues(alpha: 0.1)
-            : AppColors.bgMedium,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: highlight ? AppColors.gold : AppColors.bgLight,
-          width: highlight ? 1.5 : 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subText,
-                  style: const TextStyle(
-                    color: AppColors.textHint,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: '€${price.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    color: highlight ? AppColors.gold : AppColors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                TextSpan(
-                  text: '/$period',
-                  style: const TextStyle(
-                    color: AppColors.textHint,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ToggleOption extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-  final String? badge;
-
-  const _ToggleOption({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.badge,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap ?? () {},
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.gold : Colors.transparent,
-            borderRadius: BorderRadius.circular(50),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? Colors.black : AppColors.textSecondary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
-              ),
-              if (badge != null) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: selected ? Colors.black26 : AppColors.gold,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    badge!,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: selected ? Colors.black : Colors.black,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
       ),
     );
   }

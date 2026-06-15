@@ -6,8 +6,9 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 const _kProEntitlement = 'pro';
 
 /// ID prodotti da configurare in App Store Connect e Google Play Console
-const kProductMonthly = 'deck_master_pro_monthly';
-const kProductAnnual = 'deck_master_pro_annual';
+const kProductMonthly    = 'deck_master_pro_monthly';
+const kProductSemiannual = 'deck_master_pro_semiannual';
+const kProductAnnual     = 'deck_master_pro_annual';
 
 /// Servizio che wrappa RevenueCat per gestire abbonamenti Pro.
 /// Da configurare:

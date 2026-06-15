@@ -1,5 +1,7 @@
-import 'dart:convert';
-import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:excel/excel.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'data_repository.dart';
 import 'subscription_service.dart';
 
@@ -17,7 +19,7 @@ class ExportResult {
   });
 }
 
-/// Handles CSV and JSON export of the user's card collection.
+/// Handles Excel export of the user's card collection.
 class ExportService {
   static final ExportService _instance = ExportService._internal();
   factory ExportService() => _instance;
@@ -26,41 +28,61 @@ class ExportService {
   final DataRepository _repo = DataRepository();
   final SubscriptionService _subService = SubscriptionService();
 
-  String _buildCsv(List<Map<String, dynamic>> cards) {
-    final buf = StringBuffer();
-    buf.writeln('Name,SerialNumber,Collection,Rarity,Quantity,Value');
-    for (final c in cards) {
-      final name = (c['name'] ?? '').toString().replaceAll('"', '""');
-      final serial = (c['serialNumber'] ?? '').toString().replaceAll('"', '""');
-      final collection = (c['collection'] ?? '').toString();
-      final rarity = (c['rarity'] ?? '').toString().replaceAll('"', '""');
-      final qty = c['quantity']?.toString() ?? '0';
-      final value = c['value']?.toString() ?? '0';
-      buf.writeln('"$name","$serial","$collection","$rarity",$qty,$value');
+  Future<List<int>> _buildExcel(List<Map<String, dynamic>> cards) async {
+    final excel = Excel.createExcel();
+    final sheet = excel['Collection'];
+
+    // Header row
+    final headers = ['Name', 'Serial Number', 'Collection', 'Rarity', 'Quantity', 'Value'];
+    for (var i = 0; i < headers.length; i++) {
+      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
+      cell.value = TextCellValue(headers[i]);
+      cell.cellStyle = CellStyle(bold: true);
     }
-    return buf.toString();
+
+    // Data rows
+    for (var r = 0; r < cards.length; r++) {
+      final c = cards[r];
+      final row = r + 1;
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row)).value =
+          TextCellValue((c['name'] ?? '').toString());
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row)).value =
+          TextCellValue((c['serialNumber'] ?? '').toString());
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row)).value =
+          TextCellValue((c['collection'] ?? '').toString());
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row)).value =
+          TextCellValue((c['rarity'] ?? '').toString());
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row)).value =
+          IntCellValue((c['quantity'] as num?)?.toInt() ?? 0);
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row)).value =
+          DoubleCellValue((c['value'] as num?)?.toDouble() ?? 0.0);
+    }
+
+    return excel.encode()!;
   }
 
-  String _buildJson(List<Map<String, dynamic>> cards) {
-    return const JsonEncoder.withIndent('  ').convert(cards);
-  }
-
-  /// Exports the collection as [format] ('csv' or 'json') by copying to clipboard.
-  /// Returns an [ExportResult] describing the outcome.
-  Future<ExportResult> exportToClipboard(String format) async {
+  /// Exports the collection as an Excel file shared via the system share sheet.
+  Future<ExportResult> exportToExcel() async {
     final hasPro = await _subService.currentUserHasPro();
     if (!hasPro) {
       return const ExportResult(success: false, requiresPro: true);
     }
 
     final cards = await _repo.getAllCardsForExport();
-    final text = format == 'csv' ? _buildCsv(cards) : _buildJson(cards);
-    await Clipboard.setData(ClipboardData(text: text));
+    final bytes = await _buildExcel(cards);
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/deck_master_collection.xlsx');
+    await file.writeAsBytes(bytes, flush: true);
+
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')]),
+    );
 
     return ExportResult(
       success: true,
       cardCount: cards.length,
-      format: format.toUpperCase(),
+      format: 'Excel',
     );
   }
 }
