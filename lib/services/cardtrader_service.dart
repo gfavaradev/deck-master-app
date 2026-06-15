@@ -158,7 +158,14 @@ class CardtraderService {
     final ctExpansions = await _fetchExpansions(gameId);
 
     onProgress('Caricamento set locali…', null);
-    final localCodes = await _db.getDistinctSetCodesForCardtrader(catalog);
+    Set<String> localCodes = await _db.getDistinctSetCodesForCardtrader(catalog);
+
+    // Admin users have no local catalog — fall back to Firestore set codes so
+    // the price sync can still run and publish prices to Firestore chunks.
+    if (localCodes.isEmpty) {
+      onProgress('Set locali assenti, lettura set da Firestore…', null);
+      localCodes = await _getSetCodesFromFirestore(catalog);
+    }
 
     // Build a map from CT code → local code with multi-level normalization:
     //   1. Exact match:            "op01"     → "op01"
@@ -255,6 +262,10 @@ class CardtraderService {
     onProgress('Aggiornamento prezzi catalogo locale…', null);
     final catalogUpdated = await _db.syncCatalogPricesFromCardtrader(catalog);
 
+    // Update cards.cardtrader_value directly from cardtrader_prices so the
+    // card list matches the detail page even without a local catalog.
+    await _db.updateCardsValueFromCardtrader(catalog);
+
     // Scrivi i prezzi CT nei chunk Firestore così tutti gli utenti
     // li vedono al prossimo download del catalogo.
     onProgress('Pubblicazione prezzi su Firestore…', null);
@@ -267,9 +278,7 @@ class CardtraderService {
       );
     } catch (_) {}
 
-    if (catalogUpdated > 0) {
-      SyncService().notifyLocalChange('cards');
-    }
+    SyncService().notifyLocalChange('cards');
 
     return {
       'success': true,
@@ -462,33 +471,114 @@ class CardtraderService {
     };
   }
 
-  /// Reads distinct set codes from Firestore catalog chunks (web fallback).
+  /// Reads distinct expansion set codes from Firestore catalog chunks.
+  ///
+  /// Each catalog stores set codes differently:
+  ///   yugioh   → card.sets[lang][].set_code  prefix before '-' (e.g. "LOB-EN001" → "lob")
+  ///   pokemon  → card.sets[lang][].set_code  prefix before last '-' (e.g. "sv1-001" → "sv1")
+  ///              OR card.prints[].set_code   (already the expansion code)
+  ///   onepiece → card.prints[].set_id        (already the expansion code, e.g. "op01")
+  ///   others   → card.set_id / card.prints[].set_id / card.sets[lang][].set_id
   Future<Set<String>> _getSetCodesFromFirestore(String catalog) async {
     try {
       final cards = await FirestoreService().fetchCatalog(catalog);
       final codes = <String>{};
       for (final card in cards) {
-        // sets is a map keyed by language; each entry has set_id
-        final sets = card['sets'];
-        if (sets is Map) {
-          for (final langEntry in sets.values) {
-            if (langEntry is Map) {
-              final setId = langEntry['set_id'] as String?;
-              if (setId != null && setId.isNotEmpty) {
-                codes.add(setId.toLowerCase());
-              }
-            }
-          }
-        }
-        // also check top-level set_id (Pokemon / One Piece)
-        final topSetId = card['set_id'] as String?;
-        if (topSetId != null && topSetId.isNotEmpty) {
-          codes.add(topSetId.toLowerCase());
-        }
+        _extractSetCodesFromCard(card, catalog, codes);
       }
       return codes;
     } catch (_) {
       return {};
+    }
+  }
+
+  void _extractSetCodesFromCard(
+    Map<String, dynamic> card,
+    String catalog,
+    Set<String> codes,
+  ) {
+    switch (catalog) {
+      case 'yugioh':
+        final sets = card['sets'];
+        if (sets is Map) {
+          for (final langArr in sets.values) {
+            if (langArr is List) {
+              for (final s in langArr) {
+                if (s is Map) {
+                  final sc = ((s['set_code'] as String?) ?? '').toLowerCase();
+                  if (sc.isEmpty) continue;
+                  final expCode = sc.contains('-') ? sc.split('-')[0] : sc;
+                  if (expCode.isNotEmpty) codes.add(expCode);
+                }
+              }
+            }
+          }
+        }
+      case 'pokemon':
+        final sets = card['sets'];
+        if (sets is Map) {
+          for (final langArr in sets.values) {
+            if (langArr is List) {
+              for (final s in langArr) {
+                if (s is Map) {
+                  final sc = ((s['set_code'] as String?) ?? '').toLowerCase();
+                  if (sc.isEmpty) continue;
+                  final lastDash = sc.lastIndexOf('-');
+                  final expCode = lastDash > 0 ? sc.substring(0, lastDash) : sc;
+                  if (expCode.isNotEmpty) codes.add(expCode);
+                }
+              }
+            }
+          }
+        }
+        final pokePrints = card['prints'];
+        if (pokePrints is List) {
+          for (final p in pokePrints) {
+            if (p is Map) {
+              final sc = ((p['set_code'] as String?) ?? '').toLowerCase();
+              if (sc.isNotEmpty) codes.add(sc);
+            }
+          }
+        }
+      case 'onepiece':
+        final prints = card['prints'];
+        if (prints is List) {
+          for (final p in prints) {
+            if (p is Map) {
+              final sc = ((p['set_id'] as String?) ?? '').toLowerCase();
+              if (sc.isNotEmpty) codes.add(sc);
+            }
+          }
+        }
+      default:
+        final topSetId = (card['set_id'] as String? ?? '').toLowerCase();
+        if (topSetId.isNotEmpty) codes.add(topSetId);
+        final prints = card['prints'];
+        if (prints is List) {
+          for (final p in prints) {
+            if (p is Map) {
+              final sc = ((p['set_id'] as String?) ?? (p['set_code'] as String?) ?? '').toLowerCase();
+              if (sc.isEmpty) continue;
+              final expCode = sc.contains('-') ? sc.split('-')[0] : sc;
+              if (expCode.isNotEmpty) codes.add(expCode);
+            }
+          }
+        }
+        final sets = card['sets'];
+        if (sets is Map) {
+          for (final langArr in sets.values) {
+            if (langArr is List) {
+              for (final s in langArr) {
+                if (s is Map) {
+                  final sc = ((s['set_id'] as String?) ?? (s['set_code'] as String?) ?? '').toLowerCase();
+                  if (sc.isEmpty) continue;
+                  final expCode = sc.contains('-') ? sc.split('-')[0] : sc;
+                  if (expCode.isNotEmpty) codes.add(expCode);
+                }
+              }
+            }
+          }
+        }
     }
   }
 

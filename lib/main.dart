@@ -20,7 +20,9 @@ void main() async {
 
   // Limita la cache immagini in memoria a 60MB per evitare OOM su dispositivi con heap 256MB.
   // Il default Flutter (100MB) sommato ad Ads SDK e dati SQLite portava a OOM.
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 60 * 1024 * 1024;
+  // In debug the Flutter overhead is ~40MB higher than release; cap lower.
+  PaintingBinding.instance.imageCache.maximumSizeBytes =
+      kDebugMode ? 30 * 1024 * 1024 : 60 * 1024 * 1024;
 
   // Disabilita il download dei font da internet: usa solo gli asset bundlati.
   // Senza questo, google_fonts tenta di scaricare i font da fonts.gstatic.com

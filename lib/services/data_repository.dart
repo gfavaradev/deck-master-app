@@ -2350,14 +2350,21 @@ class DataRepository {
   /// Cerca carte Magic via Scryfall API e le mette in cache nel DB locale.
   Future<List<Map<String, dynamic>>> getMagicCatalogCards({
     String? query,
-    int limit = 30,
+    int limit = 100,
+    int offset = 0,
   }) async {
+    // If the local catalog has been downloaded, query it (supports pagination).
+    final localCount = await _dbHelper.getCatalogCardCount('magic');
+    if (localCount > 0) {
+      return _dbHelper.getMagicCardsLocal(query: query, limit: limit, offset: offset);
+    }
+    // No local catalog — fall back to live Scryfall search (no offset support).
     if (query == null || query.trim().isEmpty) return [];
+    if (offset > 0) return [];
     try {
       final cards = await ScryfallService.searchFuzzy(query.trim(), limit: limit);
       final result = <Map<String, dynamic>>[];
       for (final card in cards) {
-        // Cache in local DB
         final localId = await _dbHelper.upsertMagicCard(card.toMap());
         final setCode = card.setCode ?? '';
         final collector = card.collectorNumber ?? '';
@@ -2419,8 +2426,7 @@ class DataRepository {
         offset: offset,
       );
     } else if (collection == 'magic') {
-      if (offset > 0) return [];
-      return getMagicCatalogCards(query: query, limit: limit);
+      return getMagicCatalogCards(query: query, limit: limit, offset: offset);
     } else if (DatabaseHelper.genericTablePrefix(collection) != null) {
       // Cataloghi v36 — tabelle dedicate (digimon_cards, lorcana_cards, ecc.)
       return _dbHelper.getGenericCatalogCards(collection, query: query, language: language, limit: limit, offset: offset);

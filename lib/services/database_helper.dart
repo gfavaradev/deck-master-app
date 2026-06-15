@@ -1076,6 +1076,57 @@ class DatabaseHelper {
     }];
   }
 
+  /// Queries local `magic_cards` table (downloaded from Firestore) and returns
+  /// cards in the same map format used by the catalog page.
+  Future<List<Map<String, dynamic>>> getMagicCardsLocal({
+    String? query,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final db = await database;
+    final String where;
+    final List<dynamic> args;
+    if (query != null && query.trim().isNotEmpty) {
+      where = 'WHERE (name LIKE ? OR api_id LIKE ? OR set_code LIKE ?)';
+      args = ['%$query%', '%$query%', '%$query%'];
+    } else {
+      where = '';
+      args = [];
+    }
+    final rows = await db.rawQuery('''
+      SELECT id, api_id, name, type_line, oracle_text, rarity,
+             set_code, set_name, collector_number, image_url, price_eur
+      FROM magic_cards
+      $where
+      ORDER BY set_code ASC, collector_number ASC
+      LIMIT ? OFFSET ?
+    ''', [...args, limit, offset]);
+    return rows.map((c) {
+      final setCode  = (c['set_code']  as String? ?? '').toUpperCase();
+      final collector = c['collector_number'] as String? ?? '';
+      return {
+        'id':                   c['id'],
+        'catalogId':            c['api_id'],
+        'name':                 c['name'],
+        'localizedName':        c['name'],
+        'description':          c['oracle_text'],
+        'localizedDescription': c['oracle_text'],
+        'type':                 c['type_line'],
+        'rarity':               c['rarity'],
+        'setCode':              '$setCode-$collector',
+        'localizedSetCode':     '$setCode-$collector',
+        'setName':              c['set_name'],
+        'localizedSetName':     c['set_name'],
+        'setRarity':            c['rarity'],
+        'localizedRarity':      c['rarity'],
+        'marketPrice':          (c['price_eur'] as num?)?.toDouble() ?? 0.0,
+        'artwork':              c['image_url'],
+        'collection':           'magic',
+        'isOwned':              0,
+      };
+    }).toList();
+  }
+
   Future _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE albums(
@@ -4683,10 +4734,17 @@ class DatabaseHelper {
       if (cnNorm == cnRaw) cnNorm = null; // no stripping happened — avoid duplicate
     }
 
-    // ── 1. expansion + name (all languages, priced or not) ──────────────────
+    // ── 1. expansion + name + rarity (all languages, priced or not) ────────
+    // Rarity is applied first (matching getCardtraderPrice behaviour) so that
+    // when multiple blueprints exist for the same card (e.g. "R" vs "RR")
+    // the detail page shows the correct variant instead of the cheapest one.
     if (rows.isEmpty) {
       String w = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?';
       final a = <dynamic>[catalog, exp, nameLower];
+      if (rarity != null && rarity.isNotEmpty) {
+        w += ' AND LOWER(rarity) = ?';
+        a.add(rarity.toLowerCase());
+      }
       // Try raw CN first (e.g. "it001"), then stripped (e.g. "001")
       for (final cn in [cnRaw, cnNorm].whereType<String>()) {
         rows = await db.query('cardtrader_prices',
@@ -4696,6 +4754,21 @@ class DatabaseHelper {
       }
       if (rows.isEmpty) {
         rows = await db.query('cardtrader_prices', where: w, whereArgs: a, orderBy: orderBy);
+      }
+      // If rarity filter returned nothing, retry without rarity to avoid
+      // showing blank prices when CT stores a slightly different rarity string.
+      if (rows.isEmpty && rarity != null && rarity.isNotEmpty) {
+        final wNr = 'catalog = ? AND expansion_code = ? AND LOWER(card_name_en) = ?';
+        final aNr = <dynamic>[catalog, exp, nameLower];
+        for (final cn in [cnRaw, cnNorm].whereType<String>()) {
+          rows = await db.query('cardtrader_prices',
+              where: '$wNr AND LOWER(collector_number) = ?',
+              whereArgs: [...aNr, cn], orderBy: orderBy);
+          if (rows.isNotEmpty) break;
+        }
+        if (rows.isEmpty) {
+          rows = await db.query('cardtrader_prices', where: wNr, whereArgs: aNr, orderBy: orderBy);
+        }
       }
     }
 
@@ -4880,7 +4953,44 @@ class DatabaseHelper {
           final lang = entry.key;
           final col  = entry.value;
 
-          // ── Pass 1: normalized name match ─────────────────────────────────
+          // ── Pass 0: collector_number match (PRIMARY — rarity-aware) ─────────
+          // set_code suffix (e.g. "LOB-EN001" → "EN001") uniquely identifies
+          // a blueprint including its rarity. Run before name-based passes so
+          // multi-rarity cards get the correct blueprint price per print.
+          total += await db.rawUpdate('''
+            UPDATE yugioh_prints
+            SET $col = (
+              SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
+              FROM cardtrader_prices cp
+              WHERE cp.catalog = 'yugioh'
+                AND cp.expansion_code = LOWER(yugioh_prints.set_id)
+                AND (
+                  LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1))
+                  OR (LENGTH(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1)) > 3
+                      AND LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 3)))
+                )
+                AND cp.language = ?
+                AND cp.min_price_any_cents IS NOT NULL
+              ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+              LIMIT 1
+            )
+            WHERE yugioh_prints.set_id IS NOT NULL
+              AND INSTR(yugioh_prints.set_code, '-') > 0
+              AND EXISTS (
+                SELECT 1 FROM cardtrader_prices cp
+                WHERE cp.catalog = 'yugioh'
+                  AND cp.expansion_code = LOWER(yugioh_prints.set_id)
+                  AND (
+                    LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1))
+                    OR (LENGTH(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1)) > 3
+                        AND LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 3)))
+                  )
+                  AND cp.language = ?
+                  AND cp.min_price_any_cents IS NOT NULL
+              )
+          ''', [lang, lang]);
+
+          // ── Pass 1: normalized name match (fallback when CN not matched) ───
           total += await db.rawUpdate('''
             UPDATE yugioh_prints
             SET $col = (
@@ -4896,6 +5006,7 @@ class DatabaseHelper {
               LIMIT 1
             )
             WHERE yugioh_prints.set_id IS NOT NULL
+              AND $col IS NULL
               AND EXISTS (
                 SELECT 1 FROM cardtrader_prices cp
                 JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
@@ -5200,6 +5311,225 @@ class DatabaseHelper {
     }
 
     return total;
+  }
+
+  /// Updates `cards.cardtrader_value` directly from `cardtrader_prices` so the
+  /// card list shows the same fresh value as the detail page.
+  ///
+  /// For users/admins without a local catalog the print tables (yugioh_prints etc.)
+  /// are empty, so `syncCatalogPricesFromCardtrader` leaves `cards.cardtrader_value`
+  /// stale. This method bypasses the print tables and writes the NM-preferred
+  /// CT price straight onto each card row.
+  ///
+  ///   YuGiOh   → expansion_code + collector_number from serial "LOB-EN001"
+  ///   One Piece → full serial as collector_number  ("op01-001")
+  ///   Pokemon   → name join on pokemon_cards (requires local catalog)
+  Future<int> updateCardsValueFromCardtrader(String catalog) async {
+    final db = await database;
+    int updated = 0;
+
+    switch (catalog) {
+      case 'yugioh':
+        // Serial "LOB-EN001" → expansion = "lob", cn = "en001"
+        // Also tries digit-only CN ("001") for CTs that strip the lang prefix.
+        updated += await db.rawUpdate('''
+          UPDATE cards
+          SET cardtrader_value = (
+            SELECT COALESCE(cp.min_price_nm_cents, cp.min_price_any_cents) / 100.0
+            FROM cardtrader_prices cp
+            WHERE cp.catalog = 'yugioh'
+              AND cp.expansion_code = LOWER(SUBSTR(cards.serialNumber, 1,
+                    INSTR(cards.serialNumber, '-') - 1))
+              AND (
+                LOWER(cp.collector_number) = LOWER(SUBSTR(cards.serialNumber,
+                      INSTR(cards.serialNumber, '-') + 1))
+                OR (LENGTH(SUBSTR(cards.serialNumber, INSTR(cards.serialNumber, '-') + 1)) > 3
+                    AND LOWER(cp.collector_number) = LOWER(SUBSTR(cards.serialNumber,
+                          INSTR(cards.serialNumber, '-') + 3)))
+              )
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE collection = 'yugioh'
+            AND INSTR(serialNumber, '-') > 0
+            AND EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              WHERE cp.catalog = 'yugioh'
+                AND cp.expansion_code = LOWER(SUBSTR(cards.serialNumber, 1,
+                      INSTR(cards.serialNumber, '-') - 1))
+                AND (
+                  LOWER(cp.collector_number) = LOWER(SUBSTR(cards.serialNumber,
+                        INSTR(cards.serialNumber, '-') + 1))
+                  OR (LENGTH(SUBSTR(cards.serialNumber, INSTR(cards.serialNumber, '-') + 1)) > 3
+                      AND LOWER(cp.collector_number) = LOWER(SUBSTR(cards.serialNumber,
+                            INSTR(cards.serialNumber, '-') + 3)))
+                )
+            )
+        ''');
+
+      case 'onepiece':
+        // Try direct serial match (CT often stores full serial as collector_number).
+        updated += await db.rawUpdate('''
+          UPDATE cards
+          SET cardtrader_value = (
+            SELECT COALESCE(cp.min_price_nm_cents, cp.min_price_any_cents) / 100.0
+            FROM cardtrader_prices cp
+            WHERE cp.catalog = 'onepiece'
+              AND LOWER(cp.collector_number) = LOWER(cards.serialNumber)
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE collection = 'onepiece'
+            AND EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              WHERE cp.catalog = 'onepiece'
+                AND LOWER(cp.collector_number) = LOWER(cards.serialNumber)
+            )
+        ''');
+
+        // Fallback: name join on local catalog (if downloaded).
+        updated += await db.rawUpdate('''
+          UPDATE cards
+          SET cardtrader_value = (
+            SELECT COALESCE(cp.min_price_nm_cents, cp.min_price_any_cents) / 100.0
+            FROM cardtrader_prices cp
+            JOIN onepiece_cards oc ON oc.id = CAST(cards.catalogId AS INTEGER)
+            WHERE cp.catalog = 'onepiece'
+              AND (${_normName('cp.card_name_en')} = ${_normName('oc.name')}
+                   OR ${_ctNameBase('cp.card_name_en')} = ${_normName('oc.name')})
+              AND cp.expansion_code = LOWER(CASE WHEN INSTR(cards.serialNumber, '-') > 0
+                    THEN SUBSTR(cards.serialNumber, 1, INSTR(cards.serialNumber, '-') - 1)
+                    ELSE cards.serialNumber END)
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE collection = 'onepiece'
+            AND cardtrader_value IS NULL
+            AND catalogId IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM onepiece_cards oc WHERE oc.id = CAST(cards.catalogId AS INTEGER)
+            )
+        ''');
+
+      case 'pokemon':
+        // Name join on local catalog.
+        updated += await db.rawUpdate('''
+          UPDATE cards
+          SET cardtrader_value = (
+            SELECT COALESCE(cp.min_price_nm_cents, cp.min_price_any_cents) / 100.0
+            FROM cardtrader_prices cp
+            JOIN pokemon_cards pc ON (pc.id = CAST(cards.catalogId AS INTEGER)
+                                   OR pc.api_id = cards.catalogId)
+            WHERE cp.catalog = 'pokemon'
+              AND (${_normName('cp.card_name_en')} = ${_normName('pc.name')}
+                   OR ${_ctNameBase('cp.card_name_en')} = ${_normName('pc.name')})
+              AND cp.expansion_code = LOWER(CASE WHEN INSTR(cards.serialNumber, '-') > 0
+                    THEN SUBSTR(cards.serialNumber, 1, INSTR(cards.serialNumber, '-') - 1)
+                    ELSE cards.serialNumber END)
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE collection = 'pokemon'
+            AND catalogId IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM pokemon_cards pc
+              WHERE pc.id = CAST(cards.catalogId AS INTEGER) OR pc.api_id = cards.catalogId
+            )
+        ''');
+
+      default:
+        // Generic catalogs (digimon, lorcana, flesh-and-blood, vanguard,
+        // dragon-ball-super, star-wars, riftbound, gundam, union-arena).
+        // No dedicated print tables — update cards.cardtrader_value directly.
+
+        // Pass 1: full serialNumber == collector_number (e.g. "OP01-001").
+        // Works for games where CT uses the complete card code as CN.
+        updated += await db.rawUpdate('''
+          UPDATE cards
+          SET cardtrader_value = (
+            SELECT COALESCE(cp.min_price_nm_cents, cp.min_price_any_cents) / 100.0
+            FROM cardtrader_prices cp
+            WHERE cp.catalog = ?
+              AND LOWER(cp.collector_number) = LOWER(cards.serialNumber)
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE collection = ?
+            AND EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              WHERE cp.catalog = ?
+                AND LOWER(cp.collector_number) = LOWER(cards.serialNumber)
+            )
+        ''', [catalog, catalog, catalog]);
+
+        // Pass 2: expansion_code (prefix before '-') + collector_number (suffix after '-').
+        // Handles formats like "BT1-001" → expansion='bt1', cn='001'.
+        updated += await db.rawUpdate('''
+          UPDATE cards
+          SET cardtrader_value = (
+            SELECT COALESCE(cp.min_price_nm_cents, cp.min_price_any_cents) / 100.0
+            FROM cardtrader_prices cp
+            WHERE cp.catalog = ?
+              AND INSTR(cards.serialNumber, '-') > 0
+              AND cp.expansion_code = LOWER(SUBSTR(cards.serialNumber, 1,
+                    INSTR(cards.serialNumber, '-') - 1))
+              AND (
+                LOWER(cp.collector_number) = LOWER(SUBSTR(cards.serialNumber,
+                      INSTR(cards.serialNumber, '-') + 1))
+              )
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE collection = ?
+            AND cardtrader_value IS NULL
+            AND INSTR(serialNumber, '-') > 0
+            AND EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              WHERE cp.catalog = ?
+                AND cp.expansion_code = LOWER(SUBSTR(cards.serialNumber, 1,
+                      INSTR(cards.serialNumber, '-') - 1))
+                AND LOWER(cp.collector_number) = LOWER(SUBSTR(cards.serialNumber,
+                      INSTR(cards.serialNumber, '-') + 1))
+            )
+        ''', [catalog, catalog, catalog]);
+
+        // Pass 3: expansion_code + name match (cards.name may be English for CT-sourced cards).
+        updated += await db.rawUpdate('''
+          UPDATE cards
+          SET cardtrader_value = (
+            SELECT COALESCE(cp.min_price_nm_cents, cp.min_price_any_cents) / 100.0
+            FROM cardtrader_prices cp
+            WHERE cp.catalog = ?
+              AND (${_normName('cp.card_name_en')} = ${_normName('cards.name')}
+                   OR ${_ctNameBase('cp.card_name_en')} = ${_normName('cards.name')})
+              AND cp.expansion_code = LOWER(CASE WHEN INSTR(cards.serialNumber, '-') > 0
+                    THEN SUBSTR(cards.serialNumber, 1, INSTR(cards.serialNumber, '-') - 1)
+                    ELSE cards.serialNumber END)
+              AND cp.min_price_any_cents IS NOT NULL
+            ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
+            LIMIT 1
+          )
+          WHERE collection = ?
+            AND cardtrader_value IS NULL
+            AND EXISTS (
+              SELECT 1 FROM cardtrader_prices cp
+              WHERE cp.catalog = ?
+                AND (${_normName('cp.card_name_en')} = ${_normName('cards.name')}
+                     OR ${_ctNameBase('cp.card_name_en')} = ${_normName('cards.name')})
+                AND cp.expansion_code = LOWER(CASE WHEN INSTR(cards.serialNumber, '-') > 0
+                      THEN SUBSTR(cards.serialNumber, 1, INSTR(cards.serialNumber, '-') - 1)
+                      ELSE cards.serialNumber END)
+            )
+        ''', [catalog, catalog, catalog]);
+    }
+
+    return updated;
   }
 
   /// Applies Magic price rows (from Firestore `cardtrader_prices/magic`) directly

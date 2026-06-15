@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/ad_service.dart';
@@ -27,12 +27,22 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   @override
   void initState() {
     super.initState();
+    // Delay ad loading to let Firestore auth/role checks complete first.
+    // On low-memory devices (256MB heap), loading the AdMob WebView
+    // immediately starves the gRPC thread and causes OOM before the
+    // admin/pro check can return.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAndLoad();
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted) _checkAndLoad();
+      });
     });
   }
 
   Future<void> _checkAndLoad() async {
+    // Debug builds carry Flutter hot-reload overhead and hit the 256MB heap
+    // limit on low-memory devices before the AdMob WebView can even allocate.
+    // Real ads don't serve in debug anyway — skip entirely.
+    if (kDebugMode) return;
     if (!mounted) return;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;

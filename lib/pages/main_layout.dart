@@ -89,11 +89,16 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _currentCollectionName = widget.collectionName;
     _currentUser = FirebaseAuth.instance.currentUser;
     _checkAdminAndNotifications();
-    XpService().syncFromFirestore();
     _levelUpSub = XpService().onLevelUp.listen(_onLevelUp);
-    SyncService().startListening();
     _remoteSub = SyncService().onRemoteChange.listen((event) {
       if (event == 'catalog_update_pending' && mounted) _loadPersistedPendingUpdates();
+    });
+    // Defer XP sync and real-time listener to reduce peak memory during startup:
+    // the admin/role Firestore check must complete first on low-memory devices.
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      XpService().syncFromFirestore();
+      SyncService().startListening();
     });
     // Backfill XP for cards added before the XP system existed (one-time, idempotent)
     Future.delayed(const Duration(seconds: 3), () {

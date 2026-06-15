@@ -53,10 +53,16 @@ class AuthService {
   }
 
   /// Tries Google Sign-In via Credential Manager (google_sign_in v7.x).
-  /// If that fails (device incompatibility, missing Play Services update, etc.)
-  /// falls back to the browser-based OAuth flow via Firebase signInWithProvider,
-  /// which works on any Android version and any signing certificate.
+  /// In debug mode, skips Credential Manager and uses browser OAuth directly:
+  /// Credential Manager requires the debug SHA-1 registered in Firebase Console
+  /// and shows no UI on some Android devices (ZTE, budget devices), while
+  /// browser OAuth always works regardless of signing config.
   Future<UserCredential> _signInWithGoogleMobile() async {
+    if (kDebugMode) {
+      final googleProvider = GoogleAuthProvider();
+      return await _auth.signInWithProvider(googleProvider)
+          .timeout(const Duration(seconds: 120));
+    }
     try {
       await _ensureGoogleInitialized()
           .timeout(const Duration(seconds: 8));
@@ -68,12 +74,10 @@ class AuthService {
       final credential = GoogleAuthProvider.credential(idToken: idToken);
       return await _auth.signInWithCredential(credential);
     } on TimeoutException catch (_) {
-      // Credential Manager hung — fall back to browser OAuth.
       final googleProvider = GoogleAuthProvider();
       return await _auth.signInWithProvider(googleProvider)
           .timeout(const Duration(seconds: 120));
     } catch (_) {
-      // Credential Manager failed — fall back to browser OAuth.
       final googleProvider = GoogleAuthProvider();
       return await _auth.signInWithProvider(googleProvider)
           .timeout(const Duration(seconds: 120));

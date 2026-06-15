@@ -706,58 +706,6 @@ class AdminCatalogService {
     return chunkMap.values.expand((cards) => cards).toList();
   }
 
-  /// Search cards in local database (or Firestore on web)
-  Future<List<Map<String, dynamic>>> searchCards(String query) async {
-    // On web, SQLite doesn't work - return empty and user must download from Firestore
-    if (kIsWeb) {
-      // Web users must use downloadCurrentCatalog instead
-      return [];
-    }
-
-    final db = await _dbHelper.database;
-
-    final results = await db.rawQuery('''
-      SELECT DISTINCT
-        yp.id,
-        yp.name,
-        yp.type,
-        yp.race,
-        yp.archetype,
-        yp.atk,
-        yp.def,
-        yp.level,
-        yp.attribute,
-        yp.description
-      FROM yugioh_prints yp
-      WHERE yp.name LIKE ?
-         OR yp.archetype LIKE ?
-         OR CAST(yp.id AS TEXT) LIKE ?
-      LIMIT 100
-    ''', ['%$query%', '%$query%', '%$query%']);
-
-    return results.map((row) => Map<String, dynamic>.from(row)).toList();
-  }
-
-  /// Get card details by ID
-  Future<Map<String, dynamic>?> getCardById(int cardId) async {
-    // On web, SQLite doesn't work
-    if (kIsWeb) {
-      return null;
-    }
-
-    final db = await _dbHelper.database;
-
-    final results = await db.rawQuery('''
-      SELECT *
-      FROM yugioh_prints yp
-      WHERE yp.id = ?
-      LIMIT 1
-    ''', [cardId]);
-
-    if (results.isEmpty) return null;
-    return Map<String, dynamic>.from(results.first);
-  }
-
   /// Migrates all catalog card images from external URLs to Firebase Storage.
   ///
   /// Only processes cards that have `image_url` (external source) but no
@@ -2857,18 +2805,16 @@ class AdminCatalogService {
                     ? rawCode.split('-')[0].toLowerCase()
                     : rawCode.toLowerCase();
 
-                // Ricerca per nome (primaria)
-                double? price = priceByNameLang['$expCode|$nameEn|$ctLang'];
-
-                // Fallback: ricerca per collector-number (parte dopo l'ultimo '-')
-                if (price == null) {
-                  final cn = rawCode.contains('-')
-                      ? rawCode.split('-').last.toLowerCase()
-                      : '';
-                  if (cn.isNotEmpty) {
-                    price = priceByCNLang['$expCode|$cn|$ctLang'];
-                  }
-                }
+                // Per YGO ogni stampa ha un CN univoco (es. "LOB-EN001" → "en001")
+                // che identifica anche la rarità — usato come lookup primario.
+                // Il nome è usato come fallback per blueprint con CN assente.
+                final cn = rawCode.contains('-')
+                    ? rawCode.split('-').last.toLowerCase()
+                    : '';
+                double? price = cn.isNotEmpty
+                    ? priceByCNLang['$expCode|$cn|$ctLang']
+                    : null;
+                price ??= priceByNameLang['$expCode|$nameEn|$ctLang'];
 
                 if (price != null) {
                   cardModified = true;
