@@ -507,6 +507,14 @@ class DataRepository {
     return await _dbHelper.getCollections();
   }
 
+  /// Reads unlocked collections from local SQLite only — no Firestore.
+  /// Use this when a Firestore round-trip would cause unnecessary memory pressure.
+  Future<List<CollectionModel>> getLocalUnlockedCollections() async {
+    if (kIsWeb) return [];
+    final all = await _dbHelper.getCollections();
+    return all.where((c) => c.isUnlocked).toList();
+  }
+
   Future<void> unlockCollection(String collectionKey) async {
     if (!kIsWeb) {
       await _dbHelper.unlockCollection(collectionKey);
@@ -1416,9 +1424,9 @@ class DataRepository {
     return await _dbHelper.getStatsPerCollection();
   }
 
-  Future<List<Map<String, dynamic>>> getStatsPerRarity() async {
+  Future<List<Map<String, dynamic>>> getStatsPerRarity({String? collection}) async {
     if (kIsWeb) return [];
-    return await _dbHelper.getStatsPerRarity();
+    return await _dbHelper.getStatsPerRarity(collection: collection);
   }
 
   Future<List<Map<String, dynamic>>> getAllCardsForExport() async {
@@ -1426,12 +1434,12 @@ class DataRepository {
     return await _dbHelper.getAllCardsForExport();
   }
 
-  Future<Map<String, dynamic>> getGlobalStats() async {
+  Future<Map<String, dynamic>> getGlobalStats({String? collection}) async {
     if (kIsWeb) {
       // On web there is no local SQLite cache; return zeroed stats.
       return {'totalCards': 0, 'totalValue': 0.0, 'unlockedCollections': 0};
     }
-    return await _dbHelper.getGlobalStats();
+    return await _dbHelper.getGlobalStats(collection: collection);
   }
 
   Future<void> saveCollectionValueSnapshot() async {

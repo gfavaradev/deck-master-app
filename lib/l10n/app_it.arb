@@ -1703,8 +1703,8 @@
   "statsTotalCards": "Carte Totali",
   "@statsTotalCards": { "description": "Total cards stat card label" },
 
-  "statsUniqueCards": "Carte Uniche",
-  "@statsUniqueCards": { "description": "Unique cards stat card label" },
+  "statsDuplicateCards": "Doppioni",
+  "@statsDuplicateCards": { "description": "Duplicate cards stat card label" },
 
   "statsEstimatedValue": "Valore Stimato",
   "@statsEstimatedValue": { "description": "Estimated value stat card label" },

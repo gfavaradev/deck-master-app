@@ -3,14 +3,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/banner_ad_widget.dart';
-import '../models/subscription_model.dart';
 import '../models/user_model.dart';
 import '../services/subscription_service.dart';
 import '../services/user_service.dart';
 import '../services/data_repository.dart';
 import '../services/xp_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/donation_badge.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -116,7 +114,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final tier = _userModel?.donationTier ?? DonationTier.none;
     final hasPro = _userModel?.hasProAccess ?? false;
     const radius = 56.0;
 
@@ -170,11 +167,7 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Stack(
               clipBehavior: Clip.none,
               children: [
-                DonationAvatarBorder(
-                  tier: tier,
-                  radius: radius,
-                  child: avatarCircle,
-                ),
+                avatarCircle,
                 // Badge livello in alto a sinistra
                 Positioned(
                   top: -4,
@@ -230,11 +223,6 @@ class _ProfilePageState extends State<ProfilePage> {
               style: const TextStyle(color: AppColors.textHint, fontSize: 13),
             ),
           ),
-
-          if (tier != DonationTier.none) ...[
-            const SizedBox(height: 10),
-            Center(child: DonationBadge(tier: tier, size: 20, showLabel: true)),
-          ],
 
           const SizedBox(height: 24),
 

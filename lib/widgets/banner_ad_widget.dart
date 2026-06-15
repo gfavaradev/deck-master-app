@@ -32,12 +32,6 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     });
   }
 
-  Future<AdSize?> _computeAdSize() {
-    final mq = MediaQuery.of(context);
-    final width = (mq.size.width - mq.padding.left - mq.padding.right).truncate();
-    return AdSize.getLargeAnchoredAdaptiveBannerAdSizeWithOrientation(mq.orientation, width);
-  }
-
   Future<void> _checkAndLoad() async {
     if (!mounted) return;
 
@@ -53,11 +47,8 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
       return;
     }
 
-    // Non Pro dalla cache → carica subito l'ad e verifica Firestore in parallelo
-    final adSize = await _computeAdSize();
-    if (!mounted || adSize == null) return;
-    _adSize = adSize;
-    _createBannerAd(adSize);
+    _adSize = AdSize.banner;
+    _createBannerAd(AdSize.banner);
 
     _verifyProInBackground(uid, prefs);
   }
@@ -79,10 +70,8 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
       _bannerAd = null;
     } else if (_isPro) {
       setState(() => _isPro = false);
-      final adSize = await _computeAdSize();
-      if (!mounted || adSize == null) return;
-      _adSize = adSize;
-      _createBannerAd(adSize);
+      _adSize = AdSize.banner;
+      _createBannerAd(AdSize.banner);
     }
   }
 

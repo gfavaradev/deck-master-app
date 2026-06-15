@@ -18,6 +18,10 @@ import 'services/ad_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Limita la cache immagini in memoria a 60MB per evitare OOM su dispositivi con heap 256MB.
+  // Il default Flutter (100MB) sommato ad Ads SDK e dati SQLite portava a OOM.
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 60 * 1024 * 1024;
+
   // Disabilita il download dei font da internet: usa solo gli asset bundlati.
   // Senza questo, google_fonts tenta di scaricare i font da fonts.gstatic.com
   // causando eccezioni non gestite su dispositivi senza connessione o con DNS limitato.

@@ -10,7 +10,6 @@ import '../services/cardtrader_service.dart';
 import '../services/database_helper.dart';
 import '../services/subscription_service.dart';
 import '../models/user_model.dart';
-import '../models/subscription_model.dart';
 import '../theme/app_colors.dart';
 import 'admin_collection_page.dart';
 import 'admin_excel_page.dart';
@@ -1317,7 +1316,6 @@ class AdminProPage extends StatefulWidget {
 class _AdminProPageState extends State<AdminProPage> {
   final SubscriptionService _service = SubscriptionService();
   final _emailController = TextEditingController();
-  final _donationController = TextEditingController();
 
   List<UserModel> _users = [];
   List<UserModel> _filtered = [];
@@ -1334,7 +1332,6 @@ class _AdminProPageState extends State<AdminProPage> {
   @override
   void dispose() {
     _emailController.dispose();
-    _donationController.dispose();
     super.dispose();
   }
 
@@ -1392,81 +1389,12 @@ class _AdminProPageState extends State<AdminProPage> {
     }
   }
 
-  Future<void> _recordDonation(UserModel user) async {
-    _donationController.clear();
-    final confirmed = await showDialog<double>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgMedium,
-        title: Text(
-          'Registra Donazione — ${user.displayName ?? user.email}',
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Totale attuale: €${user.totalDonated.toStringAsFixed(2)}'
-              ' (${user.donationTier.label.isEmpty ? "Nessun tier" : user.donationTier.label})',
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _donationController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(
-                labelText: 'Importo (€)',
-                labelStyle: TextStyle(color: AppColors.textSecondary),
-                prefixText: '€ ',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annulla', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.gold, foregroundColor: Colors.black),
-            onPressed: () {
-              final val = double.tryParse(_donationController.text.replaceAll(',', '.'));
-              Navigator.pop(ctx, val);
-            },
-            child: const Text('Registra'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == null || confirmed <= 0 || !mounted) return;
-
-    try {
-      final newTier = await _service.recordDonation(user.uid, confirmed);
-      await _load();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Donazione €${confirmed.toStringAsFixed(2)} registrata.'
-            '${newTier != user.donationTier ? " Nuovo tier: ${newTier.label}" : ""}',
-          ),
-        ),
-      );
-    } catch (e) { // ignore: empty_catches
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: const Text('Gestione Pro & Donazioni'),
+        title: const Text('Gestione Pro'),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
       ),
@@ -1525,7 +1453,6 @@ class _AdminProPageState extends State<AdminProPage> {
                     return _UserProTile(
                       user: _filtered[i],
                       onTogglePro: () => _togglePro(_filtered[i]),
-                      onDonation: () => _recordDonation(_filtered[i]),
                     );
                   },
                 ),
@@ -1541,8 +1468,7 @@ class _AdminProPageState extends State<AdminProPage> {
 class _UserProTile extends StatelessWidget {
   final UserModel user;
   final VoidCallback onTogglePro;
-  final VoidCallback onDonation;
-  const _UserProTile({required this.user, required this.onTogglePro, required this.onDonation});
+  const _UserProTile({required this.user, required this.onTogglePro});
 
   @override
   Widget build(BuildContext context) {
@@ -1579,54 +1505,33 @@ class _UserProTile extends StatelessWidget {
                     user.email,
                     style: const TextStyle(color: AppColors.textHint, fontSize: 11),
                   ),
-                  Row(
-                    children: [
-                      if (user.isPro)
-                        Container(
-                          margin: const EdgeInsets.only(top: 3, right: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AppColors.gold,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'PRO',
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
+                  if (user.isPro)
+                    Container(
+                      margin: const EdgeInsets.only(top: 3),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppColors.gold,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'PRO',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
                         ),
-                      if (user.donationTier != DonationTier.none)
-                        Text(
-                          '${user.donationTier.symbol} ${user.donationTier.label} · €${user.totalDonated.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: user.donationTier.color,
-                            fontSize: 11,
-                          ),
-                        ),
-                    ],
-                  ),
+                      ),
+                    ),
                 ],
               ),
             ),
-            Column(
-              children: [
-                IconButton(
-                  tooltip: user.isPro ? 'Disattiva Pro' : 'Attiva Pro',
-                  onPressed: onTogglePro,
-                  icon: Icon(
-                    user.isPro ? Icons.workspace_premium : Icons.workspace_premium_outlined,
-                    color: user.isPro ? AppColors.gold : AppColors.textHint,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Registra donazione',
-                  onPressed: onDonation,
-                  icon: const Icon(Icons.favorite_outline, color: Color(0xFFFF6B35)),
-                ),
-              ],
+            IconButton(
+              tooltip: user.isPro ? 'Disattiva Pro' : 'Attiva Pro',
+              onPressed: onTogglePro,
+              icon: Icon(
+                user.isPro ? Icons.workspace_premium : Icons.workspace_premium_outlined,
+                color: user.isPro ? AppColors.gold : AppColors.textHint,
+              ),
             ),
           ],
         ),

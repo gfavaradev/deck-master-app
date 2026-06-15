@@ -3182,11 +3182,11 @@ abstract class AppLocalizations {
   /// **'Carte Totali'**
   String get statsTotalCards;
 
-  /// Unique cards stat card label
+  /// Duplicate cards stat card label
   ///
   /// In it, this message translates to:
-  /// **'Carte Uniche'**
-  String get statsUniqueCards;
+  /// **'Doppioni'**
+  String get statsDuplicateCards;
 
   /// Estimated value stat card label
   ///

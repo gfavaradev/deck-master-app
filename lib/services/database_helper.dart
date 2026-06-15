@@ -2362,20 +2362,27 @@ class DatabaseHelper {
     )
   ''';
 
-  Future<Map<String, dynamic>> getGlobalStats() async {
+  Future<Map<String, dynamic>> getGlobalStats({String? collection}) async {
     Database db = await database;
+    final colFilter = collection != null ? ' WHERE collection = ?' : '';
+    final colArgs   = collection != null ? [collection] : <Object?>[];
 
-    final totalCards  = await db.rawQuery('SELECT SUM(quantity) as total FROM cards');
-    final uniqueCards = await db.rawQuery('SELECT COUNT(DISTINCT catalogId) as total FROM cards WHERE catalogId IS NOT NULL');
+    final totalCards = await db.rawQuery('SELECT SUM(quantity) as total FROM cards$colFilter', colArgs);
+    final duplicateCards = await db.rawQuery(
+      'SELECT SUM(c.quantity) as total FROM cards c '
+      "JOIN albums a ON a.id = c.albumId WHERE a.name = 'Doppioni'"
+      '${collection != null ? " AND c.collection = ?" : ""}',
+      colArgs,
+    );
     final totalValue  = await db.rawQuery('''
       ${_cardEffectiveValueCTE()}
-      SELECT SUM(effective_price * quantity) as total FROM card_values
-    ''');
+      SELECT SUM(effective_price * quantity) as total FROM card_values${collection != null ? ' WHERE collection = ?' : ''}
+    ''', colArgs);
     final collections = await db.rawQuery('SELECT COUNT(*) as total FROM collections WHERE isUnlocked = 1');
 
     return {
       'totalCards': (totalCards.first['total'] as num?)?.toInt() ?? 0,
-      'uniqueCards': uniqueCards.first['total'] as int? ?? 0,
+      'duplicateCards': (duplicateCards.first['total'] as num?)?.toInt() ?? 0,
       'totalValue': (totalValue.first['total'] as num?)?.toDouble() ?? 0.0,
       'unlockedCollections': collections.first['total'] as int? ?? 0,
     };
@@ -2394,19 +2401,20 @@ class DatabaseHelper {
     ''');
   }
 
-  Future<List<Map<String, dynamic>>> getStatsPerRarity() async {
+  Future<List<Map<String, dynamic>>> getStatsPerRarity({String? collection}) async {
     final db = await database;
+    final colArgs = collection != null ? [collection] : <Object?>[];
     return await db.rawQuery('''
       ${_cardEffectiveValueCTE()}
       SELECT rarity,
              SUM(quantity) as count,
              SUM(effective_price * quantity) as totalValue
       FROM card_values
-      WHERE rarity != ''
+      WHERE rarity != ''${collection != null ? ' AND collection = ?' : ''}
       GROUP BY rarity
       ORDER BY count DESC
       LIMIT 10
-    ''');
+    ''', colArgs);
   }
 
   /// Saves today's total value per collection into [collection_value_history].

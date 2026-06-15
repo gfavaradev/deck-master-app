@@ -1717,7 +1717,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statsTotalCards => 'Total Cards';
 
   @override
-  String get statsUniqueCards => 'Unique Cards';
+  String get statsDuplicateCards => 'Duplicates';
 
   @override
   String get statsEstimatedValue => 'Estimated Value';

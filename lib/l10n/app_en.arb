@@ -563,7 +563,7 @@
   "collectionSummaryValue": "Value",
 
   "statsTotalCards": "Total Cards",
-  "statsUniqueCards": "Unique Cards",
+  "statsDuplicateCards": "Duplicates",
   "statsEstimatedValue": "Estimated Value",
   "statsValueTrend": "Value Trend",
 

@@ -2,6 +2,7 @@ import '../l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../models/collection_model.dart';
 import '../widgets/banner_ad_widget.dart';
 import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
@@ -25,12 +26,32 @@ class StatsPage extends StatefulWidget {
 class _StatsPageState extends State<StatsPage> {
   final DataRepository _dbHelper = DataRepository();
   Map<String, dynamic>? _stats;
-  List<Map<String, dynamic>> _collectionStats = [];
   List<Map<String, dynamic>> _rarityStats = [];
+  List<CollectionModel> _unlockedCollections = [];
+  // '_global' = tutte le collezioni sbloccate; altrimenti la chiave della collezione
+  String _filterValue = '_global';
   bool _isLoading = true;
   // false = questa collezione, true = globale (solo quando collectionKey != null)
   bool _chartGlobal = false;
   StreamSubscription<String>? _syncSub;
+
+  String? get _selectedCollectionKey =>
+      _filterValue == '_global' ? null : _filterValue;
+
+  String? get _effectiveCollectionKey =>
+      widget.collectionKey ?? _selectedCollectionKey;
+
+  String? get _effectiveCollectionName {
+    if (widget.collectionName != null) return widget.collectionName;
+    if (_selectedCollectionKey == null) return null;
+    try {
+      return _unlockedCollections
+          .firstWhere((c) => c.key == _selectedCollectionKey)
+          .name;
+    } catch (_) {
+      return _selectedCollectionKey;
+    }
+  }
 
   void _onCurrencyChanged() => setState(() {});
 
@@ -52,34 +73,52 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   Future<void> _loadStats() async {
-    final results = await Future.wait([
-      _dbHelper.getGlobalStats(),
-      _dbHelper.getStatsPerCollection(),
-      _dbHelper.getStatsPerRarity(),
-    ]);
-    // Save today's snapshot whenever the user views stats (INSERT OR IGNORE)
+    final filterKey   = _effectiveCollectionKey;
+    final inHomeMode  = widget.collectionKey == null;
+
+    final futures = <Future>[
+      _dbHelper.getGlobalStats(collection: filterKey),
+      _dbHelper.getStatsPerRarity(collection: filterKey),
+      // Local-only read per evitare allocazioni Firestore in parallelo con SQLite
+      if (inHomeMode) _dbHelper.getLocalUnlockedCollections(),
+    ];
+
+    final results = await Future.wait(futures);
     _dbHelper.saveCollectionValueSnapshot();
+
     if (mounted) {
       setState(() {
-        _stats = results[0] as Map<String, dynamic>;
-        _collectionStats = results[1] as List<Map<String, dynamic>>;
-        _rarityStats = results[2] as List<Map<String, dynamic>>;
+        _stats       = results[0] as Map<String, dynamic>;
+        _rarityStats = results[1] as List<Map<String, dynamic>>;
+        if (inHomeMode) {
+          _unlockedCollections = results[2] as List<CollectionModel>;
+        }
         _isLoading = false;
       });
     }
   }
-
-  static const _collectionLabels = {
-    'yugioh': 'Yu-Gi-Oh!',
-    'pokemon': 'Pokémon',
-    'onepiece': 'One Piece TCG',
-  };
 
   static final _collectionColors = {
     'yugioh':   AppColors.yugiohAccent,
     'pokemon':  AppColors.pokemonAccent,
     'onepiece': AppColors.onepieceAccent,
     'magic':    AppColors.magicAccent,
+  };
+
+  static const _collectionLogoAssets = {
+    'yugioh':            'assets/images/collections/yugioh-logo.png',
+    'pokemon':           'assets/images/collections/pokemon-logo.png',
+    'magic':             'assets/images/collections/magic-logo.png',
+    'onepiece':          'assets/images/collections/one-piece-logo.webp',
+    'digimon':           'assets/images/collections/digimon-logo.png',
+    'dragon-ball-super': 'assets/images/collections/dragon-ball-super-logo.png',
+    'lorcana':           'assets/images/collections/lorcana-logo.png',
+    'flesh-and-blood':   'assets/images/collections/flesh-and-blood-logo.png',
+    'vanguard':          'assets/images/collections/vanguard-logo.png',
+    'star-wars':         'assets/images/collections/star-wars-logo.png',
+    'riftbound':         'assets/images/collections/riftbound-logo.png',
+    'gundam':            'assets/images/collections/gundam-logo.png',
+    'union-arena':       'assets/images/collections/union-arena-logo.png',
   };
 
   @override
@@ -112,16 +151,21 @@ class _StatsPageState extends State<StatsPage> {
                       child: ListView(
                         padding: const EdgeInsets.all(16.0),
                         children: [
+                          // Filtro per collezione — solo in home mode
+                          if (widget.collectionKey == null &&
+                              _unlockedCollections.isNotEmpty)
+                            _buildCollectionFilter(),
                           _buildStatCard(l10n.statsTotalCards, _stats?['totalCards'].toString() ?? '0', Icons.copy_all, Colors.indigo),
-                          _buildStatCard(l10n.statsUniqueCards, _stats?['uniqueCards'].toString() ?? '0', Icons.style, Colors.teal),
+                          _buildStatCard(l10n.statsDuplicateCards, _stats?['duplicateCards'].toString() ?? '0', Icons.content_copy, Colors.orange),
                           _buildStatCard(l10n.statsEstimatedValue, CurrencyFormatter.format(_stats?['totalValue'] as double? ?? 0.0), Icons.euro, Colors.green),
                           _buildValueChart(),
-                          if (_collectionStats.isNotEmpty) _buildCollectionBreakdown(),
                           if (_rarityStats.isNotEmpty) _buildRarityBreakdown(),
-                          if (widget.collectionKey != null) _buildExpansioniCard(),
+                          // Espansioni: quando si è dentro una collezione specifica
+                          if (_effectiveCollectionKey != null)
+                            _buildExpansioniCard(),
                         ],
                       ),
-                  ),
+                    ),
             ),
             if (!kIsWeb) const BannerAdWidget(),
           ],
@@ -130,13 +174,66 @@ class _StatsPageState extends State<StatsPage> {
     );
   }
 
+  // ─── Filter bar ──────────────────────────────────────────────────────────────
+
+  Widget _buildCollectionFilter() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: SizedBox(
+        height: 96,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          children: [
+            _CollectionFilterChip(
+              isSelected: _filterValue == '_global',
+              accentColor: AppColors.gold,
+              onTap: () {
+                if (_filterValue != '_global') {
+                  setState(() => _filterValue = '_global');
+                  _loadStats();
+                }
+              },
+              child: const Icon(Icons.public_rounded, size: 32, color: AppColors.gold),
+            ),
+            ..._unlockedCollections.map((col) {
+              final accent = AppColors.forCollection(col.key);
+              final logo   = _collectionLogoAssets[col.key];
+              return _CollectionFilterChip(
+                isSelected: _filterValue == col.key,
+                accentColor: accent,
+                onTap: () {
+                  if (_filterValue != col.key) {
+                    setState(() => _filterValue = col.key);
+                    _loadStats();
+                  }
+                },
+                child: logo != null
+                    ? Image.asset(logo,
+                        fit: BoxFit.contain,
+                        cacheWidth: 256)
+                    : Icon(Icons.style, size: 28, color: accent),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Chart ───────────────────────────────────────────────────────────────────
+
   Widget _buildValueChart() {
     final hasCollection = widget.collectionKey != null;
-    // Which data scope to show
-    final chartCollection =
-        hasCollection && !_chartGlobal ? widget.collectionKey : null;
-    final accentColor = hasCollection && !_chartGlobal
-        ? (_collectionColors[widget.collectionKey] ?? AppColors.gold)
+    // In collection mode: rispetta il toggle. In home mode: usa il filtro.
+    final String? chartCollection;
+    if (hasCollection) {
+      chartCollection = _chartGlobal ? null : widget.collectionKey;
+    } else {
+      chartCollection = _selectedCollectionKey;
+    }
+    final accentColor = chartCollection != null
+        ? (_collectionColors[chartCollection] ?? AppColors.gold)
         : AppColors.gold;
 
     return Card(
@@ -167,7 +264,7 @@ class _StatsPageState extends State<StatsPage> {
                         fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
-                // Toggle scope — only when inside a collection
+                // Toggle scope — solo in collection mode (non in home mode con filtro)
                 if (hasCollection)
                   _ScopeRow(
                     isGlobal: _chartGlobal,
@@ -187,61 +284,7 @@ class _StatsPageState extends State<StatsPage> {
     );
   }
 
-  Widget _buildCollectionBreakdown() {
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.collections_bookmark, color: Colors.blue, size: 24),
-                ),
-                const SizedBox(width: 12),
-                Text(AppLocalizations.of(context)!.statsPerCollection, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ..._collectionStats.map((row) {
-              final key = row['collection'] as String? ?? '';
-              final label = _collectionLabels[key] ?? key;
-              final color = _collectionColors[key] ?? Colors.grey;
-              final cards = (row['totalCards'] as num?)?.toInt() ?? 0;
-              final value = (row['totalValue'] as num?)?.toDouble() ?? 0.0;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
-                    Text(AppLocalizations.of(context)!.statsCardsCount(cards), style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-                    const SizedBox(width: 12),
-                    Text(CurrencyFormatter.format(value),
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
+  // ─── Cards ───────────────────────────────────────────────────────────────────
 
   Widget _buildRarityBreakdown() {
     return Card(
@@ -269,11 +312,11 @@ class _StatsPageState extends State<StatsPage> {
             ),
             const SizedBox(height: 12),
             ..._rarityStats.map((row) {
-              final rarity = row['rarity'] as String? ?? '';
-              final count = (row['count'] as num?)?.toInt() ?? 0;
-              final value = (row['totalValue'] as num?)?.toDouble() ?? 0.0;
+              final rarity   = row['rarity'] as String? ?? '';
+              final count    = (row['count'] as num?)?.toInt() ?? 0;
+              final value    = (row['totalValue'] as num?)?.toDouble() ?? 0.0;
               final maxCount = (_rarityStats.first['count'] as num?)?.toInt() ?? 1;
-              final ratio = maxCount > 0 ? count / maxCount : 0.0;
+              final ratio    = maxCount > 0 ? count / maxCount : 0.0;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Column(
@@ -307,6 +350,8 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   Widget _buildExpansioniCard() {
+    final collKey  = _effectiveCollectionKey!;
+    final collName = _effectiveCollectionName ?? collKey;
     return Card(
       elevation: 4,
       margin: const EdgeInsets.only(bottom: 16),
@@ -323,7 +368,7 @@ class _StatsPageState extends State<StatsPage> {
         ),
         title: Text(AppLocalizations.of(context)!.statsSetsSection, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         subtitle: Text(
-          'Completamento set per ${widget.collectionName}',
+          'Completamento set per $collName',
           style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
         ),
         trailing: const Icon(Icons.chevron_right),
@@ -331,8 +376,8 @@ class _StatsPageState extends State<StatsPage> {
           context,
           MaterialPageRoute(
             builder: (_) => SetCompletionPage(
-              collectionKey: widget.collectionKey!,
-              collectionName: widget.collectionName!,
+              collectionKey: collKey,
+              collectionName: collName,
             ),
           ),
         ),
@@ -367,6 +412,58 @@ class _StatsPageState extends State<StatsPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─── Collection filter chip ───────────────────────────────────────────────────
+
+class _CollectionFilterChip extends StatelessWidget {
+  final bool isSelected;
+  final Color accentColor;
+  final VoidCallback onTap;
+  final Widget child;
+
+  const _CollectionFilterChip({
+    required this.isSelected,
+    required this.accentColor,
+    required this.onTap,
+    required this.child,
+  });
+
+  // Stesso beige delle card collezione nella home
+  static const _cardBg = Color(0xFFE8DFCC);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 132,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? _cardBg : AppColors.bgLight,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected
+                ? accentColor
+                : AppColors.border.withValues(alpha: 0.5),
+            width: isSelected ? 2.0 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
+        ),
+        padding: const EdgeInsets.all(8),
+        child: child,
       ),
     );
   }

@@ -6,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import 'support_page.dart';
-import 'donations_page.dart';
 import 'home_page_simple.dart';
 import 'card_list_page.dart';
 import 'catalog_page.dart';
@@ -910,8 +909,6 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 if (mounted && result?['restore'] != null) {
                   _startRestoreDownload(result!['restore'] as String);
                 }
-              } else if (value == 'donations') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const DonationsPage()));
               } else if (value == 'support') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportPage()));
               } else if (value == 'logout') {
@@ -948,15 +945,6 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 child: ListTile(
                   leading: const Icon(Icons.system_update_alt_rounded),
                   title: Text(l10n.menuCheckUpdates),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              PopupMenuItem(
-                value: 'donations',
-                child: ListTile(
-                  leading: const Icon(Icons.coffee, color: Color(0xFFFF6B35)),
-                  title: Text(l10n.menuDonations,
-                      style: const TextStyle(color: Color(0xFFFF6B35), fontWeight: FontWeight.w600)),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),

@@ -55,7 +55,8 @@ class _CollectionValueChartState extends State<CollectionValueChart> {
   }
 
   void _load() {
-    final from = DateTime.now().subtract(Duration(days: _period.days));
+    // -1 perché vogliamo includere oggi: 7G = [oggi-6 … oggi], 30G = [oggi-29 … oggi], ecc.
+    final from = DateTime.now().subtract(Duration(days: _period.days - 1));
     _future = _repo
         .getCollectionValueHistory(collection: widget.collection, from: from)
         .then((rows) => rows
@@ -106,7 +107,7 @@ class _CollectionValueChartState extends State<CollectionValueChart> {
                     )
                   : points.length < 2
                       ? _EmptyState(color: widget.accentColor)
-                      : _Chart(points: points, color: widget.accentColor),
+                      : _Chart(points: points, color: widget.accentColor, period: _period),
             ),
           ],
         );
@@ -189,7 +190,12 @@ class _EmptyState extends StatelessWidget {
 class _Chart extends StatelessWidget {
   final List<_ValuePoint> points;
   final Color color;
-  const _Chart({required this.points, required this.color});
+  final CollectionChartPeriod period;
+  const _Chart({required this.points, required this.color, required this.period});
+
+  static const _monthLabels = [
+    'Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -200,14 +206,22 @@ class _Chart extends StatelessWidget {
     final chartMaxY = maxY + pad;
 
     final spots = points
-        .map((p) =>
-            FlSpot(p.date.millisecondsSinceEpoch / 86400000, p.euros))
+        .map((p) => FlSpot(p.date.millisecondsSinceEpoch / 86400000, p.euros))
         .toList();
 
-    final minX = spots.first.x;
-    final maxX = spots.last.x;
-    final xRange = (maxX - minX).clamp(1.0, double.infinity);
-    final xInterval = (xRange / 3).ceilToDouble();
+    // Asse x: usa sempre il periodo completo, non solo il range dei dati
+    final today      = DateTime.now();
+    final todayDay   = DateTime(today.year, today.month, today.day);
+    final periodStart = todayDay.subtract(Duration(days: period.days - 1));
+    final minX = periodStart.millisecondsSinceEpoch / 86400000;
+    final maxX = todayDay.millisecondsSinceEpoch / 86400000;
+
+    // Intervallo asse x per periodo
+    final double xInterval = switch (period) {
+      CollectionChartPeriod.week  => 1.0,  // ogni giorno
+      CollectionChartPeriod.month => 5.0,  // ogni 5 giorni
+      CollectionChartPeriod.year  => 31.0, // ~mensile
+    };
 
     // Trend: positive = green tint, negative = red tint
     final isUp = points.last.euros >= points.first.euros;
@@ -241,8 +255,7 @@ class _Chart extends StatelessWidget {
               interval: _niceInterval(chartMinY, chartMaxY),
               getTitlesWidget: (v, _) => Text(
                 _formatAxisLabel(v),
-                style:
-                    const TextStyle(fontSize: 8, color: AppColors.textHint),
+                style: const TextStyle(fontSize: 8, color: AppColors.textHint),
               ),
             ),
           ),
@@ -251,14 +264,18 @@ class _Chart extends StatelessWidget {
               showTitles: true,
               reservedSize: 20,
               interval: xInterval,
-              getTitlesWidget: (v, _) {
+              getTitlesWidget: (v, meta) {
+                if (v < minX - 0.5 || v > maxX + 0.5) {
+                  return const SizedBox.shrink();
+                }
                 final d = DateTime.fromMillisecondsSinceEpoch(
                     (v * 86400000).toInt());
-                return Text(
-                  '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                      fontSize: 8, color: AppColors.textHint),
-                );
+                final label = period == CollectionChartPeriod.year
+                    ? _monthLabels[d.month - 1]
+                    : '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+                return Text(label,
+                    style: const TextStyle(
+                        fontSize: 8, color: AppColors.textHint));
               },
             ),
           ),

@@ -53,7 +53,6 @@ class _CatalogPageState extends State<CatalogPage> {
   double? _downloadProgress; // null = connecting, 0.0-1.0 = downloading/saving
   String _downloadMessage = '';
   String? _loadError;
-  Map<String, dynamic>? _pendingUpdateInfo; // aggiornamento incrementale disponibile
   int? _lastUsedAlbumId;
   // Multi-selection state
   bool _isSelectionMode = false;
@@ -138,12 +137,6 @@ class _CatalogPageState extends State<CatalogPage> {
         setState(() => _isCatalogMissing = true);
       }
     }
-
-    // Applica in background l'aggiornamento incrementale (es. nuove URL Backblaze)
-    // senza bloccare l'UI — le carte si aggiornano dopo il download silenzioso.
-    if (mounted && _pendingUpdateInfo != null) {
-      _applySilentCatalogUpdate();
-    }
   }
 
   bool get _isSupportedCollection {
@@ -174,42 +167,12 @@ class _CatalogPageState extends State<CatalogPage> {
           updateInfo = await _dbHelper.checkGenericCatalogUpdates(widget.collectionKey);
       }
       if (!mounted) return;
-      if (updateInfo['needsUpdate'] == true) {
-        if (updateInfo['isFirstDownload'] == true) {
-          setState(() => _isCatalogMissing = true);
-        } else {
-          setState(() => _pendingUpdateInfo = updateInfo);
-        }
+      if (updateInfo['needsUpdate'] == true && updateInfo['isFirstDownload'] == true) {
+        setState(() => _isCatalogMissing = true);
       }
     } catch (_) {}
   }
 
-  /// Applica in background un aggiornamento incrementale disponibile (es. nuove URL
-  /// immagini dopo una migrazione admin). Non mostra loading overlay — la pagina
-  /// rimane usabile e si aggiorna automaticamente al termine.
-  Future<void> _applySilentCatalogUpdate() async {
-    final info = _pendingUpdateInfo;
-    if (info == null) return;
-    try {
-      await _dbHelper.downloadCollectionCatalog(
-        widget.collectionKey,
-        updateInfo: info,
-      );
-      // Only clear pending info and reload after a successful download
-      if (!mounted) return;
-      setState(() {
-        _pendingUpdateInfo = null;
-        _currentOffset = 0;
-        _catalogCards = [];
-        _hasMoreCards = true;
-        _isLoading = true;
-      });
-      await Future.wait([_loadPage(), _loadAlbumsAndOwned()]);
-      if (mounted) setState(() => _isLoading = false);
-    } on CatalogDownloadBusyException {
-      // un altro download è in corso — nessun problema, riprova alla prossima apertura
-    } catch (_) {}
-  }
 
   Color get _themeAccent => AppColors.forCollection(widget.collectionKey);
 
