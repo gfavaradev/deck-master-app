@@ -10,6 +10,8 @@ import '../services/export_service.dart';
 import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
+import '../services/subscription_service.dart' show SubscriptionService;
+import 'pro_page.dart';
 import '../models/collection_model.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
@@ -37,6 +39,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isSigningIn = false;
 
   bool _isAdmin = false;
+  bool _isPro = false;
   bool _notificationsEnabled = false;
   bool _notifAppUpdates = true;
   bool _notifCatalogUpdates = true;
@@ -55,6 +58,7 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _checkOfflineMode();
     _checkAdminStatus();
+    _checkProStatus();
     _loadNotificationPreference();
     _loadUnlockedCatalogKeys();
     _loadAppPreferences();
@@ -125,6 +129,11 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _checkAdminStatus() async {
     final isAdmin = await _authService.isCurrentUserAdmin();
     if (mounted) setState(() => _isAdmin = isAdmin);
+  }
+
+  Future<void> _checkProStatus() async {
+    final isPro = await SubscriptionService().currentUserHasPro();
+    if (mounted) setState(() => _isPro = isPro);
   }
 
   Future<void> _signInWithGoogle() async {
@@ -388,8 +397,71 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  // Pro e Donazioni temporaneamente nascosti — da riabilitare quando il pagamento sarà configurato
-  Widget _buildProSection() => const SizedBox.shrink();
+  // Mostrata solo agli utenti non-Pro: porta alla pagina di upgrade.
+  Widget _buildProSection() {
+    if (_isPro) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF2A1F00),
+            AppColors.gold.withValues(alpha: 0.12),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.35), width: 0.5),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProPage())),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.gold.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Icon(Icons.workspace_premium, color: AppColors.gold, size: 24),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Passa a Pro', style: TextStyle(
+                        color: AppColors.gold,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      )),
+                      const SizedBox(height: 2),
+                      Text('Sblocca tutte le funzionalità premium', style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                        height: 1.4,
+                      )),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right, color: AppColors.gold, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   // ─── Build ───────────────────────────────────────────────────────────────────
 
