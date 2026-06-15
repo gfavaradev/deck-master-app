@@ -230,15 +230,15 @@ class CardListItem extends StatelessWidget {
                             : const Icon(Icons.style, size: 40),
                       ),
                     ),
-                    if (card.collection == 'onepiece')
-                      Positioned(
-                        top: 2,
-                        left: 2,
-                        child: OpLangBadge(
-                          serialNumber: card.serialNumber,
-                          compact: true,
-                        ),
+                    Positioned(
+                      top: 2,
+                      left: 2,
+                      child: OpLangBadge(
+                        serialNumber: card.serialNumber,
+                        collection: card.collection,
+                        compact: true,
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -515,6 +515,15 @@ class CardGridItem extends StatelessWidget {
                         ),
                 ),
               ],
+            ),
+            Positioned(
+              top: 4,
+              left: 4,
+              child: OpLangBadge(
+                serialNumber: card.serialNumber,
+                collection: card.collection,
+                compact: true,
+              ),
             ),
             // Dim overlay for non-selected cards in selection mode
             if (isSelectionMode && !isSelected)

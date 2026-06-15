@@ -10,7 +10,6 @@ import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/card_dialogs.dart';
 import '../widgets/full_screen_gallery.dart';
-import '../widgets/op_lang_badge.dart';
 import '../models/album_model.dart';
 import '../models/wishlist_model.dart';
 
@@ -714,7 +713,6 @@ class _CatalogPageState extends State<CatalogPage> {
                           }
 
                           final card = _catalogCards[index];
-                          final bool isOnePiece = widget.collectionKey == 'onepiece';
                           final bool isSelected = _selectedCardIds.contains(_getCardKey(card));
                           // Unico percorso per tutte le collezioni — i campi localizzati (YGO)
                           // hanno priorità; per le altre collezioni sono null e si usa il fallback.
@@ -755,15 +753,6 @@ class _CatalogPageState extends State<CatalogPage> {
                                           fit: StackFit.expand,
                                           children: [
                                             _buildCardImage(card, index),
-                                            // Badge lingua One Piece (top-left)
-                                            if (isOnePiece)
-                                              Positioned(
-                                                top: 4,
-                                                left: 4,
-                                                child: OpLangBadge(
-                                                  serialNumber: (card['setCode'] ?? '').toString(),
-                                                ),
-                                              ),
                                             if (ownedQty > 0)
                                               Positioned(
                                                 bottom: 4,

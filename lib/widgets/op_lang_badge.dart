@@ -1,39 +1,43 @@
 import 'package:flutter/material.dart';
 import '../services/language_service.dart';
 
-/// Rileva la lingua di una carta One Piece dal suo serial number / card_set_id.
-/// OP01-001  → 'JP'  (collector number inizia con cifra = giapponese)
-/// OP01-EN001 → 'EN'  (prefisso 2 lettere)
-/// OP01-FR001 → 'FR', OP01-KO001 → 'KO', ecc.
-String opLangFromSerial(String? serial) {
-  if (serial == null || serial.isEmpty) return 'JP';
-  if (!serial.contains('-')) return 'JP';
+/// Rileva la lingua dal serial number.
+/// One Piece: OP01-001 → JP (cifra dopo dash = JP), OP01-EN001 → EN
+/// YuGiOh: LOB-EN005 → EN, LOB-IT005 → IT
+/// Altri giochi: cifra dopo dash = EN (default)
+String opLangFromSerial(String? serial, {String collection = ''}) {
+  if (serial == null || serial.isEmpty) return 'EN';
+  if (!serial.contains('-')) return 'EN';
   final afterDash = serial.substring(serial.indexOf('-') + 1);
-  if (afterDash.isEmpty) return 'JP';
+  if (afterDash.isEmpty) return 'EN';
   final first = afterDash.codeUnitAt(0);
-  // Inizia con cifra → JP (no prefisso lingua)
-  if (first >= 0x30 && first <= 0x39) return 'JP';
+  if (first >= 0x30 && first <= 0x39) {
+    // Cifra dopo dash: One Piece senza prefisso = JP, altri giochi = EN
+    return collection == 'onepiece' ? 'JP' : 'EN';
+  }
   // Prefisso 2 lettere uppercase
   final match = RegExp(r'^([A-Za-z]{2})').firstMatch(afterDash);
-  return match != null ? match.group(1)!.toUpperCase() : 'JP';
+  return match != null ? match.group(1)!.toUpperCase() : 'EN';
 }
 
 /// Badge lingua per carte One Piece.
 /// Mostra bandiera + codice (es. 🇯🇵 JP, 🇬🇧 EN).
 class OpLangBadge extends StatelessWidget {
   final String serialNumber;
+  final String collection;
   /// Se true usa un layout compatto (solo testo, senza bandiera) — per spazi stretti.
   final bool compact;
 
   const OpLangBadge({
     super.key,
     required this.serialNumber,
+    this.collection = '',
     this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final lang = opLangFromSerial(serialNumber);
+    final lang = opLangFromSerial(serialNumber, collection: collection);
     final flag = LanguageService.flagEmoji[lang] ?? '';
     final Color bg = switch (lang) {
       'JP' => const Color(0xCC8B0000),

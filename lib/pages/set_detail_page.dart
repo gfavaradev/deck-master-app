@@ -229,11 +229,14 @@ class _SetDetailPageState extends State<SetDetailPage> with SingleTickerProvider
                           child: const Icon(Icons.style, color: AppColors.textHint, size: 20),
                       ),
                 ),
-                if (widget.collectionKey == 'onepiece')
-                  Positioned(
-                    top: 2, left: 2,
-                    child: OpLangBadge(serialNumber: serial, compact: true),
+                Positioned(
+                  top: 2, left: 2,
+                  child: OpLangBadge(
+                    serialNumber: serial,
+                    collection: widget.collectionKey,
+                    compact: true,
                   ),
+                ),
                 ],
               ),
             ),
