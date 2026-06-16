@@ -1,0 +1,12 @@
+{
+  "name": "deck-master-update-app-version",
+  "version": "1.0.0",
+  "description": "Aggiorna app_config/version su Firestore per il popup di aggiornamento app",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}
