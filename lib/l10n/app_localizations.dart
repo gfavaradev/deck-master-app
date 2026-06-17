@@ -2030,6 +2030,18 @@ abstract class AppLocalizations {
   /// **'N/D'**
   String get wishlistNdLabel;
 
+  /// Wishlist empty state title
+  ///
+  /// In it, this message translates to:
+  /// **'Non hai ancora aggiunto carte ai preferiti'**
+  String get wishlistEmptyTitle;
+
+  /// Wishlist empty state message
+  ///
+  /// In it, this message translates to:
+  /// **'Vai al catalogo e tocca il cuore\nsulle carte che vuoi acquistare.'**
+  String get wishlistEmptyMsg;
+
   /// Wishlist catalog picker title
   ///
   /// In it, this message translates to:

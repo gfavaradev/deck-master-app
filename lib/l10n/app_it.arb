@@ -1082,6 +1082,12 @@
   "wishlistNdLabel": "N/D",
   "@wishlistNdLabel": { "description": "N/A label in wishlist" },
 
+  "wishlistEmptyTitle": "Non hai ancora aggiunto carte ai preferiti",
+  "@wishlistEmptyTitle": { "description": "Wishlist empty state title" },
+
+  "wishlistEmptyMsg": "Vai al catalogo e tocca il cuore\nsulle carte che vuoi acquistare.",
+  "@wishlistEmptyMsg": { "description": "Wishlist empty state message" },
+
   "wishlistCatalogSearchTitle": "Cerca nel catalogo",
   "@wishlistCatalogSearchTitle": { "description": "Wishlist catalog picker title" },
 

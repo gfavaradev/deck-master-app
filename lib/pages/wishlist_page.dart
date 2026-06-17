@@ -167,21 +167,22 @@ class _WishlistPageState extends State<WishlistPage> {
   }
 
   Widget _buildEmpty() {
+    final l10n = AppLocalizations.of(context)!;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.favorite_border, size: 72, color: AppColors.textHint),
           const SizedBox(height: 16),
-          const Text(
-            'Non hai ancora aggiunto carte hai preferiti ',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 18),
+          Text(
+            l10n.wishlistEmptyTitle,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 18),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Vai al catalogo e tocca il cuore\nsulle carte che vuoi acquistare.',
+          Text(
+            l10n.wishlistEmptyMsg,
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textHint, fontSize: 14),
+            style: const TextStyle(color: AppColors.textHint, fontSize: 14),
           ),
         ],
       ),

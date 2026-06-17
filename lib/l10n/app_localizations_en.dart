@@ -1099,6 +1099,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get wishlistNdLabel => 'N/A';
 
   @override
+  String get wishlistEmptyTitle =>
+      'You haven\'t added any cards to your wishlist yet';
+
+  @override
+  String get wishlistEmptyMsg =>
+      'Go to the catalog and tap the heart\non the cards you want to buy.';
+
+  @override
   String get wishlistCatalogSearchTitle => 'Search catalog';
 
   @override

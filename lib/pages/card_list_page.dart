@@ -22,12 +22,16 @@ class CardListPage extends StatefulWidget {
   final String collectionName;
   final String collectionKey;
   final int? albumId;
+  /// False when an ancestor (e.g. MainLayout) already renders its own
+  /// BannerAdWidget below this page, to avoid showing two stacked banners.
+  final bool showOwnBannerAd;
 
   const CardListPage({
     super.key,
     required this.collectionName,
     required this.collectionKey,
     this.albumId,
+    this.showOwnBannerAd = true,
   });
 
   @override
@@ -720,7 +724,7 @@ class _CardListPageState extends State<CardListPage> {
           ),
         ),
         if (_isSelectionMode) _buildSelectionBar(),
-        if (!kIsWeb) const BannerAdWidget(),
+        if (!kIsWeb && widget.showOwnBannerAd) const BannerAdWidget(),
       ],
     );
   }

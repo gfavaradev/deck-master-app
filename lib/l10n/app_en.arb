@@ -349,6 +349,8 @@
   "dlgRemoveWishlistMsg": "Remove \"{name}\" from wishlist?",
   "btnRemove": "Remove",
   "wishlistNdLabel": "N/A",
+  "wishlistEmptyTitle": "You haven't added any cards to your wishlist yet",
+  "wishlistEmptyMsg": "Go to the catalog and tap the heart\non the cards you want to buy.",
   "wishlistCatalogSearchTitle": "Search catalog",
   "wishlistCatalogSearchHint": "Search by name or set code...",
   "wishlistItemAddedMsg": "{name} added to Wishlist",

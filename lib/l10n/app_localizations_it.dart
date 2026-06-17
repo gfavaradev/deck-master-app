@@ -1112,6 +1112,13 @@ class AppLocalizationsIt extends AppLocalizations {
   String get wishlistNdLabel => 'N/D';
 
   @override
+  String get wishlistEmptyTitle => 'Non hai ancora aggiunto carte ai preferiti';
+
+  @override
+  String get wishlistEmptyMsg =>
+      'Vai al catalogo e tocca il cuore\nsulle carte che vuoi acquistare.';
+
+  @override
   String get wishlistCatalogSearchTitle => 'Cerca nel catalogo';
 
   @override

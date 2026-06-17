@@ -684,6 +684,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           CardListPage(
             collectionKey: _currentCollectionKey!,
             collectionName: _currentCollectionName!,
+            showOwnBannerAd: false,
           ),
           CatalogPage(
             collectionKey: _currentCollectionKey!,
