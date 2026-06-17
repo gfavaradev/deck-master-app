@@ -232,14 +232,14 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.edit, size: 26),
-                iconSize: 26,
+                icon: const Icon(Icons.edit, size: 20),
+                iconSize: 20,
                 onPressed: () => _showAddAlbumDialog(album: album),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red, size: 26),
-                iconSize: 26,
+                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                iconSize: 20,
                 onPressed: () => _confirmDeleteAlbum(album),
               ),
             ],
@@ -316,14 +316,14 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.edit, size: 26),
-                iconSize: 26,
+                icon: const Icon(Icons.edit, size: 20),
+                iconSize: 20,
                 onPressed: () => _showRenameDeckDialog(deck),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red, size: 26),
-                iconSize: 26,
+                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                iconSize: 20,
                 onPressed: () => _confirmDeleteDeck(deck),
               ),
             ],
@@ -368,34 +368,42 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
                           bottom: BorderSide(color: AppColors.divider, width: 0.5),
                         ),
                       ),
-                      child: TabBar(
-                        controller: _tabController,
-                        indicatorColor: isAlbum ? AppColors.gold : AppColors.blue,
-                        indicatorWeight: 2,
-                        labelStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        tabs: [
-                          Tab(
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.book_outlined, size: 18, color: albumColor),
-                                const SizedBox(width: 6),
-                                Text('Album', style: TextStyle(color: albumColor)),
-                              ],
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          TabBar(
+                            controller: _tabController,
+                            indicatorColor: isAlbum ? AppColors.gold : AppColors.blue,
+                            indicatorWeight: 2,
+                            labelStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                             ),
+                            tabs: [
+                              Tab(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.book_outlined, size: 18, color: albumColor),
+                                    const SizedBox(width: 6),
+                                    Text('Album', style: TextStyle(color: albumColor)),
+                                  ],
+                                ),
+                              ),
+                              Tab(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.style_outlined, size: 18, color: deckColor),
+                                    const SizedBox(width: 6),
+                                    Text('Deck', style: TextStyle(color: deckColor)),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          Tab(
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.style_outlined, size: 18, color: deckColor),
-                                const SizedBox(width: 6),
-                                Text('Deck', style: TextStyle(color: deckColor)),
-                              ],
-                            ),
+                          IgnorePointer(
+                            child: Container(width: 0.5, height: 24, color: AppColors.divider),
                           ),
                         ],
                       ),
@@ -565,9 +573,11 @@ class _CollectionItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: iconColor, size: 40),
-      title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      leading: Icon(icon, color: iconColor, size: 28),
+      title: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
       onTap: onTap,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
