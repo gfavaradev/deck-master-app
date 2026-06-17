@@ -109,12 +109,19 @@ class _CatalogPageState extends State<CatalogPage> {
     _lastUsedAlbumId = prefs.getInt('last_album_id_${widget.collectionKey}');
     _supportedLanguages = LanguageService.collectionLanguages[widget.collectionKey] ?? [];
 
+    // Ogni task è isolato con il proprio fallback: se uno fallisce (es. una
+    // query su una tabella appena migrata/non ancora pronta) non deve
+    // impedire agli altri di completare — altrimenti l'intero Future.wait
+    // si interrompe e sia il rilevamento "catalogo mancante" sia le lingue
+    // disponibili restano al loro valore iniziale, mostrando dati scorretti.
     final results = await Future.wait<dynamic>([
       _loadCards(),
       _loadAlbumsAndOwned(),
       _checkCatalogMissing(),
-      _dbHelper.getAvailableCatalogLanguages(widget.collectionKey),
-      _dbHelper.getAllWishlistCatalogIds(),
+      _dbHelper.getAvailableCatalogLanguages(widget.collectionKey)
+          .catchError((_) => <String>{'EN'}),
+      _dbHelper.getAllWishlistCatalogIds()
+          .catchError((_) => <String>{}),
     ]);
     if (mounted) {
       setState(() => _wishlistCatalogIds = results[4] as Set<String>);
@@ -322,13 +329,18 @@ class _CatalogPageState extends State<CatalogPage> {
 
   /// Load albums and owned quantity map (lightweight — no full CardModel load).
   Future<void> _loadAlbumsAndOwned() async {
-    final albums = await _dbHelper.getAlbumsByCollection(widget.collectionKey);
-    final map = await _dbHelper.getOwnedQuantityMap(widget.collectionKey);
-    if (mounted) {
-      setState(() {
-        _availableAlbums = albums;
-        _ownedQuantityMap = map;
-      });
+    try {
+      final albums = await _dbHelper.getAlbumsByCollection(widget.collectionKey);
+      final map = await _dbHelper.getOwnedQuantityMap(widget.collectionKey);
+      if (mounted) {
+        setState(() {
+          _availableAlbums = albums;
+          _ownedQuantityMap = map;
+        });
+      }
+    } catch (_) {
+      // Non bloccare il resto di _init() — riprovato implicitamente alla
+      // prossima apertura della pagina.
     }
   }
 
@@ -379,13 +391,41 @@ class _CatalogPageState extends State<CatalogPage> {
           : null;
       final effectiveLanguage = detectedLang ?? _preferredLanguage;
 
-      final cards = await _dbHelper.getCatalogCardsByCollection(
+      var cards = await _dbHelper.getCatalogCardsByCollection(
         widget.collectionKey,
         query: _lastQuery,
         language: effectiveLanguage,
         limit: _pageSize,
         offset: _currentOffset,
       );
+
+      // Il catalogo locale può essere popolato ma non ancora tradotto nella
+      // lingua selezionata (es. subito dopo una risincronizzazione admin, prima
+      // che "Genera Seriali Mancanti" venga eseguito) — le query non-EN filtrano
+      // solo le carte con un print localizzato, quindi tornerebbero vuote anche
+      // con un catalogo pieno. In quel caso ripieghiamo su EN invece di mostrare
+      // "Nessuna carta trovata" per un catalogo che in realtà è presente.
+      if (cards.isEmpty &&
+          _currentOffset == 0 &&
+          _lastQuery.isEmpty &&
+          effectiveLanguage.toUpperCase() != 'EN') {
+        final fallbackCards = await _dbHelper.getCatalogCardsByCollection(
+          widget.collectionKey,
+          query: _lastQuery,
+          language: 'EN',
+          limit: _pageSize,
+          offset: 0,
+        );
+        if (fallbackCards.isNotEmpty) {
+          cards = fallbackCards;
+          _preferredLanguage = 'EN'; // solo per questa sessione di navigazione
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(AppLocalizations.of(context)!.catalogLanguageFallbackToEn)),
+            );
+          }
+        }
+      }
 
       if (cards.isEmpty || cards.length < _pageSize) {
         _hasMoreCards = false;

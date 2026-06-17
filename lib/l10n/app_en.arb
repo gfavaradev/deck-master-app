@@ -222,6 +222,7 @@
   "catalogDownloadPrompt": "Download the catalog to browse and add cards to your collection.",
   "catalogDownloadBtn": "Download catalog",
   "catalogDownloaded": "Catalog downloaded successfully!",
+  "catalogLanguageFallbackToEn": "No translated cards in this language yet — showing cards in English.",
   "catalogDownloadBusy": "A download is already in progress. Please wait.",
   "catalogDownloadError": "Download error: {error}",
   "catalogLoadError": "Loading error. Check your connection.",

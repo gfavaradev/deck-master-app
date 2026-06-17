@@ -227,25 +227,21 @@ class _LoginPageState extends State<LoginPage> {
           const Spacer(flex: 2),
           Image.asset('assets/icon/dm_logo_no_white.png', height: 160),
           const SizedBox(height: 16),
-          ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [AppColors.gold, AppColors.blue, AppColors.purple],
-              stops: [0.0, 0.55, 1.0],
-            ).createShader(bounds),
-            child: Text(
-              'Deck Master',
-              style: TextStyle(fontFamily: 'Poppins',
-                fontSize: 38,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+          const Text(
+            'Deck Master',
+            style: TextStyle(
+              fontFamily: 'Caveat',
+              fontSize: 50,
+              fontWeight: FontWeight.w600,
+              color: AppColors.splashGold,
             ),
           ),
           Text(
-            l10n.loginSubtitle,
-            style: TextStyle(fontFamily: 'Poppins',
-              fontSize: 14,
-              color: Colors.white70,
+            l10n.loginSubtitle.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.splashGoldSoft,
+              letterSpacing: 2.2,
             ),
           ),
           const Spacer(flex: 2),
@@ -258,10 +254,11 @@ class _LoginPageState extends State<LoginPage> {
             _buildOfflinePanel(l10n)
           else ...[
             Text(
-              l10n.loginAccessToContinue,
-              style: TextStyle(fontFamily: 'Poppins',
-                fontSize: 13,
-                color: Colors.white54,
+              l10n.loginAccessToContinue.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.splashGoldSoft,
+                letterSpacing: 2.2,
               ),
             ),
             const SizedBox(height: 16),
@@ -362,26 +359,22 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 100),
               Image.asset('assets/icon/dm_logo_no_white.png', height: 170),
               const SizedBox(height: 20),
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [AppColors.gold, AppColors.blue, AppColors.purple],
-                  stops: [0.0, 0.55, 1.0],
-                ).createShader(bounds),
-                child: Text(
-                  'Deck Master',
-                  style: TextStyle(fontFamily: 'Poppins',
-                    fontSize: 40,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+              const Text(
+                'Deck Master',
+                style: TextStyle(
+                  fontFamily: 'Caveat',
+                  fontSize: 52,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.splashGold,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                l10n.loginAccessToContinue,
-                style: TextStyle(fontFamily: 'Poppins',
-                  fontSize: 14,
-                  color: Colors.white70,
+                l10n.loginAccessToContinue.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.splashGoldSoft,
+                  letterSpacing: 2.2,
                 ),
               ),
               const SizedBox(height: 42),

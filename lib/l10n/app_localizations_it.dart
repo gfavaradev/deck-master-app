@@ -698,6 +698,10 @@ class AppLocalizationsIt extends AppLocalizations {
   String get catalogDownloaded => 'Catalogo scaricato con successo!';
 
   @override
+  String get catalogLanguageFallbackToEn =>
+      'Nessuna carta tradotta in questa lingua per ora — mostro le carte in inglese.';
+
+  @override
   String get catalogDownloadBusy =>
       'Un download è già in corso. Attendi il completamento.';
 

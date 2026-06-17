@@ -12,6 +12,12 @@ abstract final class AppColors {
   static const Color gold      = Color(0xFFD4AF37); // bordo scudo – primary
   static const Color blue      = Color(0xFF4D7FFF); // lettera DM – secondary
   static const Color purple    = Color(0xFF7C4DFF); // sfumatura logo
+  // Oro usato per il wordmark "Deck Master" nell'animazione di splash e nel
+  // saluto post-login (font Caveat) — riusato dove serve coerenza col font/colore.
+  static const Color splashGold = Color(0xFFE8B845);
+  // Variante attenuata, usata per i sottotitoli/etichette accanto al wordmark
+  // (es. "— MY COLLECTION —" nell'animazione, sottotitolo nella login page).
+  static const Color splashGoldSoft = Color(0x8CE8B845);
 
   // ── Stati semantici ──────────────────────────────────────────────────────────
   static const Color success = Color(0xFF4CAF50);

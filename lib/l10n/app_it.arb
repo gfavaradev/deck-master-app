@@ -656,6 +656,9 @@
   "catalogDownloaded": "Catalogo scaricato con successo!",
   "@catalogDownloaded": { "description": "Catalog downloaded snackbar" },
 
+  "catalogLanguageFallbackToEn": "Nessuna carta tradotta in questa lingua per ora — mostro le carte in inglese.",
+  "@catalogLanguageFallbackToEn": { "description": "Shown when the selected language has no localized catalog cards yet and the app falls back to English" },
+
   "catalogDownloadBusy": "Un download è già in corso. Attendi il completamento.",
   "@catalogDownloadBusy": { "description": "Download busy snackbar" },
 

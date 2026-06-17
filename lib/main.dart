@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'l10n/app_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'pages/splash_page.dart';
@@ -16,7 +17,12 @@ import 'services/notification_service.dart';
 import 'services/ad_service.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  // Mantiene lo splash nativo visibile finché SplashIntro non chiama
+  // FlutterNativeSplash.remove() al primo frame Flutter: evita che l'OS
+  // esegua la sua animazione di uscita (zoom) sul logo nativo, che su
+  // Android 12+ è quella che appariva "tagliata" ai lati.
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
   // Limita la cache immagini in memoria a 60MB per evitare OOM su dispositivi con heap 256MB.
   // Il default Flutter (100MB) sommato ad Ads SDK e dati SQLite portava a OOM.
@@ -61,11 +67,17 @@ void main() async {
 
   await AppPreferences.init();
 
-  // AdMob deve essere inizializzato PRIMA di runApp per evitare race condition
-  // con il primo caricamento del banner.
-  await AdService.initialize().catchError((_) {});
-
-  // Avvia in background — non bloccano runApp, errori non critici ignorati
+  // Avvia in background — non bloccano runApp, errori non critici ignorati.
+  // AdMob non blocca più runApp: lo splash mostra sempre l'intro booster (~7s)
+  // prima di qualsiasi pagina con banner, quindi MobileAds ha tempo di finire
+  // l'init senza la race condition che il blocking await preveniva in origine.
+  // Il caricamento dei moduli AdMob (Dynamite) è pesante sulla CPU: lo
+  // ritardiamo di qualche secondo per non sovrapporlo ai frame più "pesanti"
+  // dell'intro booster (caduta/strappo/apertura bustina), che altrimenti
+  // laggava proprio nei primi istanti.
+  Future.delayed(const Duration(seconds: 3), () {
+    AdService.initialize().catchError((_) {});
+  });
   BackgroundDownloadService.initialize().catchError((_) {});
   NotificationService().initialize().catchError((_) {});
   // Mostra reminder catalogo se era stato posticipato nella sessione precedente

@@ -11,6 +11,16 @@ import 'package:deck_master/services/database_helper.dart';
 import 'dart:async';
 import 'backblaze_service.dart';
 
+/// Per-sync-run cache for [AdminCatalogService._resolveRealCardSerial], so the
+/// TCGDex set list / OPTCG full card list are fetched once per run instead of
+/// once per unresolved card.
+class _SerialResolveCache {
+  List<Map<String, dynamic>>? tcgdexSets;
+  final Map<String, ({Map<String, dynamic> setInfo, List<Map<String, dynamic>> cards})>
+      tcgdexSetData = {};
+  List<dynamic>? optcgAllSetCards;
+}
+
 /// Bounded semaphore for limiting parallel async operations.
 class _Semaphore {
   int _count;
@@ -46,11 +56,146 @@ class AdminCatalogService {
   // Image Storage
   // ============================================================
 
-  /// Returns true if [url] points to a hosted image storage (Backblaze B2 or
-  /// legacy Backblaze). Used to detect already-migrated images.
+  /// Returns true if [url] points to Backblaze B2 storage.
+  /// Used to detect already-migrated images.
   static bool _isHostedImageUrl(String? url) =>
-      url != null &&
-      (url.contains('backblazeb2.com') || url.contains('backblazeb2.com'));
+      url != null && url.contains('backblazeb2.com');
+
+  // ============================================================
+  // Real card serial resolution (CT → official game API fallback)
+  // ============================================================
+
+  /// True when [collectorNumber] is actually a CT-internal blueprint ID
+  /// (≥5 raw digits) rather than a real card collector number (e.g. "001",
+  /// "127540" vs "swsh1-1"). Callers must never persist a surrogate value as
+  /// the card's official serial.
+  static bool _isSurrogateCtId(String collectorNumber) =>
+      RegExp(r'^\d{5,}$').hasMatch(collectorNumber);
+
+  /// Cascading collector-number lookup: top-level field, then
+  /// `fixed_properties`. Returns the raw CT blueprint ID as last resort —
+  /// callers MUST check [_isSurrogateCtId] before trusting the result.
+  static String _extractCtCollectorNumber(
+    Map<String, dynamic> bp, {
+    List<String> propKeys = const ['collector_number', 'number'],
+  }) {
+    final top = bp['collector_number'] ?? bp['number'];
+    if (top != null && top.toString().trim().isNotEmpty) return top.toString().trim();
+    final props = (bp['fixed_properties'] as Map<String, dynamic>?) ?? {};
+    for (final key in propKeys) {
+      final nested = props[key];
+      if (nested != null && nested.toString().trim().isNotEmpty) {
+        return nested.toString().trim();
+      }
+    }
+    return bp['id']?.toString() ?? '';
+  }
+
+  static String _normalizeForMatch(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  /// Resolves the REAL official serial + image for a card, never falling
+  /// back to a CT-internal blueprint ID.
+  ///
+  /// 1. If [ctCollectorNumber] is a genuine collector number (not a
+  ///    surrogate blueprint ID), trust it and build the serial from CT data.
+  /// 2. Otherwise, look the card up in the official game API (TCGDex for
+  ///    Pokémon, OPTCG for One Piece) by matching expansion + card name.
+  /// 3. If neither source resolves a real serial, returns null — the caller
+  ///    must log and discard the card rather than invent an id.
+  Future<({String apiId, String? imageUrl, String source})?> _resolveRealCardSerial({
+    required String catalog, // 'pokemon' | 'onepiece'
+    required String nameEn,
+    required String ctCollectorNumber,
+    required String expCode,
+    required String expName,
+    String? ctImageUrl,
+    required _SerialResolveCache cache,
+  }) async {
+    if (ctCollectorNumber.isNotEmpty && !_isSurrogateCtId(ctCollectorNumber)) {
+      final apiId = catalog == 'pokemon'
+          ? '${expCode.toLowerCase()}-$ctCollectorNumber'
+          : (ctCollectorNumber.toUpperCase().startsWith(expCode.toUpperCase())
+              ? ctCollectorNumber.toUpperCase()
+              : '$expCode-${ctCollectorNumber.toUpperCase()}');
+      return (apiId: apiId, imageUrl: ctImageUrl, source: 'ct');
+    }
+
+    if (catalog == 'pokemon') {
+      return _resolvePokemonSerialFromTcgdex(nameEn: nameEn, expName: expName, cache: cache);
+    }
+    if (catalog == 'onepiece') {
+      return _resolveOnepieceSerialFromOptcg(nameEn: nameEn, expCode: expCode, cache: cache);
+    }
+    return null;
+  }
+
+  Future<({String apiId, String? imageUrl, String source})?> _resolvePokemonSerialFromTcgdex({
+    required String nameEn,
+    required String expName,
+    required _SerialResolveCache cache,
+  }) async {
+    cache.tcgdexSets ??= await _fetchTcgdexSets();
+    final normExpName = _normalizeForMatch(expName);
+
+    Map<String, dynamic>? matchedSet;
+    for (final s in cache.tcgdexSets!) {
+      if (_normalizeForMatch(s['name']?.toString() ?? '') == normExpName) {
+        matchedSet = s;
+        break;
+      }
+    }
+    matchedSet ??= () {
+      for (final s in cache.tcgdexSets!) {
+        final n = _normalizeForMatch(s['name']?.toString() ?? '');
+        if (n.isNotEmpty && (n.contains(normExpName) || normExpName.contains(n))) return s;
+      }
+      return null;
+    }();
+    final setId = matchedSet?['id']?.toString();
+    if (setId == null || setId.isEmpty) return null;
+
+    cache.tcgdexSetData[setId] ??= await _fetchTcgdexSetData(setId);
+    final setData = cache.tcgdexSetData[setId]!;
+    final normName = _normalizeForMatch(nameEn);
+
+    Map<String, dynamic>? brief;
+    for (final c in setData.cards) {
+      if (_normalizeForMatch(c['name']?.toString() ?? '') == normName) {
+        brief = c;
+        break;
+      }
+    }
+    final localId = brief?['localId']?.toString();
+    if (localId == null || localId.isEmpty) return null;
+
+    final detail = await _fetchTcgdexCardDetail(setId, localId, brief!);
+    final transformed = _transformTcgdexCard(detail, setData.setInfo, '');
+    final apiId = transformed['api_id'] as String?;
+    if (apiId == null || apiId.isEmpty) return null;
+    return (apiId: apiId, imageUrl: transformed['image_url'] as String?, source: 'tcgdex');
+  }
+
+  Future<({String apiId, String? imageUrl, String source})?> _resolveOnepieceSerialFromOptcg({
+    required String nameEn,
+    required String expCode,
+    required _SerialResolveCache cache,
+  }) async {
+    cache.optcgAllSetCards ??= await _fetchOptcgEndpoint('allSetCards/');
+    final normName = _normalizeForMatch(nameEn);
+
+    for (final raw in cache.optcgAllSetCards!) {
+      final m = raw as Map;
+      final cardSetId = (m['card_set_id'] as String? ?? '').trim();
+      if (cardSetId.isEmpty || !cardSetId.toUpperCase().startsWith(expCode.toUpperCase())) {
+        continue;
+      }
+      final name = (m['card_name'] as String? ?? '').trim();
+      if (_normalizeForMatch(name) != normName) continue;
+      return (apiId: cardSetId, imageUrl: m['card_image']?.toString(), source: 'optcg');
+    }
+    return null;
+  }
 
   /// Updates both camelCase and snake_case image URL fields on a One Piece card map.
   static void _setOnepieceCardImageUrl(Map<String, dynamic> card, String url) {
@@ -1592,6 +1737,98 @@ class AdminCatalogService {
     );
   }
 
+  /// Merges [cards] into the existing catalog: cards whose key (api_id for
+  /// pokemon, the One Piece print group key for onepiece) already exists are
+  /// updated IN PLACE in their current chunk (preserving position/id and
+  /// avoiding duplicate entries); cards with a brand-new key are appended as
+  /// new chunks via [_uploadCatalogChunks]. Used by incremental CardTrader
+  /// sync, where [cards] only contains new/incomplete entries.
+  Future<({int newCount, int updatedCount})> _upsertCatalogCards({
+    required String catalogCollection,
+    required String catalog, // 'pokemon' | 'onepiece' | generic catalogKey
+    required List<Map<String, dynamic>> cards,
+    required String adminUid,
+    required Function(int current, int total) onProgress,
+  }) async {
+    String keyOf(Map<String, dynamic> card) {
+      if (catalog == 'onepiece') {
+        final prints = card['prints'] as List?;
+        final cardSetId = (prints != null && prints.isNotEmpty)
+            ? (prints.first as Map)['card_set_id']?.toString() ?? ''
+            : '';
+        return cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
+      }
+      return card['api_id']?.toString() ?? '';
+    }
+
+    final chunkMap = await _downloadChunksMap(catalogCollection, (_, _) {});
+    final keyIndex = <String, ({String chunkId, int cardIndex})>{};
+    for (final chunkId in chunkMap.keys) {
+      final list = chunkMap[chunkId]!;
+      for (int i = 0; i < list.length; i++) {
+        final k = keyOf(list[i]);
+        if (k.isNotEmpty) keyIndex[k] = (chunkId: chunkId, cardIndex: i);
+      }
+    }
+
+    final newCards = <Map<String, dynamic>>[];
+    final affectedChunkIds = <String>{};
+    int updatedCount = 0;
+
+    for (final card in cards) {
+      final key = keyOf(card);
+      if (key.isEmpty) continue;
+      final loc = keyIndex[key];
+      if (loc == null) {
+        newCards.add(card);
+        continue;
+      }
+      final merged = Map<String, dynamic>.from(card);
+      if (catalog != 'pokemon' && chunkMap[loc.chunkId]![loc.cardIndex]['id'] != null) {
+        // Preserve the existing numeric id — don't reuse the freshly assigned one.
+        merged['id'] = chunkMap[loc.chunkId]![loc.cardIndex]['id'];
+      }
+      chunkMap[loc.chunkId]![loc.cardIndex] = merged;
+      affectedChunkIds.add(loc.chunkId);
+      updatedCount++;
+    }
+
+    final totalSteps = affectedChunkIds.length + (newCards.isEmpty ? 0 : 1);
+    int done = 0;
+    onProgress(0, totalSteps);
+    for (final chunkId in affectedChunkIds) {
+      await _writeWithRetry(
+        _firestore.collection(catalogCollection).doc('chunks').collection('items').doc(chunkId),
+        {'cards': chunkMap[chunkId]!},
+      );
+      onProgress(++done, totalSteps);
+    }
+
+    if (newCards.isNotEmpty) {
+      await _uploadCatalogChunks(
+        catalogCollection: catalogCollection,
+        cards: newCards,
+        adminUid: adminUid,
+        isIncremental: true,
+        onProgress: (cur, tot) => onProgress(done + cur, totalSteps - 1 + tot),
+      );
+    } else if (affectedChunkIds.isNotEmpty) {
+      // Bump version even when only in-place updates happened (no new chunks).
+      final metaDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
+      final currentVersion = metaDoc.exists ? (metaDoc.data()?['version'] as int? ?? 0) : 0;
+      await _writeWithRetry(
+        _firestore.collection(catalogCollection).doc('metadata'),
+        {
+          'lastUpdated': FieldValue.serverTimestamp(),
+          'version': currentVersion + 1,
+          'updatedBy': adminUid,
+        },
+      );
+    }
+
+    return (newCount: newCards.length, updatedCount: updatedCount);
+  }
+
   /// Writes [data] to [ref] with up to 4 attempts and exponential back-off.
   /// Handles transient deadline-exceeded and resource-exhausted errors.
   Future<void> _writeWithRetry(
@@ -2683,6 +2920,202 @@ class AdminCatalogService {
   }
 
   // ============================================================
+  // Dirty serial repair (pre-existing CT blueprint-id leftovers)
+  // ============================================================
+
+  /// Scans the existing [catalog] ('pokemon' or 'onepiece') for entries whose
+  /// serial is a leftover CT-internal blueprint id (from before the
+  /// official-API fallback in [_resolveRealCardSerial] existed) and
+  /// re-resolves them via the same fallback, updating `api_id`/`card_set_id`
+  /// and image in place. Cards that still can't be resolved are listed in
+  /// `unresolvedSample` for manual admin review — they are never deleted or
+  /// left with a fake id. Pass [dryRun]: true to preview the report without
+  /// writing to Firestore.
+  Future<Map<String, dynamic>> repairDirtySerials({
+    required String catalog, // 'pokemon' | 'onepiece'
+    required String adminUid,
+    required Function(int current, int total) onProgress,
+    bool dryRun = false,
+  }) async {
+    if (catalog != 'pokemon' && catalog != 'onepiece') {
+      throw Exception('repairDirtySerials: solo pokemon e onepiece');
+    }
+    final catalogCollection = '${catalog}_catalog';
+    final chunkMap = await _downloadChunksMap(catalogCollection, (_, _) {});
+    if (chunkMap.isEmpty) {
+      return {'repaired': 0, 'unresolved': 0, 'chunksUpdated': 0, 'unresolvedSample': <String>[]};
+    }
+
+    final cache = _SerialResolveCache();
+    final sortedChunkIds = chunkMap.keys.toList()..sort();
+
+    final toResolve = <({
+      String chunkId,
+      int cardIndex,
+      int? printIndex,
+      String nameEn,
+      String dirtyCollectorNumber,
+      String dirtyFullId,
+      String expCode,
+      String expName,
+    })>[];
+
+    if (catalog == 'pokemon') {
+      for (final chunkId in sortedChunkIds) {
+        final cards = chunkMap[chunkId]!;
+        for (int i = 0; i < cards.length; i++) {
+          final card = cards[i];
+          final apiId = card['api_id']?.toString() ?? '';
+          if (apiId.isEmpty) continue;
+          final dash = apiId.lastIndexOf('-');
+          final collNumPart = dash > 0 ? apiId.substring(dash + 1) : apiId;
+          final expCodePart = dash > 0 ? apiId.substring(0, dash) : '';
+          if (!_isSurrogateCtId(collNumPart)) continue; // already a real serial
+          final setsEn = (card['sets'] as Map?)?['en'] as List?;
+          final setName = (setsEn != null && setsEn.isNotEmpty)
+              ? (setsEn.first as Map)['set_name']?.toString()
+              : null;
+          toResolve.add((
+            chunkId: chunkId,
+            cardIndex: i,
+            printIndex: null,
+            nameEn: card['name']?.toString() ?? '',
+            dirtyCollectorNumber: collNumPart,
+            dirtyFullId: apiId,
+            expCode: expCodePart,
+            expName: setName ?? expCodePart,
+          ));
+        }
+      }
+    } else {
+      for (final chunkId in sortedChunkIds) {
+        final cards = chunkMap[chunkId]!;
+        for (int i = 0; i < cards.length; i++) {
+          final card = cards[i];
+          final prints = card['prints'] as List?;
+          if (prints == null) continue;
+          for (int j = 0; j < prints.length; j++) {
+            final print = prints[j] as Map;
+            final cardSetId = print['card_set_id']?.toString() ?? '';
+            if (cardSetId.isEmpty) continue;
+            final dash = cardSetId.indexOf('-');
+            final collNumPart = dash > 0 ? cardSetId.substring(dash + 1) : cardSetId;
+            final expCodePart =
+                dash > 0 ? cardSetId.substring(0, dash) : (print['set_id']?.toString() ?? '');
+            if (!_isSurrogateCtId(collNumPart)) continue; // already a real serial
+            toResolve.add((
+              chunkId: chunkId,
+              cardIndex: i,
+              printIndex: j,
+              nameEn: card['name']?.toString() ?? '',
+              dirtyCollectorNumber: collNumPart,
+              dirtyFullId: cardSetId,
+              expCode: expCodePart,
+              expName: print['set_name']?.toString() ?? expCodePart,
+            ));
+          }
+        }
+      }
+    }
+
+    int repaired = 0;
+    int unresolved = 0;
+    final unresolvedSample = <String>[];
+    final affectedChunkIds = <String>{};
+
+    for (int idx = 0; idx < toResolve.length; idx++) {
+      final item = toResolve[idx];
+      onProgress(idx + 1, toResolve.length);
+
+      final resolved = await _resolveRealCardSerial(
+        catalog: catalog,
+        nameEn: item.nameEn,
+        ctCollectorNumber: item.dirtyCollectorNumber,
+        expCode: item.expCode,
+        expName: item.expName,
+        cache: cache,
+      );
+      if (resolved == null) {
+        unresolved++;
+        if (unresolvedSample.length < 30) {
+          unresolvedSample.add('${item.expName}: ${item.nameEn} (id sporco: ${item.dirtyFullId})');
+        }
+        continue;
+      }
+
+      if (!dryRun) {
+        String? storageUrl;
+        if (resolved.imageUrl != null) {
+          storageUrl = await _uploadCardImageIfNeeded(catalog, resolved.apiId, resolved.imageUrl!);
+        }
+
+        if (catalog == 'pokemon') {
+          final card = Map<String, dynamic>.from(chunkMap[item.chunkId]![item.cardIndex]);
+          card['api_id'] = resolved.apiId;
+          if (storageUrl != null) card['imageUrl'] = storageUrl;
+          final realCollectorNumber = resolved.apiId.contains('-')
+              ? resolved.apiId.substring(resolved.apiId.indexOf('-') + 1)
+              : resolved.apiId;
+          final sets = card['sets'] as Map<String, dynamic>?;
+          if (sets != null) {
+            final updatedSets = <String, dynamic>{};
+            for (final entry in sets.entries) {
+              updatedSets[entry.key] = (entry.value as List).map((s) {
+                final m = Map<String, dynamic>.from(s as Map);
+                m['set_code'] = realCollectorNumber;
+                if (storageUrl != null) m['artwork'] = storageUrl;
+                return m;
+              }).toList();
+            }
+            card['sets'] = updatedSets;
+          }
+          chunkMap[item.chunkId]![item.cardIndex] = card;
+        } else {
+          final card = Map<String, dynamic>.from(chunkMap[item.chunkId]![item.cardIndex]);
+          final prints =
+              (card['prints'] as List).map((p) => Map<String, dynamic>.from(p as Map)).toList();
+          final print = prints[item.printIndex!];
+          print['card_set_id'] = resolved.apiId;
+          if (storageUrl != null) print['artwork'] = storageUrl;
+          prints[item.printIndex!] = print;
+          card['prints'] = prints;
+          chunkMap[item.chunkId]![item.cardIndex] = card;
+        }
+        affectedChunkIds.add(item.chunkId);
+      }
+      repaired++;
+    }
+
+    if (!dryRun && affectedChunkIds.isNotEmpty) {
+      for (final chunkId in affectedChunkIds) {
+        await _writeWithRetry(
+          _firestore.collection(catalogCollection).doc('chunks').collection('items').doc(chunkId),
+          {'cards': chunkMap[chunkId]!},
+        );
+      }
+      final metaDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
+      final currentVersion = metaDoc.exists ? (metaDoc.data()?['version'] as int? ?? 0) : 0;
+      await _writeWithRetry(
+        _firestore.collection(catalogCollection).doc('metadata'),
+        {
+          'lastUpdated': FieldValue.serverTimestamp(),
+          'version': currentVersion + 1,
+          'updatedBy': adminUid,
+        },
+      );
+    }
+
+    return {
+      'repaired': dryRun ? 0 : repaired,
+      'wouldRepair': dryRun ? repaired : 0,
+      'unresolved': unresolved,
+      'unresolvedSample': unresolvedSample,
+      'chunksUpdated': dryRun ? 0 : affectedChunkIds.length,
+      'dryRun': dryRun,
+    };
+  }
+
+  // ============================================================
   // CardTrader price → Firestore catalog sync
   // ============================================================
 
@@ -2978,14 +3411,20 @@ class AdminCatalogService {
   // CardTrader Catalog Download (Pokemon & One Piece)
   // ============================================================
 
-  /// Downloads the complete catalog for [catalog] ('pokemon' or 'onepiece')
-  /// from CardTrader blueprints API and uploads to Firestore.
-  /// Images are downloaded from CT CDN and stored in Firebase Storage.
+  /// Downloads the catalog for [catalog] ('pokemon' or 'onepiece') from
+  /// CardTrader blueprints API and uploads to Firestore. Real card serials
+  /// are resolved with an official-API fallback (never a CT blueprint id —
+  /// see [_resolveRealCardSerial]) and images are uploaded to Backblaze
+  /// immediately. When [incremental] is true (default), only new or
+  /// previously-incomplete cards are fetched/written — existing complete
+  /// entries are left untouched. Pass `incremental: false` to force a full
+  /// rebuild (also deletes/replaces the entire catalog).
   Future<Map<String, dynamic>> downloadCatalogFromCardtrader({
     required String catalog,
     required String adminUid,
     required void Function(String status, double? progress) onProgress,
     bool uploadImages = true,
+    bool incremental = true,
   }) async {
     if (catalog != 'pokemon' && catalog != 'onepiece') {
       throw Exception('downloadCatalogFromCardtrader: solo pokemon e onepiece');
@@ -3000,85 +3439,177 @@ class AdminCatalogService {
     }
     onProgress('${expansions.length} espansioni trovate.', null);
 
-    final List<Map<String, dynamic>> allCards;
+    final List<Map<String, dynamic>> resultCards;
+    final int discarded;
+    final List<String> discardedSample;
+    final int skippedExisting;
     if (catalog == 'pokemon') {
-      allCards = await _buildPokemonCatalogFromCT(
+      final result = await _buildPokemonCatalogFromCT(
         expansions: expansions,
         ctService: ctService,
         onProgress: onProgress,
         uploadImages: uploadImages,
+        incremental: incremental,
       );
+      resultCards = result.cards;
+      discarded = result.discarded;
+      discardedSample = result.discardedSample;
+      skippedExisting = result.skippedExisting;
     } else {
-      allCards = await _buildOnepieceCatalogFromCT(
+      final result = await _buildOnepieceCatalogFromCT(
         expansions: expansions,
         ctService: ctService,
         onProgress: onProgress,
         uploadImages: uploadImages,
+        incremental: incremental,
       );
+      resultCards = result.cards;
+      discarded = result.discarded;
+      discardedSample = result.discardedSample;
+      skippedExisting = result.skippedExisting;
     }
 
-    if (allCards.isEmpty) throw Exception('Nessuna carta estratta da CT');
-
-    // Preserve admin-modified cards from the existing catalog.
-    final adminModifiedList = await _loadAdminModifiedCards('${catalog}_catalog');
-    if (adminModifiedList.isNotEmpty) {
-      final adminMap = <String, Map<String, dynamic>>{};
-      for (final card in adminModifiedList) {
-        if (catalog == 'pokemon') {
-          final apiId = card['api_id'] as String?;
-          if (apiId != null && apiId.isNotEmpty) adminMap[apiId] = card;
-        } else {
-          final prints = card['prints'] as List?;
-          if (prints == null || prints.isEmpty) continue;
-          final cardSetId = (prints.first as Map)['card_set_id'] as String? ?? '';
-          final gk = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
-          if (gk.isNotEmpty) adminMap[gk] = card;
-        }
-      }
-      for (int i = 0; i < allCards.length; i++) {
-        final String? key;
-        if (catalog == 'pokemon') {
-          key = allCards[i]['api_id'] as String?;
-        } else {
-          final prints = allCards[i]['prints'] as List?;
-          final cardSetId = prints != null && prints.isNotEmpty
-              ? (prints.first as Map)['card_set_id'] as String? ?? ''
-              : '';
-          key = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
-        }
-        if (key != null && key.isNotEmpty && adminMap.containsKey(key)) {
-          allCards[i] = adminMap[key]!;
-        }
-      }
+    if (resultCards.isEmpty) {
+      return {
+        'totalCards': 0,
+        'newCards': 0,
+        'updatedCards': 0,
+        'totalExpansions': expansions.length,
+        'skippedExisting': skippedExisting,
+        'discarded': discarded,
+        'discardedSample': discardedSample,
+      };
     }
 
-    onProgress('Caricamento ${allCards.length} carte su Firestore…', null);
-    await _uploadCatalogChunks(
-      catalogCollection: '${catalog}_catalog',
-      cards: allCards,
-      adminUid: adminUid,
-      isIncremental: false,
-      onProgress: (cur, tot) =>
-          onProgress('Chunk $cur/$tot caricato', tot > 0 ? cur / tot : null),
-    );
+    int newCount;
+    int updatedCount;
+    if (!incremental) {
+      // Full rebuild: preserve admin-modified cards from the existing catalog.
+      final adminModifiedList = await _loadAdminModifiedCards('${catalog}_catalog');
+      if (adminModifiedList.isNotEmpty) {
+        final adminMap = <String, Map<String, dynamic>>{};
+        for (final card in adminModifiedList) {
+          if (catalog == 'pokemon') {
+            final apiId = card['api_id'] as String?;
+            if (apiId != null && apiId.isNotEmpty) adminMap[apiId] = card;
+          } else {
+            final prints = card['prints'] as List?;
+            if (prints == null || prints.isEmpty) continue;
+            final cardSetId = (prints.first as Map)['card_set_id'] as String? ?? '';
+            final gk = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
+            if (gk.isNotEmpty) adminMap[gk] = card;
+          }
+        }
+        for (int i = 0; i < resultCards.length; i++) {
+          final String? key;
+          if (catalog == 'pokemon') {
+            key = resultCards[i]['api_id'] as String?;
+          } else {
+            final prints = resultCards[i]['prints'] as List?;
+            final cardSetId = prints != null && prints.isNotEmpty
+                ? (prints.first as Map)['card_set_id'] as String? ?? ''
+                : '';
+            key = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
+          }
+          if (key != null && key.isNotEmpty && adminMap.containsKey(key)) {
+            resultCards[i] = adminMap[key]!;
+          }
+        }
+      }
+
+      onProgress('Caricamento ${resultCards.length} carte su Firestore…', null);
+      await _uploadCatalogChunks(
+        catalogCollection: '${catalog}_catalog',
+        cards: resultCards,
+        adminUid: adminUid,
+        isIncremental: false,
+        onProgress: (cur, tot) =>
+            onProgress('Chunk $cur/$tot caricato', tot > 0 ? cur / tot : null),
+      );
+      newCount = resultCards.length;
+      updatedCount = 0;
+    } else {
+      onProgress('Aggiornamento ${resultCards.length} carte su Firestore…', null);
+      final upsert = await _upsertCatalogCards(
+        catalogCollection: '${catalog}_catalog',
+        catalog: catalog,
+        cards: resultCards,
+        adminUid: adminUid,
+        onProgress: (cur, tot) =>
+            onProgress('Chunk $cur/$tot aggiornato', tot > 0 ? cur / tot : null),
+      );
+      newCount = upsert.newCount;
+      updatedCount = upsert.updatedCount;
+    }
 
     return {
-      'totalCards': allCards.length,
+      'totalCards': resultCards.length,
+      'newCards': newCount,
+      'updatedCards': updatedCount,
       'totalExpansions': expansions.length,
+      'skippedExisting': skippedExisting,
+      'discarded': discarded,
+      'discardedSample': discardedSample,
     };
+  }
+
+  /// Returns the set of `"<api_id>|<rarity>"` keys already present in the
+  /// Pokémon catalog WITH a hosted (Backblaze) image — used to skip complete
+  /// entries during incremental CT sync.
+  Future<Set<String>> _getExistingPokemonResolvedKeys() async {
+    final metaDoc = await _firestore.collection('pokemon_catalog').doc('metadata').get();
+    final totalChunks = metaDoc.exists ? (metaDoc.data()?['totalChunks'] as int? ?? 0) : 0;
+    final keys = <String>{};
+    for (int i = 0; i < totalChunks; i++) {
+      final chunkId = 'chunk_${(i + 1).toString().padLeft(3, '0')}';
+      final doc = await _firestore
+          .collection('pokemon_catalog')
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+      for (final raw in (doc.data()?['cards'] as List? ?? [])) {
+        final card = raw as Map;
+        final apiId = card['api_id']?.toString() ?? '';
+        if (apiId.isEmpty) continue;
+        final rarity = card['rarity']?.toString() ?? '';
+        if (_isHostedImageUrl(card['imageUrl'] as String?)) keys.add('$apiId|$rarity');
+      }
+    }
+    return keys;
   }
 
   /// Builds Pokemon catalog cards from CT blueprints.
   /// Output format: Firestore `sets` map (compatible with _normalizePokemonCardForSQLite).
-  Future<List<Map<String, dynamic>>> _buildPokemonCatalogFromCT({
+  ///
+  /// Never trusts a CT-internal blueprint ID as the card's serial: when CT
+  /// doesn't expose a real collector number, falls back to TCGDex (the same
+  /// official API used by [downloadIncrementalPokemonCatalog]) via
+  /// [_resolveRealCardSerial]. Cards that resolve nowhere are discarded
+  /// (reported in `discardedSample`) rather than stored with a fake id.
+  /// When [incremental] is true, cards already complete (real serial +
+  /// hosted image) in the existing catalog are skipped entirely.
+  Future<({
+    List<Map<String, dynamic>> cards,
+    int discarded,
+    List<String> discardedSample,
+    int skippedExisting,
+  })> _buildPokemonCatalogFromCT({
     required List<Map<String, dynamic>> expansions,
     required CardtraderService ctService,
     required void Function(String, double?) onProgress,
     bool uploadImages = true,
+    bool incremental = true,
   }) async {
     final allCards = <Map<String, dynamic>>[];
     final errors = <String>[];
+    final discardedSample = <String>[];
+    int discarded = 0;
     int skippedEmpty = 0;
+    int skippedExisting = 0;
+    final cache = _SerialResolveCache();
+    final existingResolvedKeys =
+        incremental ? await _getExistingPokemonResolvedKeys() : <String>{};
 
     for (int i = 0; i < expansions.length; i++) {
       final exp = expansions[i];
@@ -3109,16 +3640,6 @@ class AdminCatalogService {
               (p['pokemon_language'] ?? p['language'])?.toString() ?? 'en');
         }
 
-        String bpCollectorNumber(Map<String, dynamic> bp) {
-          // CT may expose collector_number as top-level or inside fixed_properties
-          final top = bp['collector_number'] ?? bp['number'];
-          if (top != null) return top.toString().trim();
-          final p = bpProps(bp);
-          final nested = p['collector_number'] ?? p['number'];
-          if (nested != null) return nested.toString().trim();
-          return bp['id']?.toString() ?? '';
-        }
-
         String bpRarityFn(Map<String, dynamic> bp, String fallback) {
           final top = bp['rarity']?.toString() ?? '';
           if (top.isNotEmpty) return top;
@@ -3126,16 +3647,17 @@ class AdminCatalogService {
           return (p['pokemon_rarity'] ?? p['rarity'])?.toString() ?? fallback;
         }
 
-        // Group blueprints by collector_number — same number = same card across languages
+        // Group blueprints by raw CT collector number — same number = same card across languages.
+        // This may still be a surrogate blueprint ID at this point; resolved properly below.
         final byNumber = <String, List<Map<String, dynamic>>>{};
         for (final bp in blueprints) {
-          final num = bpCollectorNumber(bp);
+          final num = _extractCtCollectorNumber(bp);
           if (num.isEmpty) continue;
           byNumber.putIfAbsent(num, () => []).add(bp);
         }
 
         for (final entry in byNumber.entries) {
-          final collectorNumber = entry.key;
+          final ctCollectorNumber = entry.key;
           final langBps = entry.value;
 
           // EN blueprint as base; fallback to first available
@@ -3149,17 +3671,38 @@ class AdminCatalogService {
           if (nameEn.isEmpty) continue;
           final rarity = bpRarityFn(enBp, '');
 
-          final apiId = '$expCode-$collectorNumber';
+          final ctImageUrl = uploadImages ? CardtraderService.extractBlueprintImageUrl(enBp) : null;
 
-          // Image upload only when explicitly requested.
-          // When false the migration reconstructs pokemontcg.io URLs from api_id.
-          String? storageUrl;
-          if (uploadImages) {
-            final ctImageUrl = CardtraderService.extractBlueprintImageUrl(enBp);
-            if (ctImageUrl != null) {
-              storageUrl = await _uploadCardImageIfNeeded('pokemon', apiId, ctImageUrl);
+          final resolved = await _resolveRealCardSerial(
+            catalog: 'pokemon',
+            nameEn: nameEn,
+            ctCollectorNumber: ctCollectorNumber,
+            expCode: expCode,
+            expName: expName,
+            ctImageUrl: ctImageUrl,
+            cache: cache,
+          );
+          if (resolved == null) {
+            discarded++;
+            if (discardedSample.length < 20) {
+              discardedSample.add('$expName: $nameEn (nessun seriale ufficiale risolvibile)');
             }
+            continue;
           }
+          final apiId = resolved.apiId;
+
+          if (incremental && existingResolvedKeys.contains('$apiId|$rarity')) {
+            skippedExisting++;
+            continue;
+          }
+
+          String? storageUrl;
+          if (resolved.imageUrl != null) {
+            storageUrl = await _uploadCardImageIfNeeded('pokemon', apiId, resolved.imageUrl!);
+          }
+
+          final realCollectorNumber =
+              apiId.contains('-') ? apiId.substring(apiId.indexOf('-') + 1) : apiId;
 
           // Build sets map: one entry per language
           final setsMap = <String, dynamic>{};
@@ -3168,7 +3711,7 @@ class AdminCatalogService {
             final bpRarity = bpRarityFn(bp, rarity);
             setsMap[lang] = [
               {
-                'set_code': collectorNumber,
+                'set_code': realCollectorNumber,
                 'set_name': expName,
                 'rarity': bpRarity,
                 if (storageUrl != null) 'artwork': storageUrl,
@@ -3177,7 +3720,7 @@ class AdminCatalogService {
           }
           setsMap.putIfAbsent('en', () => [
             {
-              'set_code': collectorNumber,
+              'set_code': realCollectorNumber,
               'set_name': expName,
               'rarity': rarity,
               if (storageUrl != null) 'artwork': storageUrl,
@@ -3189,6 +3732,7 @@ class AdminCatalogService {
             'name': nameEn,
             'catalog': 'pokemon',
             'rarity': rarity,
+            if (storageUrl != null) 'imageUrl': storageUrl,
             'sets': setsMap,
           });
         }
@@ -3198,31 +3742,87 @@ class AdminCatalogService {
       }
     }
 
-    if (allCards.isEmpty) {
+    if (allCards.isEmpty && skippedExisting == 0) {
       final detail = [
         if (skippedEmpty > 0) '$skippedEmpty/${expansions.length} espansioni con 0 blueprint',
+        if (discarded > 0) '$discarded carte scartate (seriale non risolvibile)',
         if (errors.isNotEmpty) 'errori: ${errors.take(3).join(' | ')}',
-        if (skippedEmpty == 0 && errors.isEmpty) 'tutte le espansioni erano vuote',
+        if (skippedEmpty == 0 && discarded == 0 && errors.isEmpty) 'tutte le espansioni erano vuote',
       ].join('; ');
       throw Exception('Nessuna carta Pokémon estratta da CT. $detail');
     }
-    return allCards;
+    return (
+      cards: allCards,
+      discarded: discarded,
+      discardedSample: discardedSample,
+      skippedExisting: skippedExisting,
+    );
+  }
+
+  /// Returns the set of `"<groupKey>|<rarity>"` keys already present in the
+  /// One Piece catalog WITH a hosted (Backblaze) artwork — used to skip
+  /// complete entries during incremental CT sync.
+  Future<Set<String>> _getExistingOnepieceResolvedKeys() async {
+    final metaDoc = await _firestore.collection('onepiece_catalog').doc('metadata').get();
+    final totalChunks = metaDoc.exists ? (metaDoc.data()?['totalChunks'] as int? ?? 0) : 0;
+    final keys = <String>{};
+    for (int i = 0; i < totalChunks; i++) {
+      final chunkId = 'chunk_${(i + 1).toString().padLeft(3, '0')}';
+      final doc = await _firestore
+          .collection('onepiece_catalog')
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+      for (final raw in (doc.data()?['cards'] as List? ?? [])) {
+        final card = raw as Map;
+        final rarity = card['rarity']?.toString() ?? '';
+        for (final p in (card['prints'] as List? ?? [])) {
+          final print = p as Map;
+          final cardSetId = (print['card_set_id'] as String?)?.trim() ?? '';
+          if (cardSetId.isEmpty) continue;
+          final gk = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
+          if (_isHostedImageUrl(print['artwork'] as String?)) keys.add('$gk|$rarity');
+        }
+      }
+    }
+    return keys;
   }
 
   /// Builds One Piece catalog cards from CT blueprints.
   /// Output format: flat `prints` list (compatible with insertOnepieceCards).
-  Future<List<Map<String, dynamic>>> _buildOnepieceCatalogFromCT({
+  ///
+  /// Never trusts a CT-internal blueprint ID as the card's serial: when CT
+  /// doesn't expose a real collector number, falls back to OPTCG (the same
+  /// official API used by [downloadIncrementalOnepieceCatalog]) via
+  /// [_resolveRealCardSerial]. Cards that resolve nowhere are discarded
+  /// rather than stored with a fake `card_set_id`. When [incremental] is
+  /// true, cards already complete (real serial + hosted artwork) are skipped.
+  Future<({
+    List<Map<String, dynamic>> cards,
+    int discarded,
+    List<String> discardedSample,
+    int skippedExisting,
+  })> _buildOnepieceCatalogFromCT({
     required List<Map<String, dynamic>> expansions,
     required CardtraderService ctService,
     required void Function(String, double?) onProgress,
     bool uploadImages = true,
+    bool incremental = true,
   }) async {
     final allCards = <Map<String, dynamic>>[];
     final errors = <String>[];
+    final discardedSample = <String>[];
+    int discarded = 0;
     int skippedEmpty = 0;
-    int skippedNoCollNum = 0;
     int skippedNoName = 0;
-    int nextId = 1;
+    int skippedExisting = 0;
+    final cache = _SerialResolveCache();
+
+    final existingState = incremental ? await _getExistingOnepieceState() : null;
+    int nextId = (existingState?.maxId ?? 0) + 1;
+    final existingResolvedKeys =
+        incremental ? await _getExistingOnepieceResolvedKeys() : <String>{};
 
     for (int i = 0; i < expansions.length; i++) {
       final exp = expansions[i];
@@ -3253,23 +3853,6 @@ class AdminCatalogService {
               (p['onepiece_language'] ?? p['language'])?.toString() ?? 'ja');
         }
 
-        String bpCollNum(Map<String, dynamic> bp) {
-          final top = bp['collector_number'] ?? bp['number'];
-          if (top != null) return top.toString().trim();
-          final p = bpProps(bp);
-          final nested = p['collector_number'] ?? p['number'] ?? p['onepiece_number'];
-          if (nested != null) return nested.toString().trim();
-          // Fall back to CT blueprint ID — used only as a surrogate key when CT
-          // does not expose the card's collector number (e.g. promo sets).
-          // Callers detect the surrogate via _isSurrogateBlueprintId().
-          return bp['id']?.toString() ?? '';
-        }
-
-        // Returns true when [collNum] is a CT-internal blueprint ID (≥5 raw digits)
-        // rather than a real card collector number (e.g. "001", "OP01-001").
-        bool isSurrogateBlueprintId(String collNum) =>
-            RegExp(r'^\d{5,}$').hasMatch(collNum);
-
         String bpRarityFn(Map<String, dynamic> bp, String fallback) {
           final top = bp['rarity']?.toString() ?? '';
           if (top.isNotEmpty) return top;
@@ -3298,33 +3881,49 @@ class AdminCatalogService {
           final rarity = bpRarityFn(jaBp, '');
           final jaName = (jaBp['name'] as String?)?.trim() ?? nameEn;
 
-          final collNum = bpCollNum(jaBp);
-          if (collNum.isEmpty) { skippedNoCollNum++; continue; }
+          final ctCollNum = _extractCtCollectorNumber(
+            jaBp,
+            propKeys: const ['collector_number', 'number', 'onepiece_number'],
+          );
 
-          final collUpper = collNum.toUpperCase();
-          final cardSetId = collUpper.startsWith(expCode)
-              ? collUpper
-              : '$expCode-$collUpper'; // e.g. "OP01-001"
-
-          // Image upload only when explicitly requested (uploadImages=true).
-          // When false the migration step reconstructs OPTCG URLs from card_set_id.
-          String? artworkUrl;
+          String? ctImageUrl;
           if (uploadImages) {
-            String? ctImageUrl = CardtraderService.extractBlueprintImageUrl(jaBp);
+            ctImageUrl = CardtraderService.extractBlueprintImageUrl(jaBp);
             if (ctImageUrl == null) {
               for (final bp in langBps) {
                 ctImageUrl = CardtraderService.extractBlueprintImageUrl(bp);
                 if (ctImageUrl != null) break;
               }
             }
-            final optcgUrl = isSurrogateBlueprintId(collNum)
-                ? null
-                : 'https://en.onepiece-cardgame.com/images/cardlist/card/$cardSetId.png';
-            final bestSourceUrl = ctImageUrl ?? optcgUrl;
-            if (bestSourceUrl != null) {
-              artworkUrl = await _uploadCardImageIfNeeded(
-                  'onepiece', '${expCode}_$collUpper', bestSourceUrl);
+          }
+
+          final resolved = await _resolveRealCardSerial(
+            catalog: 'onepiece',
+            nameEn: nameEn,
+            ctCollectorNumber: ctCollNum,
+            expCode: expCode,
+            expName: expName,
+            ctImageUrl: ctImageUrl,
+            cache: cache,
+          );
+          if (resolved == null) {
+            discarded++;
+            if (discardedSample.length < 20) {
+              discardedSample.add('$expName: $nameEn (nessun seriale ufficiale risolvibile)');
             }
+            continue;
+          }
+          final cardSetId = resolved.apiId; // e.g. "OP01-001"
+          final groupKey = cardSetId.contains('_') ? cardSetId.split('_')[0] : cardSetId;
+
+          if (incremental && existingResolvedKeys.contains('$groupKey|$rarity')) {
+            skippedExisting++;
+            continue;
+          }
+
+          String? artworkUrl;
+          if (resolved.imageUrl != null) {
+            artworkUrl = await _uploadCardImageIfNeeded('onepiece', groupKey, resolved.imageUrl!);
           }
 
           allCards.add({
@@ -3350,18 +3949,23 @@ class AdminCatalogService {
       }
     }
 
-    if (allCards.isEmpty) {
+    if (allCards.isEmpty && skippedExisting == 0) {
       final detail = [
         if (skippedEmpty > 0) '$skippedEmpty/${expansions.length} espansioni con 0 blueprint dopo filtro',
         if (skippedNoName > 0) '$skippedNoName blueprint senza nome',
-        if (skippedNoCollNum > 0) '$skippedNoCollNum blueprint senza collector_number',
+        if (discarded > 0) '$discarded carte scartate (seriale non risolvibile)',
         if (errors.isNotEmpty) 'errori: ${errors.take(3).join(' | ')}',
-        if (skippedEmpty == 0 && skippedNoName == 0 && skippedNoCollNum == 0 && errors.isEmpty)
+        if (skippedEmpty == 0 && skippedNoName == 0 && discarded == 0 && errors.isEmpty)
           'tutte le espansioni erano vuote o filtrate',
       ].join('; ');
       throw Exception('Nessuna carta One Piece estratta da CT. $detail');
     }
-    return allCards;
+    return (
+      cards: allCards,
+      discarded: discarded,
+      discardedSample: discardedSample,
+      skippedExisting: skippedExisting,
+    );
   }
 
   // ============================================================
@@ -4115,12 +4719,50 @@ class AdminCatalogService {
     'union-arena':       'Union Arena',
   };
 
+  /// Returns the set of `api_id` keys already present in [catalogCollection]
+  /// WITH a hosted (Backblaze) image — used to skip complete entries during
+  /// incremental generic CT sync.
+  Future<Set<String>> _getExistingGenericResolvedKeys(String catalogCollection) async {
+    final metaDoc = await _firestore.collection(catalogCollection).doc('metadata').get();
+    final totalChunks = metaDoc.exists ? (metaDoc.data()?['totalChunks'] as int? ?? 0) : 0;
+    final keys = <String>{};
+    for (int i = 0; i < totalChunks; i++) {
+      final chunkId = 'chunk_${(i + 1).toString().padLeft(3, '0')}';
+      final doc = await _firestore
+          .collection(catalogCollection)
+          .doc('chunks')
+          .collection('items')
+          .doc(chunkId)
+          .get();
+      for (final raw in (doc.data()?['cards'] as List? ?? [])) {
+        final card = raw as Map;
+        final apiId = card['api_id']?.toString() ?? '';
+        if (apiId.isNotEmpty && _isHostedImageUrl(card['imageUrl'] as String?)) keys.add(apiId);
+      }
+    }
+    return keys;
+  }
+
+  /// Downloads the catalog for a generic CT-only game (no dedicated official
+  /// API integrated — Vanguard, Dragon Ball Super, Star Wars, etc.).
+  ///
+  /// Only stores the REAL collector number CT exposes for a card (top-level
+  /// or `fixed_properties`, via [_extractCtCollectorNumber]); cards where CT
+  /// only provides its internal blueprint id are discarded (no fallback
+  /// official API exists for these games) and reported in `discardedSample`.
+  /// Images are uploaded to Backblaze immediately. When [incremental] is
+  /// true (default), cards already complete (real number + hosted image)
+  /// are skipped and existing entries are updated in place rather than
+  /// duplicated.
   Future<Map<String, dynamic>> downloadCardtraderGenericCatalog({
     required String catalogKey,
     required String adminUid,
     required Function(String status, double? progress) onProgress,
+    bool uploadImages = true,
+    bool incremental = true,
   }) async {
     final ctService = CardtraderService();
+    final catalogCollection = '${catalogKey}_catalog';
 
     // Use hardcoded game IDs first (reliable), fall back to name search only if missing
     int? gameId = CardtraderService.gameIds[catalogKey];
@@ -4147,9 +4789,15 @@ class AdminCatalogService {
 
     onProgress('${expansions.length} espansioni trovate. Scaricando carte…', null);
 
+    final existingResolvedKeys =
+        incremental ? await _getExistingGenericResolvedKeys(catalogCollection) : <String>{};
+
     final cards = <Map<String, dynamic>>[];
+    final discardedSample = <String>[];
     int nextId = 1;
     int skipped = 0;
+    int discarded = 0;
+    int skippedExisting = 0;
 
     for (int i = 0; i < expansions.length; i++) {
       final exp = expansions[i];
@@ -4170,11 +4818,35 @@ class AdminCatalogService {
           final name = ((bp['name_en'] ?? bp['name']) as String? ?? '').trim();
           if (name.isEmpty) { skipped++; continue; }
 
+          final collectorNumber = _extractCtCollectorNumber(bp);
+          if (collectorNumber.isEmpty || _isSurrogateCtId(collectorNumber)) {
+            discarded++;
+            if (discardedSample.length < 20) {
+              discardedSample.add('$expName: $name (nessun numero ufficiale CT)');
+            }
+            continue;
+          }
+
+          final apiId = bp['id'].toString();
+          if (incremental && existingResolvedKeys.contains(apiId)) {
+            skippedExisting++;
+            continue;
+          }
+
+          String? storageUrl;
+          if (uploadImages) {
+            final ctImageUrl = CardtraderService.extractBlueprintImageUrl(bp);
+            if (ctImageUrl != null) {
+              storageUrl = await _uploadCardImageIfNeeded(catalogKey, apiId, ctImageUrl);
+            }
+          }
+
           final props = (bp['fixed_properties'] as Map<String, dynamic>?) ?? {};
           cards.add({
             'id': nextId++,
-            'api_id': bp['id'].toString(),
+            'api_id': apiId,
             'name': name,
+            'card_number': collectorNumber,
             'card_type': bp['category']?.toString()
                 ?? props['type']?.toString()
                 ?? props['card_type']?.toString(),
@@ -4182,6 +4854,7 @@ class AdminCatalogService {
                 ?? props['rarity']?.toString(),
             'set_code': expCode.isNotEmpty ? expCode : null,
             'set_name': expName,
+            if (storageUrl != null) 'imageUrl': storageUrl,
           });
         }
       } catch (_) {
@@ -4190,24 +4863,60 @@ class AdminCatalogService {
       }
     }
 
-    if (cards.isEmpty) {
+    if (cards.isEmpty && skippedExisting == 0) {
       throw Exception(
         'Nessuna carta trovata per "$ctGameName" su CardTrader.\n'
-        'Espansioni trovate: ${expansions.length}, carte skippate: $skipped.',
+        'Espansioni trovate: ${expansions.length}, carte skippate: $skipped, scartate (senza numero ufficiale): $discarded.',
       );
+    }
+    if (cards.isEmpty) {
+      return {
+        'totalCards': 0,
+        'newCards': 0,
+        'updatedCards': 0,
+        'skipped': skipped,
+        'discarded': discarded,
+        'discardedSample': discardedSample,
+        'skippedExisting': skippedExisting,
+      };
     }
 
     onProgress('${cards.length} carte ${_catalogDisplayName(catalogKey)}. Caricando su Firestore…', null);
-    await _uploadCatalogChunks(
-      catalogCollection: '${catalogKey}_catalog',
-      cards: cards,
-      adminUid: adminUid,
-      isIncremental: false,
-      onProgress: (cur, tot) =>
-          onProgress('Chunk $cur di $tot…', cur / tot),
-    );
 
-    return {'totalCards': cards.length, 'skipped': skipped};
+    int newCount;
+    int updatedCount;
+    if (incremental) {
+      final upsert = await _upsertCatalogCards(
+        catalogCollection: catalogCollection,
+        catalog: catalogKey,
+        cards: cards,
+        adminUid: adminUid,
+        onProgress: (cur, tot) => onProgress('Chunk $cur di $tot…', tot > 0 ? cur / tot : null),
+      );
+      newCount = upsert.newCount;
+      updatedCount = upsert.updatedCount;
+    } else {
+      await _uploadCatalogChunks(
+        catalogCollection: catalogCollection,
+        cards: cards,
+        adminUid: adminUid,
+        isIncremental: false,
+        onProgress: (cur, tot) =>
+            onProgress('Chunk $cur di $tot…', cur / tot),
+      );
+      newCount = cards.length;
+      updatedCount = 0;
+    }
+
+    return {
+      'totalCards': cards.length,
+      'newCards': newCount,
+      'updatedCards': updatedCount,
+      'skipped': skipped,
+      'discarded': discarded,
+      'discardedSample': discardedSample,
+      'skippedExisting': skippedExisting,
+    };
   }
 
   static String _catalogDisplayName(String key) => switch (key) {

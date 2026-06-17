@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,7 @@ import 'onboarding_page.dart';
 import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
 import '../theme/app_colors.dart';
+import '../widgets/booster_intro_animation.dart';
 
 enum _Phase { loading, greeting }
 
@@ -24,8 +27,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   final DataRepository _repo = DataRepository();
 
   _Phase _phase = _Phase.loading;
-  String _statusMessage = '';
-  double? _downloadProgress;
   String _greetingName = '';
   bool _isFirstLogin = false;
   bool _navigating = false;
@@ -34,11 +35,11 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   late AnimationController _greetingController;
   late Animation<double> _greetingFade;
 
-  // Animazione di apertura del logo: entrata (scale+fade) + glow pulsante.
-  late AnimationController _logoController;
-  late Animation<double> _logoScale;
-  late Animation<double> _logoFade;
-  late AnimationController _glowController;
+  // Si completa quando l'animazione di apertura booster ha finito di girare.
+  // Tutte le navigazioni fuori dallo splash aspettano questo, cosi l'intro
+  // gioca sempre per intero anche se l'auth check finisce prima.
+  final Completer<void> _introDone = Completer<void>();
+  Future<void> get _introFinished => _introDone.future;
 
   static const String _lastVersionKey = 'app_last_version';
 
@@ -59,32 +60,12 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     );
     _greetingFade = CurvedAnimation(parent: _greetingController, curve: Curves.easeOut);
 
-    // Entrata del logo: parte appena più piccolo e trasparente, si apre con un
-    // leggero "overshoot" elastico per dare la sensazione di apertura dell'app.
-    _logoController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    _logoScale = Tween<double>(begin: 0.82, end: 1.0).animate(
-      CurvedAnimation(parent: _logoController, curve: Curves.easeOutBack),
-    );
-    _logoFade = CurvedAnimation(parent: _logoController, curve: Curves.easeOut);
-    _logoController.forward();
-
-    // Glow dorato che pulsa dolcemente dietro al logo.
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat(reverse: true);
-
     _checkAuth();
   }
 
   @override
   void dispose() {
     _greetingController.dispose();
-    _logoController.dispose();
-    _glowController.dispose();
     super.dispose();
   }
 
@@ -118,7 +99,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
 
     // Prima apertura assoluta: mostra onboarding indipendentemente dall'auth state
     if (!AppPreferences.instance.isOnboardingDone) {
-      await Future.delayed(Duration.zero);
+      await _introFinished;
       if (!mounted) return;
       _navigateToOnboarding(isLoggedIn: user != null);
       return;
@@ -147,12 +128,14 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
           ? namePart
           : AppLocalizations.of(context)!.splashDefaultCollector;
 
+      // L'intro booster gira sempre per intero prima di mostrare il greeting.
+      await _introFinished;
+      if (!mounted) return;
+
       setState(() {
         _phase = _Phase.greeting;
         _greetingName = greetingName;
         _isFirstLogin = !hasLoggedInBefore;
-        _statusMessage = '';
-        _downloadProgress = null;
       });
       _greetingController.forward();
 
@@ -164,9 +147,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       );
       _navigateToMain(showTutorial: _isFirstLogin);
     } else {
-      // Aspetta il primo frame prima di navigare — evita di chiamare
-      // Navigator.of(context) dentro initState prima del primo build
-      await Future.delayed(Duration.zero);
+      await _introFinished;
       if (!mounted) return;
       _navigateToLogin();
     }
@@ -283,63 +264,11 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   }
 
   Widget _buildLoading() {
-    return Center(
+    return SplashIntro(
       key: const ValueKey('loading'),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          FadeTransition(
-            opacity: _logoFade,
-            child: ScaleTransition(
-              scale: _logoScale,
-              child: AnimatedBuilder(
-                animation: _glowController,
-                builder: (context, child) {
-                  final t = _glowController.value;
-                  return Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.gold.withValues(alpha: 0.20 + 0.22 * t),
-                          blurRadius: 40 + 26 * t,
-                          spreadRadius: 2 + 6 * t,
-                        ),
-                      ],
-                    ),
-                    child: child,
-                  );
-                },
-                child: Image.asset('assets/icon/dm_logo_no_white.png', height: 180),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          FadeTransition(
-            opacity: _logoFade,
-            child: const Text(
-              'Deck Master',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (_downloadProgress != null)
-            SizedBox(
-              width: 200,
-              child: LinearProgressIndicator(
-                value: _downloadProgress,
-                color: AppColors.gold,
-                backgroundColor: Colors.white24,
-              ),
-            )
-          else
-            const CircularProgressIndicator(color: AppColors.gold),
-          if (_statusMessage.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(_statusMessage, style: const TextStyle(color: AppColors.textHint)),
-          ],
-        ],
-      ),
+      onCompleted: () {
+        if (!_introDone.isCompleted) _introDone.complete();
+      },
     );
   }
 
@@ -393,8 +322,9 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                 child: Text(
                   _greetingName,
                   style: const TextStyle(
+                    fontFamily: 'Caveat',
                     color: Colors.white,
-                    fontSize: 42,
+                    fontSize: 58,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
                   ),

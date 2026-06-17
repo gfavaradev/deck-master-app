@@ -1334,6 +1334,12 @@ abstract class AppLocalizations {
   /// **'Catalogo scaricato con successo!'**
   String get catalogDownloaded;
 
+  /// Shown when the selected language has no localized catalog cards yet and the app falls back to English
+  ///
+  /// In it, this message translates to:
+  /// **'Nessuna carta tradotta in questa lingua per ora — mostro le carte in inglese.'**
+  String get catalogLanguageFallbackToEn;
+
   /// Download busy snackbar
   ///
   /// In it, this message translates to:

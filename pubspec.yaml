@@ -72,6 +72,7 @@ dependencies:
   excel: ^4.0.6
   share_plus: ^13.1.0
   path_provider: ^2.1.5
+  flutter_native_splash: ^2.4.4
 
 
   # The following adds the Cupertino Icons font to your application.
@@ -92,7 +93,6 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
-  flutter_native_splash: ^2.4.4
 
 # Native splash a tema scuro: elimina la cornice bianca all'avvio.
 # Rigenerare con: dart run flutter_native_splash:create
@@ -101,7 +101,10 @@ flutter_native_splash:
   image: assets/icon/dm_logo_no_white.png
   android_12:
     color: "#12152A"
-    image: assets/icon/dm_logo_no_white.png
+    # Versione con margine trasparente/navy: l'icona Android 12+ usa una safe
+    # zone più piccola del canvas e ingrandiva il logo se occupava tutto il
+    # bordo. Questo asset ha lo stesso logo centrato su un canvas più grande.
+    image: assets/icon/dm_logo_android12_splash.png
     icon_background_color: "#12152A"
   android: true
   ios: true
@@ -134,6 +137,7 @@ flutter:
   assets:
     - assets/images/collections/
     - assets/icon/
+    - assets/fonts/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -160,3 +164,11 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+  # Font "Caveat": lo stesso carattere handwritten usato nel design originale
+  # dell'animazione di splash, per il wordmark "Deck Master" e per il nome
+  # utente nella schermata di saluto.
+  fonts:
+    - family: Caveat
+      fonts:
+        - asset: assets/fonts/Caveat-VariableFont.ttf

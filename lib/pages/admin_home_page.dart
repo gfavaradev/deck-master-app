@@ -271,22 +271,78 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
   Future<void> _downloadFromCardtrader(String catalog) => _confirmAndRun(
         catalog,
-        'Download Catalogo da CardTrader',
-        'Scarica Catalogo da CardTrader',
-        'Scarica il catalogo $catalog da CardTrader (blueprint + metadati) '
-            'e sostituisce il catalogo su Firestore.\n\n'
-            'Le immagini NON vengono caricate su Backblaze B2 — '
-            'esegui "Migra Immagini" subito dopo.\n\n'
-            'Carte aggiunte manualmente vengono preservate.\n\n'
+        'Aggiorna Catalogo da CardTrader',
+        'Aggiorna Catalogo da CardTrader',
+        'Sincronizza il catalogo $catalog da CardTrader (blueprint + metadati).\n\n'
+            'Solo le carte nuove o incomplete vengono elaborate; quelle già '
+            'complete (seriale ufficiale reale + immagine su Backblaze) vengono '
+            'saltate. Le immagini vengono caricate immediatamente su Backblaze B2. '
+            'Se CardTrader non espone il seriale ufficiale di una carta, viene '
+            'recuperato dall\'API ufficiale del gioco; se non si trova in nessuna '
+            'fonte la carta viene scartata (mai salvata con un id CardTrader fittizio).\n\n'
             'Può richiedere diversi minuti. Continuare?',
         (uid) => _service.downloadCatalogFromCardtrader(
           catalog: catalog,
           adminUid: uid,
           onProgress: _onProgress,
-          uploadImages: false,
         ),
-        (r) => 'Completato! ${r['totalCards']} carte da ${r['totalExpansions']} espansioni CT.',
+        _cardtraderSyncResultMessage,
       );
+
+  String _cardtraderSyncResultMessage(Map<String, dynamic> r) {
+    final newCards = r['newCards'] as int? ?? 0;
+    final updated = r['updatedCards'] as int? ?? 0;
+    final skippedExisting = r['skippedExisting'] as int? ?? 0;
+    final discarded = r['discarded'] as int? ?? 0;
+    if (newCards == 0 && updated == 0) {
+      return 'Catalogo già aggiornato: nessuna carta nuova o incompleta trovata'
+          '${skippedExisting > 0 ? " ($skippedExisting già complete)" : ""}.'
+          '${discarded > 0 ? "\n$discarded carte scartate (nessun seriale ufficiale risolvibile)." : ""}';
+    }
+    return '$newCards carte nuove, $updated aggiornate'
+        '${skippedExisting > 0 ? ", $skippedExisting già complete (saltate)" : ""}.'
+        '${discarded > 0 ? "\n$discarded carte scartate (nessun seriale ufficiale risolvibile)." : ""}';
+  }
+
+  Future<void> _repairDirtySerials(String catalog, {required bool dryRun}) => _confirmAndRun(
+        catalog,
+        dryRun ? 'Anteprima Riparazione Seriali' : 'Riparazione Seriali Sporchi',
+        dryRun ? 'Anteprima Riparazione Seriali' : 'Ripara Seriali Sporchi',
+        dryRun
+            ? 'Analizza il catalogo $catalog cercando carte con un seriale '
+                'CardTrader fittizio (eredità di sync precedenti) e mostra quante '
+                'potrebbero essere riparate, SENZA scrivere nulla su Firestore.\n\n'
+                'Continuare?'
+            : 'Cerca nel catalogo $catalog le carte con un seriale CardTrader '
+                'fittizio (eredità di sync precedenti) e le ri-risolve tramite '
+                'l\'API ufficiale del gioco, aggiornando seriale e immagine.\n\n'
+                'Le carte non risolvibili NON vengono cancellate, solo segnalate '
+                'per revisione manuale.\n\n'
+                'Può richiedere diversi minuti. Continuare?',
+        (uid) => _service.repairDirtySerials(
+          catalog: catalog,
+          adminUid: uid,
+          onProgress: (cur, tot) =>
+              _onProgress('$cur / $tot carte analizzate', tot > 0 ? cur / tot : null),
+          dryRun: dryRun,
+        ),
+        _repairResultMessage,
+      );
+
+  String _repairResultMessage(Map<String, dynamic> r) {
+    final dryRun = r['dryRun'] as bool? ?? false;
+    final repaired = dryRun ? (r['wouldRepair'] as int? ?? 0) : (r['repaired'] as int? ?? 0);
+    final unresolved = r['unresolved'] as int? ?? 0;
+    final chunks = r['chunksUpdated'] as int? ?? 0;
+    final sample = (r['unresolvedSample'] as List?)?.cast<String>() ?? const [];
+    final unresolvedNote = unresolved > 0
+        ? '\n$unresolved non risolte${sample.isNotEmpty ? ":\n${sample.take(5).join('\n')}" : ""}'
+        : '';
+    if (dryRun) {
+      return '$repaired carte riparabili trovate.$unresolvedNote';
+    }
+    return '$repaired carte riparate, $chunks chunk aggiornati.$unresolvedNote';
+  }
 
   // ─── One Piece action handlers ─────────────────────────────────────────────
 
@@ -585,13 +641,19 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
   Future<void> _downloadGenericFromCT(String catalogKey) => _run(
         catalogKey,
-        'Download ${_catalogDisplayName(catalogKey)} (CardTrader)',
+        'Aggiorna ${_catalogDisplayName(catalogKey)} (CardTrader)',
         (uid) => _service.downloadCardtraderGenericCatalog(
           catalogKey: catalogKey,
           adminUid: uid,
           onProgress: _onProgress,
         ),
-        (r) => '${r['totalCards']} carte caricate su Firestore.',
+        (r) {
+          final newCards = r['newCards'] as int? ?? 0;
+          final updated = r['updatedCards'] as int? ?? 0;
+          final discarded = r['discarded'] as int? ?? 0;
+          return '$newCards carte nuove, $updated aggiornate'
+              '${discarded > 0 ? "\n$discarded scartate (nessun numero ufficiale CT)" : ""}.';
+        },
       );
 
 
@@ -881,6 +943,8 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           _StepDef(Icons.download_for_offline, 'Scarica da OPTCG API', 'Download completo — fonte alternativa', _downloadFullOnePiece),
           _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Backblaze B2', _migrateOnePieceImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsOnePiece),
+          _StepDef(Icons.search, 'Anteprima Riparazione Seriali', 'Mostra carte con seriale CT fittizio, senza scrivere', () => _repairDirtySerials('onepiece', dryRun: true)),
+          _StepDef(Icons.build, 'Ripara Seriali Sporchi', 'Ri-risolve i seriali CT fittizi via OPTCG', () => _repairDirtySerials('onepiece', dryRun: false)),
         ];
       case 'pokemon':
         return [
@@ -889,6 +953,8 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           _StepDef(Icons.download_for_offline, 'Scarica da pokemontcg.io', 'Download completo — fonte alternativa', _downloadFullPokemon),
           _StepDef(Icons.cloud_upload, 'Migra Immagini', 'Carica immagini su Backblaze B2', _migratePokemonImages),
           _StepDef(Icons.auto_fix_high, 'Genera Seriali Mancanti', 'Genera set localizzati mancanti', _fillMissingSetsPokemon),
+          _StepDef(Icons.search, 'Anteprima Riparazione Seriali', 'Mostra carte con seriale CT fittizio, senza scrivere', () => _repairDirtySerials('pokemon', dryRun: true)),
+          _StepDef(Icons.build, 'Ripara Seriali Sporchi', 'Ri-risolve i seriali CT fittizi via TCGDex', () => _repairDirtySerials('pokemon', dryRun: false)),
         ];
       case 'magic':
         return [

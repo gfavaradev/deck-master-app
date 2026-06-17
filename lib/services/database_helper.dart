@@ -52,7 +52,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 37,
+      version: 38,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -459,6 +459,15 @@ class DatabaseHelper {
         await _addColumnIfMissing(db, 'onepiece_prints', 'rarity_$lang', 'TEXT');
       }
     }
+    if (oldVersion < 38) {
+      // Colonne pronte per future traduzioni Magic (Scryfall printed_name/
+      // printed_type_line/printed_text) — popolamento in un task separato.
+      for (final lang in ['it', 'fr', 'de', 'pt', 'sp', 'jp', 'ko', 'zh']) {
+        await _addColumnIfMissing(db, 'magic_cards', 'name_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'magic_cards', 'type_line_$lang', 'TEXT');
+        await _addColumnIfMissing(db, 'magic_cards', 'oracle_text_$lang', 'TEXT');
+      }
+    }
   }
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
@@ -812,7 +821,15 @@ class DatabaseHelper {
         image_url TEXT,
         price_eur REAL,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        name_it TEXT, type_line_it TEXT, oracle_text_it TEXT,
+        name_fr TEXT, type_line_fr TEXT, oracle_text_fr TEXT,
+        name_de TEXT, type_line_de TEXT, oracle_text_de TEXT,
+        name_pt TEXT, type_line_pt TEXT, oracle_text_pt TEXT,
+        name_sp TEXT, type_line_sp TEXT, oracle_text_sp TEXT,
+        name_jp TEXT, type_line_jp TEXT, oracle_text_jp TEXT,
+        name_ko TEXT, type_line_ko TEXT, oracle_text_ko TEXT,
+        name_zh TEXT, type_line_zh TEXT, oracle_text_zh TEXT
       )
     ''');
   }
@@ -1078,24 +1095,40 @@ class DatabaseHelper {
 
   /// Queries local `magic_cards` table (downloaded from Firestore) and returns
   /// cards in the same map format used by the catalog page.
+  ///
+  /// [language] controls which localized columns (`name_<lang>`,
+  /// `type_line_<lang>`, `oracle_text_<lang>`) are preferred via COALESCE —
+  /// falls back to the EN base column when the translation hasn't been
+  /// synced yet, so selecting a non-EN language never returns an empty list.
   Future<List<Map<String, dynamic>>> getMagicCardsLocal({
     String? query,
+    String language = 'EN',
     int limit = 100,
     int offset = 0,
   }) async {
     final db = await database;
+    final suffix = _langSuffix(language);
+    final hasLang = suffix.isNotEmpty;
+
+    final nameCol = hasLang ? 'COALESCE(name$suffix, name)' : 'name';
+    final typeCol = hasLang ? 'COALESCE(type_line$suffix, type_line)' : 'type_line';
+    final textCol = hasLang ? 'COALESCE(oracle_text$suffix, oracle_text)' : 'oracle_text';
+
     final String where;
     final List<dynamic> args;
     if (query != null && query.trim().isNotEmpty) {
-      where = 'WHERE (name LIKE ? OR api_id LIKE ? OR set_code LIKE ?)';
-      args = ['%$query%', '%$query%', '%$query%'];
+      where = 'WHERE (name LIKE ? OR $nameCol LIKE ? OR api_id LIKE ? OR set_code LIKE ?)';
+      args = ['%$query%', '%$query%', '%$query%', '%$query%'];
     } else {
       where = '';
       args = [];
     }
     final rows = await db.rawQuery('''
       SELECT id, api_id, name, type_line, oracle_text, rarity,
-             set_code, set_name, collector_number, image_url, price_eur
+             set_code, set_name, collector_number, image_url, price_eur,
+             $nameCol AS localized_name,
+             $typeCol AS localized_type,
+             $textCol AS localized_oracle_text
       FROM magic_cards
       $where
       ORDER BY set_code ASC, collector_number ASC
@@ -1108,10 +1141,11 @@ class DatabaseHelper {
         'id':                   c['id'],
         'catalogId':            c['api_id'],
         'name':                 c['name'],
-        'localizedName':        c['name'],
+        'localizedName':        c['localized_name'],
         'description':          c['oracle_text'],
-        'localizedDescription': c['oracle_text'],
+        'localizedDescription': c['localized_oracle_text'],
         'type':                 c['type_line'],
+        'localizedType':        c['localized_type'],
         'rarity':               c['rarity'],
         'setCode':              '$setCode-$collector',
         'localizedSetCode':     '$setCode-$collector',
@@ -3178,6 +3212,15 @@ class DatabaseHelper {
           LIMIT 1
         ''', [lang]);
         if (rows.isNotEmpty) result.add(lang);
+      }
+    } else if (collectionKey == 'magic') {
+      final db = await database;
+      const langs = ['it', 'fr', 'de', 'pt', 'sp', 'jp', 'ko', 'zh'];
+      for (final lang in langs) {
+        final rows = await db.rawQuery(
+          "SELECT 1 FROM magic_cards WHERE name_$lang IS NOT NULL AND name_$lang != '' LIMIT 1",
+        );
+        if (rows.isNotEmpty) result.add(lang.toUpperCase());
       }
     } else {
       final prefix = genericTablePrefix(collectionKey);
