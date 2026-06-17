@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deck Master - Gestisci la tua collezione di carte TCG</title>
+  <meta name="description" content="Deck Master è l'app per gestire la tua collezione di carte: Pokémon, Yu-Gi-Oh!, Magic, One Piece e molti altri giochi di carte collezionabili.">
+  <link rel="icon" href="assets/logo.png">
+  <style>
+    :root {
+      --bg: #0f1115;
+      --bg-card: #1a1d24;
+      --accent: #6c5ce7;
+      --accent-2: #00d2ff;
+      --text: #f5f6fa;
+      --text-muted: #a0a4ad;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 64px 24px 48px;
+      background: radial-gradient(circle at top, rgba(108,92,231,0.25), transparent 60%);
+    }
+    .hero img {
+      width: 120px;
+      height: 120px;
+      border-radius: 24px;
+      box-shadow: 0 8px 32px rgba(108,92,231,0.4);
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-size: 2.2rem;
+      margin: 0 0 12px;
+    }
+    .hero p {
+      max-width: 560px;
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      line-height: 1.5;
+      margin: 0 0 32px;
+    }
+    .store-buttons {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .store-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      font-weight: 600;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .store-btn:hover { transform: translateY(-2px); background: #5a4bd6; }
+    .store-btn.disabled {
+      background: var(--bg-card);
+      color: var(--text-muted);
+      cursor: default;
+      pointer-events: none;
+    }
+    .features {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 24px;
+    }
+    .feature-card h3 {
+      margin: 0 0 8px;
+      font-size: 1.1rem;
+      color: var(--accent-2);
+    }
+    .feature-card p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.4;
+    }
+    footer {
+      text-align: center;
+      padding: 24px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+      margin: 0 8px;
+    }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <img src="assets/logo.png" alt="Deck Master logo">
+    <h1>Deck Master</h1>
+    <p>
+      Organizza, valuta e tieni traccia della tua collezione di carte collezionabili:
+      Pokémon, Yu-Gi-Oh!, Magic: The Gathering, One Piece e molti altri TCG, tutto in un'unica app.
+    </p>
+    <div class="store-buttons">
+      <a class="store-btn" href="https://play.google.com/store/apps/details?id=com.giuseppe.deckmaster" target="_blank" rel="noopener">
+        Scarica su Google Play
+      </a>
+      <span class="store-btn disabled">App Store in arrivo</span>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="feature-card">
+      <h3>Collezione multi-gioco</h3>
+      <p>Gestisci più giochi di carte in un'unica app, con set e carte sempre aggiornati.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Prezzi aggiornati</h3>
+      <p>Tieni traccia del valore della tua collezione con i prezzi di mercato sincronizzati.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Mazzi e wishlist</h3>
+      <p>Costruisci i tuoi mazzi e tieni traccia delle carte che vuoi ancora ottenere.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>&copy; 2026 Deck Master. Tutti i diritti riservati.</p>
+    <a href="/privacy-policy.html">Privacy Policy</a>
+  </footer>
+</body>
+</html>

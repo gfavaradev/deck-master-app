@@ -8,8 +8,6 @@ void main() {
     String role = 'user',
     bool isPro = false,
     String? proExpiresAt,
-    double totalDonated = 0.0,
-    String? donationTier,
   }) =>
       {
         'uid': 'uid_123',
@@ -23,24 +21,19 @@ void main() {
         'isPro': isPro,
         'proSource': null,
         'proExpiresAt': proExpiresAt,
-        'totalDonated': totalDonated,
-        'donationTier': donationTier ?? 'none',
-        'wallOfFameNickname': null,
       };
 
   group('UserModel', () {
     // ── fromFirestore / toFirestore round-trip ────────────────────────────
     group('serializzazione Firestore', () {
       test('round-trip preserva tutti i campi', () {
-        final data = baseData(role: 'administrator', isPro: true, totalDonated: 25.0, donationTier: 'ultraRaro');
+        final data = baseData(role: 'administrator', isPro: true);
         final user = UserModel.fromFirestore(data);
         final back = UserModel.fromFirestore(user.toFirestore());
         expect(back.uid, user.uid);
         expect(back.email, user.email);
         expect(back.role, user.role);
         expect(back.isPro, user.isPro);
-        expect(back.totalDonated, user.totalDonated);
-        expect(back.donationTier, user.donationTier);
       });
 
       test('role sconosciuto diventa user', () {

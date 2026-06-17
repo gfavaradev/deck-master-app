@@ -29,6 +29,13 @@ class AdService {
 
   static bool get _isIos => defaultTargetPlatform == TargetPlatform.iOS;
 
+  // google_mobile_ads supporta solo Android e iOS: su desktop/web qualsiasi
+  // chiamata al plugin lancia MissingPluginException (nessun canale nativo
+  // registrato). Usato anche dai widget per evitare di caricare ad su quelle piattaforme.
+  static bool get isSupportedPlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android || _isIos);
+
   // iOS non ha ancora App ID/unit ID di produzione configurati.
   static bool get _iosReady => !_iosBannerProdId.contains('XXXX');
 
@@ -46,6 +53,7 @@ class AdService {
 
   /// Inizializza AdMob. Chiamare una sola volta in main() prima di runApp.
   static Future<void> initialize() async {
+    if (!isSupportedPlatform) return;
     if (_isIos && !kDebugMode && !_iosReady) return;
     await MobileAds.instance.initialize();
     MobileAds.instance.updateRequestConfiguration(

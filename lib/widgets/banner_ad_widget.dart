@@ -39,7 +39,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   }
 
   Future<void> _checkAndLoad() async {
-    if (!mounted) return;
+    if (!mounted || !AdService.isSupportedPlatform) return;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final prefs = await SharedPreferences.getInstance();

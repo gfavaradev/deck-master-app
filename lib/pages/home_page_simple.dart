@@ -1,5 +1,4 @@
 import '../l10n/app_localizations.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../models/collection_model.dart';
@@ -64,7 +63,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     final isPro = await SubscriptionService().currentUserHasPro();
     if (!mounted) return;
     setState(() => _isPro = isPro);
-    if (!isPro && !kIsWeb) _preloadRewardedAd();
+    if (!isPro && AdService.isSupportedPlatform) _preloadRewardedAd();
   }
 
   void _preloadRewardedAd() {
