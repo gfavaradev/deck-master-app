@@ -7,10 +7,10 @@ import '../services/data_repository.dart';
 import '../services/subscription_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/album_detail_scaffold.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/top_undo_bar.dart';
 import 'ai_deck_builder_page.dart';
-import 'card_list_page.dart';
 import 'deck_detail_page.dart';
 
 class AlbumDeckPage extends StatefulWidget {
@@ -222,17 +222,11 @@ class _AlbumDeckPageState extends State<AlbumDeckPage>
             subtitle: '${album.currentCount}/${album.maxCapacity} carte',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => Scaffold(
-                  appBar: AppBar(
-                    title: Text(album.name),
-                    backgroundColor: AppColors.bgMedium,
-                    foregroundColor: AppColors.textPrimary,
-                  ),
-                  body: CardListPage(
-                    collectionName: widget.collectionName,
-                    collectionKey: widget.collectionKey,
-                    albumId: album.id,
-                  ),
+                builder: (_) => AlbumDetailScaffold(
+                  albumName: album.name,
+                  albumId: album.id!,
+                  collectionName: widget.collectionName,
+                  collectionKey: widget.collectionKey,
                 ),
               ),
             ),

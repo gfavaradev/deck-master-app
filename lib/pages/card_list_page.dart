@@ -25,6 +25,10 @@ class CardListPage extends StatefulWidget {
   /// False when an ancestor (e.g. MainLayout) already renders its own
   /// BannerAdWidget below this page, to avoid showing two stacked banners.
   final bool showOwnBannerAd;
+  /// Called after each refresh with the total value of the album's cards.
+  /// Only invoked when [albumId] is set — lets the caller show the value
+  /// in its own AppBar instead of the in-page album banner.
+  final ValueChanged<double>? onAlbumValueChanged;
 
   const CardListPage({
     super.key,
@@ -32,6 +36,7 @@ class CardListPage extends StatefulWidget {
     required this.collectionKey,
     this.albumId,
     this.showOwnBannerAd = true,
+    this.onAlbumValueChanged,
   });
 
   @override
@@ -132,6 +137,11 @@ class _CardListPageState extends State<CardListPage> {
       _isLoading = false;
       _applyFilter(_searchController.text);
     });
+
+    if (widget.albumId != null && widget.onAlbumValueChanged != null) {
+      final albumValue = processedCards.fold(0.0, (sum, item) => sum + (_getEffectiveValue(item) * item.quantity));
+      widget.onAlbumValueChanged!(albumValue);
+    }
   }
 
   // Pure computation — does NOT call setState. Callers must wrap in setState.
@@ -573,65 +583,6 @@ class _CardListPageState extends State<CardListPage> {
     return _availableAlbums.firstWhere((a) => a.id == albumId, orElse: () => AlbumModel(name: l10n.cardListAlbumUnknown, collection: '', maxCapacity: 0)).name;
   }
 
-  Widget _buildAlbumBanner() {
-    final l10n = AppLocalizations.of(context)!;
-    final album = _availableAlbums.firstWhere(
-      (a) => a.id == widget.albumId,
-      orElse: () => AlbumModel(name: 'Album', collection: '', maxCapacity: 0),
-    );
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.bgLight,
-        border: Border(bottom: BorderSide(color: AppColors.blue.withValues(alpha: 0.4))),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.book, color: AppColors.blue, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  album.name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                Text(
-                  l10n.cardListAlbumOnly,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.glowBlue,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              l10n.statsCardsCount(_allCards.length),
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: AppColors.blue,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -658,7 +609,6 @@ class _CardListPageState extends State<CardListPage> {
 
     return Column(
       children: [
-        if (widget.albumId != null) _buildAlbumBanner(),
         if (_isSelectionMode)
           _buildSelectionHeader()
         else
@@ -702,7 +652,8 @@ class _CardListPageState extends State<CardListPage> {
               ],
             ),
           ),
-        CollectionSummary(uniqueCards: uniqueCards, duplicates: duplicates, totalCards: totalCards, totalValue: totalValue),
+        if (widget.albumId == null)
+          CollectionSummary(uniqueCards: uniqueCards, duplicates: duplicates, totalCards: totalCards, totalValue: totalValue),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _onRefresh,
