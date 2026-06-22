@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../l10n/app_localizations.dart';
 import '../services/app_preferences.dart';
 import '../theme/app_colors.dart';
@@ -30,14 +31,17 @@ class CollectionSummary extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStat(l10n.collectionSummaryUnique, uniqueCards.toString(), AppColors.blue),
-          _buildStat(l10n.collectionSummaryDuplicates, duplicates.toString(), AppColors.gold),
-          _buildStat(l10n.collectionSummaryTotal, totalCards.toString(), AppColors.purple),
+          _buildStat(l10n.collectionSummaryUnique, _formatCount(uniqueCards), AppColors.blue),
+          _buildStat(l10n.collectionSummaryDuplicates, _formatCount(duplicates), AppColors.gold),
+          _buildStat(l10n.collectionSummaryTotal, _formatCount(totalCards), AppColors.purple),
           _buildStat(l10n.collectionSummaryValue, CurrencyFormatter.format(totalValue), AppColors.gold),
         ],
       ),
     ));
   }
+
+  String _formatCount(int value) =>
+      NumberFormat('#,##0', AppPreferences.instance.languageCode).format(value);
 
   Widget _buildStat(String label, String value, Color color) {
     return Column(

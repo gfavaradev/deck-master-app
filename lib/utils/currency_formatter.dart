@@ -1,3 +1,4 @@
+import 'package:intl/intl.dart';
 import '../services/app_preferences.dart';
 import '../services/exchange_rate_service.dart';
 
@@ -25,8 +26,7 @@ abstract final class CurrencyFormatter {
     final converted = euros * rate;
     final sym = _symbolFor(code);
     final abs = converted.abs();
-    final formatted =
-        code == 'JPY' ? abs.round().toString() : abs.toStringAsFixed(2);
+    final formatted = _numberFormat(code).format(abs);
     return '${converted >= 0 ? '+' : '-'}$sym$formatted';
   }
 
@@ -47,8 +47,7 @@ abstract final class CurrencyFormatter {
     final rate = ExchangeRateService.instance.rateFor(code);
     final converted = euros * rate;
     final sym = _symbolFor(code);
-    final formatted =
-        code == 'JPY' ? converted.round().toString() : converted.toStringAsFixed(2);
+    final formatted = _numberFormat(code).format(converted);
     return '$sym$formatted';
   }
 
@@ -56,4 +55,10 @@ abstract final class CurrencyFormatter {
       .firstWhere((c) => c.code == code,
           orElse: () => AppPreferences.currencies.first)
       .symbol;
+
+  /// Migliaia/decimali secondo la lingua dell'app (es. it: 10.455,89 — en: 10,455.89).
+  static NumberFormat _numberFormat(String code) {
+    final locale = AppPreferences.instance.languageCode;
+    return NumberFormat(code == 'JPY' ? '#,##0' : '#,##0.00', locale);
+  }
 }
