@@ -1610,9 +1610,9 @@ class DataRepository {
   // Sync Operations
   // ============================================================
 
-  Future<void> syncOnLogin() async {
+  Future<void> syncOnLogin({bool isManualLogin = false}) async {
     if (kIsWeb) return; // On web, data is always read directly from Firestore.
-    await _syncService.syncOnLogin();
+    await _syncService.syncOnLogin(isManualLogin: isManualLogin);
   }
 
   Future<void> fullSync() async {

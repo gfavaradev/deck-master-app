@@ -59,8 +59,11 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final result = await signInMethod();
       if (result != null || signInMethod.toString().contains('signInOffline')) {
-        // Fire sync in background — don't block navigation
-        _repo.syncOnLogin().catchError((_) {});
+        // Aspetta il sync (con timeout) prima di navigare, così un account
+        // esistente vede subito le proprie collezioni sbloccate in home.
+        await _repo.syncOnLogin(isManualLogin: true)
+            .timeout(const Duration(seconds: 20))
+            .catchError((_) {});
         if (mounted) {
           Navigator.pushReplacement(
             context,

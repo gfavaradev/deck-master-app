@@ -141,7 +141,7 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final result = await _authService.signInWithGoogle();
       if (result != null) {
-        try { await _repo.syncOnLogin(); } catch (_) {}
+        try { await _repo.syncOnLogin(isManualLogin: true).timeout(const Duration(seconds: 20)); } catch (_) {}
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const MainLayout()),

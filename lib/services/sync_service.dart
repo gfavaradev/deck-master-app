@@ -21,8 +21,6 @@ class SyncService {
   final AuthService _authService = AuthService();
 
   bool _isSyncing = false;
-  DateTime? _lastSyncTime;
-  static const _syncCooldown = Duration(hours: 6);
   static const _hasRemoteDataPrefix = 'sync_has_remote_';
 
   // Cataloghi con supporto prezzi CardTrader
@@ -410,62 +408,31 @@ class SyncService {
     } catch (_) {}
   }
 
-  // Price-only sync: called when within the 6h main cooldown.
-  Future<void> _maybeSyncPrices() async {
-    try {
-      await _syncCardtraderPrices();
-    } catch (_) {}
-  }
-
   // ============================================================
   // Sync on Login: Decide whether to push or pull
   // ============================================================
 
-  static const _lastSyncKey = 'sync_last_sync_at';
-
-  Future<void> _saveLocalLastSyncAt(DateTime dt) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_lastSyncKey, dt.toIso8601String());
-  }
-
-  Future<void> syncOnLogin() async {
+  /// [isManualLogin] va passato a true solo dalle due occasioni in cui i dati
+  /// locali potrebbero non corrispondere più a quelli remoti: un login
+  /// esplicito dell'utente (login_page/settings_page — può essere un account
+  /// diverso da quello sincronizzato finora) o subito dopo un logout (che
+  /// svuota i dati locali). In quei casi forziamo sempre un pullFromCloud
+  /// anche se i dati locali sono presenti. Al semplice resume dell'app con
+  /// sessione già attiva (splash_page), se i dati locali ci sono già non
+  /// serve un pullFromCloud completo ad ogni avvio — costerebbe centinaia di
+  /// letture Firestore inutili.
+  Future<void> syncOnLogin({bool isManualLogin = false}) async {
     if (kIsWeb) return;
     if (_isSyncing) return;
 
-    // Ripristina il lastSyncTime fra riavvii — era in-memory e si azzerava
-    // ad ogni apertura dell'app, causando un pullFromCloud (centinaia di reads
-    // Firestore) ad ogni avvio invece di rispettare il cooldown.
-    if (_lastSyncTime == null) {
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString(_lastSyncKey);
-      if (saved != null) _lastSyncTime = DateTime.tryParse(saved);
-    }
+    final userId = _userId;
+    if (userId == null) return;
 
     final pendingCount = await _dbHelper.getPendingSyncCount();
     final hasPending = pendingCount > 0;
 
-    final withinCooldown = _lastSyncTime != null &&
-        DateTime.now().difference(_lastSyncTime!) < _syncCooldown;
-
-    if (!hasPending && withinCooldown) {
-      await _maybeSyncPrices();
-      return;
-    }
-
     _isSyncing = true;
     try {
-      final userId = _userId;
-      if (userId == null) return;
-
-      // Nel cooldown ma ci sono pending: flush solo scritture, NO pullFromCloud.
-      // pullFromCloud legge TUTTE le carte Firestore — non va eseguito ad ogni
-      // modifica locale, solo quando il cooldown è scaduto.
-      if (withinCooldown) {
-        await flushPendingQueue();
-        return;
-      }
-
-      // Fuori dal cooldown: sync completo
       final cachedHasRemote = await _getCachedHasRemote(userId);
 
       final hasRemoteFuture = cachedHasRemote
@@ -493,12 +460,15 @@ class SyncService {
         await initialUpload();
       } else if (hasRemoteData && hasLocalData) {
         if (hasPending) await flushPendingQueue();
-        await pullFromCloud();
+        if (isManualLogin) {
+          await pullFromCloud();
+        } else {
+          // Resume con dati locali già coerenti: nessun pull completo, solo
+          // un refresh leggero dei prezzi (pochi documenti, non l'intera
+          // collezione carte/album).
+          await _syncCardtraderPrices();
+        }
       }
-
-      final now = DateTime.now();
-      _lastSyncTime = now;
-      await _saveLocalLastSyncAt(now);
     } catch (e) {
       AppLogger.error('syncOnLogin failed', tag: 'SyncService', error: e);
     } finally {

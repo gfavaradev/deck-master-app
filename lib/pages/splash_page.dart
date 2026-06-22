@@ -139,12 +139,11 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       });
       _greetingController.forward();
 
-      // Aspetta il greeting (1.8s) + max 2s in più per il sync
+      // Aspetta il greeting (1.8s) e poi il sync (già limitato a 20s sopra) —
+      // così un account esistente vede subito le proprie collezioni sbloccate
+      // in home invece di un breve stato vuoto in attesa del pull successivo.
       await Future.delayed(const Duration(milliseconds: 1800));
-      await syncFuture.timeout(
-        const Duration(seconds: 2),
-        onTimeout: () {},
-      );
+      await syncFuture;
       _navigateToMain(showTutorial: _isFirstLogin);
     } else {
       await _introFinished;
