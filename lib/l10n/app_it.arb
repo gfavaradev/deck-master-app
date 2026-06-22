@@ -1937,6 +1937,15 @@
   "proPromoDismiss": "No grazie",
   "@proPromoDismiss": { "description": "Dismiss button in pro promo sheet" },
 
+  "proPromoHeadline": "Sblocca il massimo dalla tua collezione",
+  "@proPromoHeadline": { "description": "Pro promo dialog headline" },
+
+  "proPromoSubheadline": "Statistiche avanzate, niente pubblicità e strumenti AI — tutto incluso.",
+  "@proPromoSubheadline": { "description": "Pro promo dialog subheadline" },
+
+  "proPromoBilledAnnually": "Fatturato\nannualmente",
+  "@proPromoBilledAnnually": { "description": "Pro promo dialog note next to price about annual billing" },
+
   "proBenefitStats": "Statistiche & ROI avanzati",
   "@proBenefitStats": { "description": "Pro benefit: advanced stats and ROI" },
 

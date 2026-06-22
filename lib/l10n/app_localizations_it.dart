@@ -1969,6 +1969,16 @@ class AppLocalizationsIt extends AppLocalizations {
   String get proPromoDismiss => 'No grazie';
 
   @override
+  String get proPromoHeadline => 'Sblocca il massimo dalla tua collezione';
+
+  @override
+  String get proPromoSubheadline =>
+      'Statistiche avanzate, niente pubblicità e strumenti AI — tutto incluso.';
+
+  @override
+  String get proPromoBilledAnnually => 'Fatturato\nannualmente';
+
+  @override
   String get proBenefitStats => 'Statistiche & ROI avanzati';
 
   @override

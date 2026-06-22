@@ -1951,6 +1951,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proPromoDismiss => 'No thanks';
 
   @override
+  String get proPromoHeadline => 'Unlock the full power of your collection';
+
+  @override
+  String get proPromoSubheadline =>
+      'Advanced stats, zero ads, and AI tools — all included.';
+
+  @override
+  String get proPromoBilledAnnually => 'Billed\nannually';
+
+  @override
   String get proBenefitStats => 'Advanced stats & ROI';
 
   @override

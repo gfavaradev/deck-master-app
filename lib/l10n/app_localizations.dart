@@ -3572,6 +3572,24 @@ abstract class AppLocalizations {
   /// **'No grazie'**
   String get proPromoDismiss;
 
+  /// Pro promo dialog headline
+  ///
+  /// In it, this message translates to:
+  /// **'Sblocca il massimo dalla tua collezione'**
+  String get proPromoHeadline;
+
+  /// Pro promo dialog subheadline
+  ///
+  /// In it, this message translates to:
+  /// **'Statistiche avanzate, niente pubblicità e strumenti AI — tutto incluso.'**
+  String get proPromoSubheadline;
+
+  /// Pro promo dialog note next to price about annual billing
+  ///
+  /// In it, this message translates to:
+  /// **'Fatturato\nannualmente'**
+  String get proPromoBilledAnnually;
+
   /// Pro benefit: advanced stats and ROI
   ///
   /// In it, this message translates to:
