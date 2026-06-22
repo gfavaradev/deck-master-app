@@ -821,10 +821,20 @@ class _CardListPageState extends State<CardListPage> {
 
   Widget _buildGrid() {
     return LayoutBuilder(builder: (context, constraints) {
+      // Stessa formula su tutte le piattaforme/larghezze — niente più un
+      // calcolo separato per web che lasciava mobile/tablet a 2-3 colonne.
       final aw = constraints.maxWidth;
-      final cols = kIsWeb
-          ? (aw > 1100 ? 7 : aw > 860 ? 6 : aw > 640 ? 5 : 4)
-          : (aw > 500 ? 3 : 2);
+      final cols = aw > 1400
+          ? 7
+          : aw > 1100
+              ? 6
+              : aw > 820
+                  ? 5
+                  : aw > 560
+                      ? 4
+                      : aw > 380
+                          ? 3
+                          : 2;
       return GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(

@@ -383,6 +383,7 @@ class DataRepository {
 
     await _firestoreService.streamCatalog(
       CatalogConstants.yugioh,
+      batchSize: 5,
       onBatch: (cards, chunksDone, chunksTotal) async {
         onProgress?.call(chunksDone, chunksTotal);
         await Future.delayed(Duration.zero); // yield UI frame before heavy work
@@ -1738,6 +1739,7 @@ class DataRepository {
 
     await _firestoreService.streamCatalog(
       CatalogConstants.onepiece,
+      batchSize: 5,
       onBatch: (cards, chunksDone, chunksTotal) async {
         onProgress?.call(chunksDone, chunksTotal);
         await Future.delayed(Duration.zero); // yield UI frame before heavy work
@@ -2007,6 +2009,7 @@ class DataRepository {
 
     await _firestoreService.streamCatalog(
       CatalogConstants.pokemon,
+      batchSize: 5,
       onBatch: (cards, chunksDone, chunksTotal) async {
         onProgress?.call(chunksDone, chunksTotal);
         await Future.delayed(Duration.zero); // yield UI frame before heavy work
@@ -2131,6 +2134,7 @@ class DataRepository {
 
     await _firestoreService.streamCatalog(
       CatalogConstants.magic,
+      batchSize: 5,
       onBatch: (cards, chunksDone, chunksTotal) async {
         onProgress?.call(chunksDone, chunksTotal);
         await Future.delayed(Duration.zero);
@@ -2217,6 +2221,7 @@ class DataRepository {
 
     await _firestoreService.streamCatalog(
       catalogKey,
+      batchSize: 5,
       onBatch: (cards, chunksDone, chunksTotal) async {
         onProgress?.call(chunksDone, chunksTotal);
         await Future.delayed(Duration.zero);

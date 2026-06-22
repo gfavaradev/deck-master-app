@@ -45,7 +45,7 @@ class _ProPromoDialog extends StatelessWidget {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 20, 28, 28),
+        padding: const EdgeInsets.fromLTRB(28, 40, 28, 28),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
           child: Stack(
@@ -58,8 +58,9 @@ class _ProPromoDialog extends StatelessWidget {
                 elevation: 24,
                 shadowColor: AppColors.gold.withValues(alpha: 0.4),
                 child: Container(
-                  decoration: const BoxDecoration(
-                    borderRadius: BorderRadius.zero,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppColors.gold.withValues(alpha: 0.4), width: 1.2),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -155,10 +156,11 @@ class _ProPromoDialog extends StatelessWidget {
                   ),
                 ),
               ),
-              // Badge fuori dal Material clippato, così non viene tagliato
-              // dal borderRadius/clipBehavior del box sottostante.
+              // Badge interamente sopra il box (nessuna sovrapposizione col
+              // Material sottostante) — evita qualunque artefatto di rendering
+              // dovuto a ombra/elevazione/bordo che attraversi il badge.
               Positioned(
-                top: -14,
+                top: -34,
                 left: 0,
                 right: 0,
                 child: Center(

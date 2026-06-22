@@ -1,6 +1,5 @@
 import '../l10n/app_localizations.dart';
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -663,10 +662,20 @@ class _CatalogPageState extends State<CatalogPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    // Stessa formula su tutte le piattaforme/larghezze — niente più un calcolo
+    // separato per web che lasciava mobile/tablet bloccati a 2-3 colonne.
     final sw = MediaQuery.of(context).size.width;
-    final catalogCols = kIsWeb
-        ? (sw > 1400 ? 7 : sw > 1100 ? 6 : sw > 820 ? 5 : 4)
-        : (sw > 560 ? 3 : 2);
+    final catalogCols = sw > 1400
+        ? 7
+        : sw > 1100
+            ? 6
+            : sw > 820
+                ? 5
+                : sw > 560
+                    ? 4
+                    : sw > 380
+                        ? 3
+                        : 2;
     return Stack(
       children: [
         Column(

@@ -57,8 +57,12 @@ class DatabaseHelper {
       onUpgrade: _onUpgrade,
     );
 
-    // WAL mode: allows concurrent reads while catalog writes are in progress
+    // WAL mode: allows concurrent reads while catalog writes are in progress.
+    // synchronous=NORMAL is safe with WAL (durability still guaranteed across
+    // app crashes, only a rare OS-level crash could lose the last commit) and
+    // avoids an fsync on every batch commit during catalog downloads.
     await db.rawQuery('PRAGMA journal_mode=WAL');
+    await db.rawQuery('PRAGMA synchronous=NORMAL');
 
     // Ensure essential indices exist (for development/existing dbs)
     await db.execute('CREATE INDEX IF NOT EXISTS idx_catalog_card_sets_cardId ON catalog_card_sets (cardId)');

@@ -729,38 +729,6 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           )
         : currentPage;
 
-    // On wide screens inside a collection replace BottomNav with a NavigationRail on the left
-    if (isWide && inCollection) {
-      pageBody = Row(
-        children: [
-          NavigationRail(
-            backgroundColor: AppColors.bgMedium,
-            selectedIndex: _currentIndex - 1,
-            onDestinationSelected: (i) => setState(() => _currentIndex = i + 1),
-            labelType: NavigationRailLabelType.all,
-            selectedIconTheme: const IconThemeData(color: AppColors.gold),
-            selectedLabelTextStyle: const TextStyle(color: AppColors.gold, fontSize: 12),
-            unselectedLabelTextStyle: TextStyle(color: AppColors.textHint, fontSize: 12),
-            destinations: [
-              NavigationRailDestination(icon: const Icon(Icons.style), label: Text(l10n.navCards)),
-              NavigationRailDestination(icon: const Icon(Icons.search), label: Text(l10n.navCatalog)),
-              NavigationRailDestination(icon: const Icon(Icons.book), label: Text(l10n.navCollection)),
-              NavigationRailDestination(icon: const Icon(Icons.newspaper_outlined), label: Text(l10n.navNews)),
-            ],
-          ),
-          const VerticalDivider(thickness: 1, width: 1),
-          Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1280),
-                child: currentPage,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
     return PopScope(
       // Quando si è dentro una collezione, il tasto back (gesture o 3-pulsanti)
       // torna alla home invece di chiudere l'app.
@@ -1040,8 +1008,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
           ],
         ),
       ),
-      // Bottom nav only shown on narrow screens inside a collection
-      bottomNavigationBar: (!isWide && inCollection)
+      // Un solo design di navigazione (bottom nav) su tutte le dimensioni di schermo.
+      bottomNavigationBar: inCollection
           ? BottomNavigationBar(
               currentIndex: _currentIndex,
               type: BottomNavigationBarType.fixed,
