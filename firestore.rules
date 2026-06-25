@@ -98,6 +98,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // News drafts (in attesa di revisione admin prima della pubblicazione) — mai esposti agli utenti
+    match /news_drafts/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
     // ── User data ─────────────────────────────────────────────────────────────
 
     // User profiles — owner reads own doc; admins can read all

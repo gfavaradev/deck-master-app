@@ -342,6 +342,7 @@ class NotificationsPage extends StatefulWidget {
 class _NotificationsPageState extends State<NotificationsPage> {
   bool _loading = true;
   List<_NotifEntry> _history = [];
+  final Set<String> _expandedIds = {};
 
   @override
   void initState() {
@@ -410,6 +411,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
         title: Text(AppLocalizations.of(context)!.notificationsTitle),
         backgroundColor: AppColors.bgMedium,
         foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: AppColors.divider),
+        ),
         actions: [
           if (_history.isNotEmpty)
             IconButton(
@@ -439,6 +445,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Widget _buildBody() {
     final hasPending = widget.pendingCatalogUpdates.isNotEmpty;
     final isEmpty = _history.isEmpty && !hasPending;
+    final l10n = AppLocalizations.of(context)!;
 
     if (isEmpty) {
       return Center(
@@ -448,7 +455,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             Icon(Icons.notifications_none, size: 64, color: AppColors.textHint),
             const SizedBox(height: 12),
             Text(
-              AppLocalizations.of(context)!.notifNoNotifications,
+              l10n.notifNoNotifications,
               style: const TextStyle(color: AppColors.textSecondary, fontSize: 16),
             ),
           ],
@@ -456,57 +463,91 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
     }
 
-    // Primary: detectedAt descending. Tie-break: data['date'] descending (app_update
-    // entries detected in the same session all share the same detectedAt timestamp).
+    // Primary: detectedAt descending (entries detected in the same session all share
+    // the same detectedAt timestamp). Tie-break: for two app_update entries, compare by
+    // semantic version rather than trusting the changelog 'date' field, which can be
+    // entered inconsistently; otherwise fall back to 'date' descending.
     final sorted = [..._history]
       ..sort((a, b) {
         final cmp = b.detectedAt.compareTo(a.detectedAt);
         if (cmp != 0) return cmp;
+        if (a.type == 'app_update' && b.type == 'app_update') {
+          final aVersion = a.data['version'] as String? ?? '';
+          final bVersion = b.data['version'] as String? ?? '';
+          if (aVersion != bVersion) return _versionGt(aVersion, bVersion) ? -1 : 1;
+        }
         final aDate = a.data['date'] as String? ?? '';
         final bDate = b.data['date'] as String? ?? '';
         return bDate.compareTo(aDate);
       });
 
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
       children: [
+        // ── Header ────────────────────────────────────────────────────────
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.bgLight,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border, width: 0.5),
+          ),
+          child: Column(
+            children: [
+              const Icon(Icons.notifications_active_outlined, size: 52, color: AppColors.gold),
+              const SizedBox(height: 12),
+              Text(
+                l10n.notifHeaderTitle,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                l10n.notifHeaderSubtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
         // ── Sezione aggiornamenti in attesa di download ──────────────────────
         if (hasPending) ...[
-          _buildSectionHeader(AppLocalizations.of(context)!.notifSectionAvailableUpdates, Icons.cloud_download_outlined),
-          ...widget.pendingCatalogUpdates.map(_buildPendingUpdateTile),
+          _SectionLabel(label: l10n.notifSectionAvailableUpdates, color: AppColors.gold),
+          const SizedBox(height: 8),
+          _GroupCard(
+            children: _withDividers(
+              widget.pendingCatalogUpdates.map(_buildPendingUpdateTile).toList(),
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
         if (sorted.isNotEmpty) ...[
-          if (hasPending)
-            _buildSectionHeader(AppLocalizations.of(context)!.notifSectionHistory, Icons.history),
-          ...sorted.map((e) => e.type == 'app_update'
-              ? _buildAppEntry(e)
-              : _buildCatalogTile(e)),
+          _SectionLabel(label: l10n.notifSectionHistory, color: AppColors.blue),
+          const SizedBox(height: 8),
+          _GroupCard(
+            children: _withDividers(
+              sorted
+                  .map((e) => e.type == 'app_update'
+                      ? _buildAppEntry(e)
+                      : _buildCatalogTile(e))
+                  .toList(),
+            ),
+          ),
         ],
       ],
     );
   }
 
-  // ── Sezione header ───────────────────────────────────────────────────────────
+  // ── Inserisce un divider tra ogni tile di un gruppo ──────────────────────────
 
-  Widget _buildSectionHeader(String title, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: AppColors.gold),
-          const SizedBox(width: 6),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.gold,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-          ),
-        ],
-      ),
-    );
+  List<Widget> _withDividers(List<Widget> tiles) {
+    final out = <Widget>[];
+    for (var i = 0; i < tiles.length; i++) {
+      if (i > 0) out.add(const _GroupDivider());
+      out.add(tiles[i]);
+    }
+    return out;
   }
 
   // ── Pending update tile (da scaricare) ───────────────────────────────────────
@@ -541,22 +582,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
       subtitle = l10n.notifFullUpdate;
     }
 
-    return Card(
-      color: AppColors.bgMedium,
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(11),
               ),
               child: Icon(icon, color: color, size: 22),
             ),
@@ -615,7 +650,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -624,11 +658,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Widget _deleteBg() => Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.circular(12),
-        ),
+        color: Colors.red,
         child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
       );
 
@@ -638,100 +668,113 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final version = entry.data['version'] as String? ?? '';
     final date = entry.data['date'] as String? ?? '';
     final changes = entry.data['changes'] as List<dynamic>? ?? [];
+    final isExpanded = _expandedIds.contains(entry.id);
 
     return Dismissible(
       key: Key(entry.id),
       direction: DismissDirection.endToStart,
       background: _deleteBg(),
       onDismissed: (_) => _deleteEntry(entry.id),
-      child: Card(
-      color: AppColors.bgMedium,
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (!entry.isRead) ...[
+      child: InkWell(
+        onTap: () => setState(() => isExpanded
+            ? _expandedIds.remove(entry.id)
+            : _expandedIds.add(entry.id)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (!entry.isRead) ...[
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        AppLocalizations.of(context)!.notifNewBadge,
+                        style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
+                      color: AppColors.blue.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: AppColors.blue.withValues(alpha: 0.4)),
                     ),
                     child: Text(
-                      AppLocalizations.of(context)!.notifNewBadge,
-                      style: const TextStyle(
-                          color: Colors.red,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700),
+                      'v$version',
+                      style: TextStyle(
+                        color: AppColors.blue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const Spacer(),
+                  Text(
+                    _formatDate(date),
+                    style:
+                        TextStyle(color: AppColors.textHint, fontSize: 12),
+                  ),
+                  const SizedBox(width: 6),
+                  AnimatedRotation(
+                    turns: isExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      Icons.keyboard_arrow_down,
+                      color: isExpanded ? AppColors.blue : AppColors.textHint,
+                      size: 20,
+                    ),
+                  ),
                 ],
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.blue.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: AppColors.blue.withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    'v$version',
-                    style: TextStyle(
-                      color: AppColors.blue,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
+              ),
+              if (isExpanded) ...[
+                const SizedBox(height: 12),
+                ...changes.map(
+                  (c) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 5, right: 8),
+                          child: Container(
+                            width: 5,
+                            height: 5,
+                            decoration: const BoxDecoration(
+                              color: AppColors.gold,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            c as String,
+                            style: TextStyle(
+                                color: AppColors.textSecondary, fontSize: 14),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  _formatDate(date),
-                  style:
-                      TextStyle(color: AppColors.textHint, fontSize: 12),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            ...changes.map(
-              (c) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 5, right: 8),
-                      child: Container(
-                        width: 5,
-                        height: 5,
-                        decoration: const BoxDecoration(
-                          color: AppColors.gold,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        c as String,
-                        style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 14),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 
@@ -769,10 +812,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
       direction: DismissDirection.endToStart,
       background: _deleteBg(),
       onDismissed: (_) => _deleteEntry(entry.id),
-      child: Card(
-      color: AppColors.bgMedium,
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -858,7 +897,61 @@ class _NotificationsPageState extends State<NotificationsPage> {
           ],
         ),
       ),
-    ),
     );
   }
+}
+
+// ─── Section label (stile pagina Supporto) ────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _SectionLabel({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: 1.0,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Group card wrapper (stile pagina Supporto) ────────────────────────────────
+
+class _GroupCard extends StatelessWidget {
+  final List<Widget> children;
+  const _GroupCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.bgMedium,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border, width: 0.5),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(13.5),
+        child: Column(children: children),
+      ),
+    );
+  }
+}
+
+class _GroupDivider extends StatelessWidget {
+  const _GroupDivider();
+
+  @override
+  Widget build(BuildContext context) =>
+      Container(height: 0.5, color: AppColors.divider, margin: const EdgeInsets.only(left: 64));
 }

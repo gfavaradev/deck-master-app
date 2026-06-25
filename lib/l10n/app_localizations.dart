@@ -2198,6 +2198,18 @@ abstract class AppLocalizations {
   /// **'Notifiche'**
   String get notificationsTitle;
 
+  /// Notifications page header title
+  ///
+  /// In it, this message translates to:
+  /// **'Le tue novità'**
+  String get notifHeaderTitle;
+
+  /// Notifications page header subtitle
+  ///
+  /// In it, this message translates to:
+  /// **'Aggiornamenti dell\'app e delle collezioni, tutti in un posto.'**
+  String get notifHeaderSubtitle;
+
   /// Clear all notifications dialog title
   ///
   /// In it, this message translates to:

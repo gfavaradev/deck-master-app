@@ -13,6 +13,7 @@ import '../models/user_model.dart';
 import '../theme/app_colors.dart';
 import 'admin_collection_page.dart';
 import 'admin_excel_page.dart';
+import 'admin_news_page.dart';
 import 'admin_sets_rarities_page.dart';
 
 /// Body riutilizzabile con la lista dei cataloghi da gestire
@@ -698,6 +699,10 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         _buildSetsRaritiesCard(context),
         const SizedBox(height: 12),
 
+        // Gestione News
+        _buildNewsManagementCard(context),
+        const SizedBox(height: 12),
+
         // Pro management
         _buildProManagementCard(context),
       ],
@@ -1095,6 +1100,29 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const AdminSetsRaritiesPage()),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewsManagementCard(BuildContext context) {
+    return Card(
+      elevation: 2,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        leading: const CircleAvatar(
+          backgroundColor: AppColors.bgLight,
+          child: Icon(Icons.newspaper_outlined, color: Colors.deepPurple),
+        ),
+        title: const Text(
+          'Gestione News',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        subtitle: const Text('Pubblicazioni manuali e revisione draft da news_sync'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AdminNewsPage()),
         ),
       ),
     );

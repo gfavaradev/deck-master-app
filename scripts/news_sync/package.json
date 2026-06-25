@@ -1,0 +1,16 @@
+{
+  "name": "deck-master-news-sync",
+  "version": "1.0.0",
+  "description": "Sync giornaliero news ufficiali/forum → Firestore news_drafts",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "yugioh": "node index.js --catalogs yugioh"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "dotenv": "^16.0.0",
+    "rss-parser": "^3.13.0",
+    "cheerio": "^1.0.0"
+  }
+}

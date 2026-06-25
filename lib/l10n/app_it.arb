@@ -1175,6 +1175,12 @@
   "notificationsTitle": "Notifiche",
   "@notificationsTitle": { "description": "Notifications page title" },
 
+  "notifHeaderTitle": "Le tue novità",
+  "@notifHeaderTitle": { "description": "Notifications page header title" },
+
+  "notifHeaderSubtitle": "Aggiornamenti dell'app e delle collezioni, tutti in un posto.",
+  "@notifHeaderSubtitle": { "description": "Notifications page header subtitle" },
+
   "notifClearAllTitle": "Cancella tutto",
   "@notifClearAllTitle": { "description": "Clear all notifications dialog title" },
 

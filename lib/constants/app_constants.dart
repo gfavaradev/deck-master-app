@@ -346,7 +346,7 @@ class AppChangelog {
     },
     {
       'version': '1.0.0',
-      'date': '2026-03-05',
+      'date': '2026-02-20',
       'changes': [
         'Catalogo One Piece TCG disponibile',
         'Sistemata visualizzazione immagini nella propria collezione',

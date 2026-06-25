@@ -219,7 +219,7 @@ class _NewsCardState extends State<_NewsCard> {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await launchUrl(uri, mode: LaunchMode.inAppWebView);
     }
   }
 
@@ -351,7 +351,7 @@ class _NewsCardState extends State<_NewsCard> {
                         ? CrossFadeState.showSecond
                         : CrossFadeState.showFirst,
                     firstChild: Text(
-                      '${body.substring(0, 160)}...',
+                      isLongBody ? '${body.substring(0, 160)}...' : body,
                       style: const TextStyle(
                           color: AppColors.textSecondary, fontSize: 13, height: 1.4),
                     ),

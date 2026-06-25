@@ -1191,6 +1191,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notificationsTitle => 'Notifications';
 
   @override
+  String get notifHeaderTitle => 'Your updates';
+
+  @override
+  String get notifHeaderSubtitle =>
+      'App and collection updates, all in one place.';
+
+  @override
   String get notifClearAllTitle => 'Clear all';
 
   @override

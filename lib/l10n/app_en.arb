@@ -380,6 +380,8 @@
   "roiAddPricesBtn": "Add {label} prices",
 
   "notificationsTitle": "Notifications",
+  "notifHeaderTitle": "Your updates",
+  "notifHeaderSubtitle": "App and collection updates, all in one place.",
   "notifClearAllTitle": "Clear all",
   "notifClearAllMsg": "Do you want to delete all notifications?",
   "notifClearAllTooltip": "Clear all",
