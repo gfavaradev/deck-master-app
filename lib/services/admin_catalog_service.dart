@@ -425,44 +425,31 @@ class AdminCatalogService {
   /// modified cards are rewritten, instead of the entire catalog.
   /// For 1 card edit among 13,000 cards across 70 chunks, this reduces
   /// writes from ~70 to 1, saving ~98% of write traffic.
-  Future<Map<String, dynamic>> publishChanges({
+  Future<void> publishChanges({
     required String adminUid,
     required Function(int current, int total) onProgress,
   }) async {
     final changes = await getPendingChanges();
+    if (changes.isEmpty) return;
 
-    if (changes.isEmpty) {
-      return {'success': true, 'message': 'Nessuna modifica da pubblicare'};
+    // Group changes by catalog
+    final changesByCatalog = <String, List<PendingCatalogChange>>{};
+    for (final change in changes) {
+      final catalog = change.cardData['catalog'] as String? ?? 'yugioh';
+      changesByCatalog.putIfAbsent(catalog, () => []).add(change);
     }
 
-    try {
-      // Group changes by catalog
-      final changesByCatalog = <String, List<PendingCatalogChange>>{};
-      for (final change in changes) {
-        final catalog = change.cardData['catalog'] as String? ?? 'yugioh';
-        changesByCatalog.putIfAbsent(catalog, () => []).add(change);
-      }
-
-      // Process each catalog with surgical chunk updates
-      for (final catalogEntry in changesByCatalog.entries) {
-        await _publishCatalogChangesSurgical(
-          catalog: catalogEntry.key,
-          changes: catalogEntry.value,
-          adminUid: adminUid,
-          onProgress: onProgress,
-        );
-      }
-
-      await clearPendingChanges();
-
-      return {
-        'success': true,
-        'message': 'Pubblicate ${changes.length} modifiche con successo',
-        'changesCount': changes.length,
-      };
-    } catch (e) { // ignore: empty_catches
-      return {'success': false, 'error': e.toString()};
+    // Process each catalog with surgical chunk updates
+    for (final catalogEntry in changesByCatalog.entries) {
+      await _publishCatalogChangesSurgical(
+        catalog: catalogEntry.key,
+        changes: catalogEntry.value,
+        adminUid: adminUid,
+        onProgress: onProgress,
+      );
     }
+
+    await clearPendingChanges();
   }
 
   /// Surgical publish: uses the card_index to locate cards directly, then

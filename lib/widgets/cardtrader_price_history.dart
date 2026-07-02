@@ -62,6 +62,16 @@ class _CardtraderPriceHistoryChartState
   }
 
   @override
+  void didUpdateWidget(CardtraderPriceHistoryChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.card.serialNumber != widget.card.serialNumber ||
+        oldWidget.card.catalogId != widget.card.catalogId ||
+        oldWidget.card.collection != widget.card.collection) {
+      setState(_load);
+    }
+  }
+
+  @override
   void dispose() {
     AppPreferences.currencyNotifier.removeListener(_onCurrencyChanged);
     super.dispose();
@@ -195,18 +205,21 @@ class _EmptyState extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.show_chart_rounded,
-              size: 28,
-              color: AppColors.textHint.withValues(alpha: 0.4)),
-          const SizedBox(height: 8),
-          Text(
-            hasSomeHistory
-                ? AppLocalizations.of(context)!.ctHistoryInsufficientData
-                : AppLocalizations.of(context)!.ctHistoryWillPopulate,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 11,
-              color: AppColors.textHint.withValues(alpha: 0.7),
-              fontStyle: FontStyle.italic,
+              size: 32,
+              color: AppColors.textHint.withValues(alpha: 0.5)),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              hasSomeHistory
+                  ? AppLocalizations.of(context)!.ctHistoryInsufficientData
+                  : AppLocalizations.of(context)!.ctHistoryWillPopulate,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textHint,
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ),
         ],

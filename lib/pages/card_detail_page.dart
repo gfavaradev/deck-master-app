@@ -1049,10 +1049,17 @@ class _CardtraderLinkButtonState extends State<_CardtraderLinkButton> {
       catalog: widget.card.collection,
       expansionCode: exp,
       cardName: widget.card.name,
+      rarity: widget.card.rarity.isNotEmpty ? widget.card.rarity : null,
+      collectorNumber: sn.serialCollectorNumber,
       catalogId: widget.card.catalogId,
     );
     if (!mounted || prices.isEmpty) return;
-    final best = prices.firstWhere((p) => p.blueprintId > 0, orElse: () => prices.first);
+    // Prefer the language of the owned card, fallback to first available blueprint
+    final ownLang = CardtraderService.languageFromSerial(sn, widget.card.collection);
+    final best = prices.firstWhere(
+      (p) => p.blueprintId > 0 && p.language == ownLang,
+      orElse: () => prices.firstWhere((p) => p.blueprintId > 0, orElse: () => prices.first),
+    );
     if (best.blueprintId > 0) setState(() => _url = Uri.parse(best.cardtraderUrl));
   }
 

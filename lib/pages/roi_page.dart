@@ -109,7 +109,8 @@ class _RoiPageState extends State<RoiPage> {
           FilledButton(
             onPressed: () {
               final val = double.tryParse(ctrl.text.replaceAll(',', '.'));
-              Navigator.pop(ctx, val ?? 0.0);
+              if (val == null) return;
+              Navigator.pop(ctx, val);
             },
             child: Text(l10n.btnSave),
           ),

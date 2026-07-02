@@ -264,56 +264,35 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   }
 
   static const _kAdminCachePrefix = 'admin_verified_';
-  static const _kAdminCheckedAtPrefix = 'admin_checked_at_';
-  // Verifica Firestore solo una volta ogni 24h per ridurre le letture
-  static const _kAdminCheckTtl = Duration(hours: 24);
-
   Future<void> _checkAdminAndNotifications() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final prefs = await SharedPreferences.getInstance();
 
-    // 1. Applica subito il valore cached per evitare flickering.
+    // 1. Applica subito il valore cached per evitare flickering durante il check.
     final cached = uid != null ? (prefs.getBool('$_kAdminCachePrefix$uid') ?? false) : false;
     if (cached && mounted) setState(() => _isAdmin = true);
 
-    // 2. Se il check Firestore è stato fatto di recente (< 24h), usa la cache.
-    if (uid != null) {
-      final lastChecked = prefs.getString('$_kAdminCheckedAtPrefix$uid');
-      if (lastChecked != null) {
-        final last = DateTime.tryParse(lastChecked);
-        if (last != null && DateTime.now().difference(last) < _kAdminCheckTtl) {
-          final unread = await unreadNotificationCount();
-          if (mounted) setState(() { _isAdmin = cached; _unreadCount = unread; });
-          return;
-        }
-      }
-    }
-
-    // 3. Verifica Firestore (fonte autorevole) + notifiche in parallelo.
+    // 2. Verifica sempre Firestore (fonte autorevole) + notifiche in parallelo.
     // null = Firestore non raggiungibile (offline/timeout) → mantieni cache.
-    final results = await Future.wait([
-      _authService.isCurrentUserAdmin()
-          .timeout(const Duration(seconds: 12))
-          .then<bool?>((v) => v)
-          .catchError((_) => null as bool?),
-      unreadNotificationCount().catchError((_) => 0),
-    ]);
+    bool? firestoreAdmin;
+    try {
+      firestoreAdmin = await _authService.isCurrentUserAdmin()
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      firestoreAdmin = null;
+    }
+    final int unread = await unreadNotificationCount().catchError((_) => 0);
     if (!mounted) return;
-    final bool? firestoreAdmin = results[0] as bool?;
-    final int unread = results[1] as int;
 
     final isAdmin = firestoreAdmin ?? cached; // offline → mantieni ultimo stato noto
 
-    // 4. Persiste ruolo e timestamp SOLO se Firestore ha risposto.
-    // Se offline, il timestamp non viene aggiornato così al prossimo avvio
-    // ritenterà subito invece di aspettare le 24h.
+    // 3. Aggiorna cache solo se Firestore ha risposto.
     if (uid != null && firestoreAdmin != null) {
       if (isAdmin) {
         await prefs.setBool('$_kAdminCachePrefix$uid', true);
       } else {
         await prefs.remove('$_kAdminCachePrefix$uid');
       }
-      await prefs.setString('$_kAdminCheckedAtPrefix$uid', DateTime.now().toIso8601String());
     }
 
     if (mounted) setState(() { _isAdmin = isAdmin; _unreadCount = unread; });

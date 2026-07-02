@@ -41,7 +41,7 @@ class CardtraderAllPricesSection extends StatefulWidget {
 class _CardtraderAllPricesSectionState
     extends State<CardtraderAllPricesSection> {
   final _service = CardtraderService();
-  late final Future<List<CardtraderPrice>> _future;
+  late Future<List<CardtraderPrice>> _future;
 
   static String? _ctSlug(String collection) => collection.ctSlug;
 
@@ -52,9 +52,7 @@ class _CardtraderAllPricesSectionState
         '?q=${Uri.encodeQueryComponent(cardName)}';
   }
 
-  @override
-  void initState() {
-    super.initState();
+  void _loadPrices() {
     _future = _service.getAllPricesForCard(
       catalog: widget.collection,
       expansionCode: widget.serialNumber.serialExpansionCode,
@@ -63,6 +61,23 @@ class _CardtraderAllPricesSectionState
       collectorNumber: widget.serialNumber.serialCollectorNumber,
       catalogId: widget.catalogId,
     );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrices();
+  }
+
+  @override
+  void didUpdateWidget(CardtraderAllPricesSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.serialNumber != widget.serialNumber ||
+        oldWidget.catalogId != widget.catalogId ||
+        oldWidget.collection != widget.collection ||
+        oldWidget.rarity != widget.rarity) {
+      setState(_loadPrices);
+    }
   }
 
   static const _langLabels = <String, String>{

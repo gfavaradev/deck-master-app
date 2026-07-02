@@ -544,12 +544,12 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   Future<void> _showDetails(CardModel card) async {
-    final index = _filteredCards.indexOf(card);
-    final safeIndex = index < 0 ? 0 : index;
     final decks = card.id != null
         ? await _repo.getDecksForCard(card.id!)
         : <Map<String, dynamic>>[];
     if (!mounted) return;
+    final index = _filteredCards.indexOf(card);
+    final safeIndex = index < 0 ? 0 : index;
     Navigator.push(
       context,
       MaterialPageRoute(
