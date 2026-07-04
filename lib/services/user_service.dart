@@ -34,15 +34,19 @@ class UserService {
     await _usersCollection.doc(uid).set(user.toFirestore());
   }
 
-  /// Get user by UID
+  /// Get user by UID.
+  /// Returns null only when the document genuinely doesn't exist — a failed
+  /// read (network error, permission denied, quota exhausted) is rethrown
+  /// rather than treated as "not found". Callers like the admin/Pro status
+  /// checks rely on this distinction: they fall back to a cached value when
+  /// the read fails, but treat a confirmed null as "definitely not admin/Pro"
+  /// and clear the cache — silently swallowing errors here made a transient
+  /// blip indistinguishable from that confirmed-negative case and wiped a
+  /// valid cached admin/Pro status.
   Future<UserModel?> getUser(String uid) async {
-    try {
-      final doc = await _usersCollection.doc(uid).get();
-      if (!doc.exists) return null;
-      return UserModel.fromFirestore(doc.data() as Map<String, dynamic>);
-    } catch (e) { // ignore: empty_catches
-      return null;
-    }
+    final doc = await _usersCollection.doc(uid).get();
+    if (!doc.exists) return null;
+    return UserModel.fromFirestore(doc.data() as Map<String, dynamic>);
   }
 
   /// Get current logged-in user

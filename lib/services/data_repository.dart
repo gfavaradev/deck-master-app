@@ -98,6 +98,18 @@ class DataRepository {
     await prefs.remove(kPendingCatalogUpdatesKey);
   }
 
+  /// Overwrites the persisted pending-updates list. Used to prune entries for
+  /// catalogs the user no longer has unlocked, since [savePendingCatalogUpdate]
+  /// only ever adds/replaces a single entry and never re-validates the rest.
+  Future<void> replacePendingCatalogUpdates(List<Map<String, dynamic>> updates) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (updates.isEmpty) {
+      await prefs.remove(kPendingCatalogUpdatesKey);
+    } else {
+      await prefs.setString(kPendingCatalogUpdatesKey, jsonEncode(updates));
+    }
+  }
+
   // ============================================================
   // Yu-Gi-Oh Catalog (from Firestore)
   // ============================================================

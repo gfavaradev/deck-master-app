@@ -52,7 +52,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 38,
+      version: 39,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -472,7 +472,24 @@ class DatabaseHelper {
         await _addColumnIfMissing(db, 'magic_cards', 'oracle_text_$lang', 'TEXT');
       }
     }
+    if (oldVersion < 39) {
+      // Fix: per i cataloghi generici sincronizzati via CardTrader (vanguard,
+      // dragon-ball-super, star-wars, riftbound, gundam, union-arena), api_id è
+      // l'id interno del blueprint CT, non il seriale reale della carta — che
+      // veniva scaricato correttamente da downloadCardtraderGenericCatalog ma
+      // scartato al sync perché non esisteva una colonna dove salvarlo, quindi
+      // la UI mostrava l'id CT al posto del seriale.
+      for (final prefix in _genericCatalogPrefixes) {
+        await _addColumnIfMissing(db, '${prefix}_cards', 'card_number', 'TEXT');
+      }
+    }
   }
+
+  /// Table prefixes for all v36 "generic" catalog tables (see [genericTablePrefix]).
+  static const _genericCatalogPrefixes = [
+    'digimon', 'lorcana', 'fab', 'vanguard', 'dragonball',
+    'starwars', 'riftbound', 'gundam', 'union_arena',
+  ];
 
   Future<void> _addFirestoreSyncSupport(DatabaseExecutor db) async {
     // Add firestoreId columns to user data tables
@@ -856,6 +873,7 @@ class DatabaseHelper {
           effect       TEXT,
           set_code     TEXT,
           set_name     TEXT,
+          card_number  TEXT,
           image_url    TEXT,
           name_it      TEXT,
           effect_it    TEXT,
@@ -1028,6 +1046,7 @@ class DatabaseHelper {
             'effect':    c['effect']?.toString(),
             'set_code':  c['set_code']?.toString(),
             'set_name':  c['set_name']?.toString(),
+            'card_number': c['card_number']?.toString(),
             'name_it':   c['name_it']?.toString(),
             'effect_it': c['effect_it']?.toString(),
             'name_fr':   c['name_fr']?.toString(),
@@ -2367,7 +2386,7 @@ class DatabaseHelper {
       SELECT
         api_id          AS id,
         $nameExpr       AS name,
-        api_id          AS setCode,
+        COALESCE(NULLIF(card_number, ''), api_id) AS setCode,
         rarity,
         rarity          AS setRarity,
         image_url       AS artwork,
@@ -2512,11 +2531,16 @@ class DatabaseHelper {
 
   // CTE che calcola il prezzo effettivo per ogni carta leggendo dai catalogo
   // (set_price_{lang}) invece che da cards.cardtrader_value.
+  // Effective price prefers the live CardTrader-synced price over `c.value`:
+  // `value` is only a snapshot frozen at add-time (card_dialogs.dart pre-fills
+  // it with the catalog price at that moment and never refreshes it), so for
+  // long-held collections it drifts from the real price — using it as the
+  // primary source inflates/deflates totals. It's kept as a fallback for
+  // cards CardTrader has no matching price for.
   static String _cardEffectiveValueCTE() => '''
     WITH card_values AS (
       SELECT c.collection, c.rarity, c.quantity,
         COALESCE(
-          NULLIF(c.value, 0),
           (SELECT CASE
              WHEN yp.set_code_it = c.serialNumber THEN yp.set_price_it
              WHEN yp.set_code_fr = c.serialNumber THEN yp.set_price_fr
@@ -2531,12 +2555,13 @@ class DatabaseHelper {
                OR yp.set_code_fr = c.serialNumber OR yp.set_code_de = c.serialNumber
                OR yp.set_code_pt = c.serialNumber OR yp.set_code_sp = c.serialNumber)
            LIMIT 1),
+          NULLIF(c.value, 0),
           0
         ) AS effective_price
       FROM cards c WHERE c.collection = 'yugioh'
       UNION ALL
       SELECT c.collection, c.rarity, c.quantity,
-        COALESCE(NULLIF(c.value, 0), NULLIF(op.market_price, 0), 0) AS effective_price
+        COALESCE(NULLIF(op.market_price, 0), NULLIF(c.value, 0), 0) AS effective_price
       FROM cards c
       LEFT JOIN onepiece_prints op ON op.card_id = CAST(c.catalogId AS INTEGER)
                                    AND op.card_set_id = c.serialNumber
@@ -2544,7 +2569,6 @@ class DatabaseHelper {
       UNION ALL
       SELECT c.collection, c.rarity, c.quantity,
         COALESCE(
-          NULLIF(c.value, 0),
           (SELECT CASE
              WHEN pp.set_code_it = c.serialNumber THEN pp.set_price_it
              WHEN pp.set_code_fr = c.serialNumber THEN pp.set_price_fr
@@ -2560,6 +2584,7 @@ class DatabaseHelper {
                OR pp.set_code_fr = c.serialNumber OR pp.set_code_de = c.serialNumber
                OR pp.set_code_pt = c.serialNumber OR pp.set_code_es = c.serialNumber)
            LIMIT 1),
+          NULLIF(c.value, 0),
           0
         ) AS effective_price
       FROM cards c WHERE c.collection = 'pokemon'

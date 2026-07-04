@@ -278,7 +278,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     try {
       firestoreAdmin = await _authService.isCurrentUserAdmin()
           .timeout(const Duration(seconds: 12));
-    } catch (_) {
+      debugPrint('[AdminDebug] uid=$uid firestoreAdmin=$firestoreAdmin cached=$cached');
+    } catch (e, st) {
+      debugPrint('[AdminDebug] uid=$uid FAILED: $e\n$st');
       firestoreAdmin = null;
     }
     final int unread = await unreadNotificationCount().catchError((_) => 0);
@@ -317,10 +319,29 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   void _loadPersistedPendingUpdates() async {
     final prefs = await SharedPreferences.getInstance();
     final updates = DataRepository.loadPendingCatalogUpdatesFromPrefs(prefs);
+    if (updates.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _pendingUpdates = updates;
+        _hasPendingCatalogUpdate = false;
+      });
+      return;
+    }
+
+    // Re-check which catalogs the user actually has active/unlocked right now —
+    // persisted entries can go stale (e.g. a catalog was unlocked when the
+    // update was saved but isn't anymore) and must not be offered for download.
+    final unlockedKeys =
+        (await _repo.getCollections()).where((c) => c.isUnlocked).map((c) => c.key).toSet();
+    final active = updates.where((u) => unlockedKeys.contains(u['collectionKey'])).toList();
+    if (active.length != updates.length) {
+      await _repo.replacePendingCatalogUpdates(active);
+    }
+
     if (!mounted) return;
     setState(() {
-      _pendingUpdates = updates;
-      _hasPendingCatalogUpdate = updates.isNotEmpty;
+      _pendingUpdates = active;
+      _hasPendingCatalogUpdate = active.isNotEmpty;
     });
   }
 

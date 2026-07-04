@@ -351,20 +351,25 @@ class AdminCatalogService {
   /// Returns a map from changeId → processed card data.
   Future<Map<String, Map<String, dynamic>>> _preprocessChanges(
     List<PendingCatalogChange> changes,
+    Function(int current, int total) onProgress,
   ) async {
     final sem = _Semaphore(_uploadConcurrency);
     final results = <String, Map<String, dynamic>>{};
+    final toProcess = changes
+        .where((c) => c.type == ChangeType.add || c.type == ChangeType.edit)
+        .toList();
+    int done = 0;
     await Future.wait(
-      changes
-          .where((c) => c.type == ChangeType.add || c.type == ChangeType.edit)
-          .map((change) async {
+      toProcess.map((change) async {
         await sem.acquire();
         try {
           results[change.changeId] = await _processCardForStorage(change.cardData);
         } finally {
           sem.release();
         }
+        onProgress(++done, toProcess.length);
       }),
+      eagerError: true,
     );
     return results;
   }
@@ -542,7 +547,12 @@ class AdminCatalogService {
 
     // 5. Apply changes, track affected chunks and index mutations.
     // Pre-process all images in parallel before the sequential chunk-assignment loop.
-    final preprocessed = await _preprocessChanges(sortedChanges);
+    // The progress fraction is intentionally not remapped to this sub-step's own
+    // count — it only needs to call onProgress often enough to observe cancellation.
+    final preprocessed = await _preprocessChanges(
+      sortedChanges,
+      (_, _) => onProgress(step, totalSteps),
+    );
 
     final affectedChunkIds = <String>{};
     final deletedCardIds = <dynamic>[];
@@ -665,7 +675,7 @@ class AdminCatalogService {
     final deletedCardIds = <dynamic>[];
 
     // Pre-process all images in parallel before the sequential chunk-assignment loop.
-    final preprocessed = await _preprocessChanges(sortedChanges);
+    final preprocessed = await _preprocessChanges(sortedChanges, onProgress);
 
     for (final change in sortedChanges) {
       switch (change.type) {
@@ -1122,7 +1132,7 @@ class AdminCatalogService {
         onProgress('Immagini: ${e.key + 1}/${rawCards.length}...', (e.key + 1) / rawCards.length);
       }
       return card;
-    }));
+    }), eagerError: true);
 
     await _uploadCatalogChunks(
       catalogCollection: 'yugioh_catalog',
@@ -2763,8 +2773,11 @@ class AdminCatalogService {
           sem.release();
         }
       }
+      if (e.key % 50 == 0) {
+        onProgress('Immagini: ${e.key + 1}/${newCards.length}...', (e.key + 1) / newCards.length);
+      }
       return card;
-    }));
+    }), eagerError: true);
 
     onProgress('Salvando ${processedCards.length} carte nuove su Firestore...', null);
     await _uploadCatalogChunks(
@@ -4099,8 +4112,11 @@ class AdminCatalogService {
           sem.release();
         }
       }
+      if (e.key % 50 == 0) {
+        onProgress('Immagini: ${e.key + 1}/${newCards.length}...', (e.key + 1) / newCards.length);
+      }
       return card;
-    }));
+    }), eagerError: true);
 
     onProgress('Salvando ${processedCards.length} carte nuove su Firestore...', null);
     await _uploadCatalogChunks(

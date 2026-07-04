@@ -253,7 +253,10 @@ class AuthService {
 
   /// Verifica se l'utente corrente è admin leggendo il campo `role` da Firestore.
   /// Il ruolo va settato manualmente dalla Firebase Console:
-  ///   users/{uid} → role: "admin"
+  ///   users/{uid} → role: "administrator"
+  /// ATTENZIONE: il valore dev'essere esattamente "administrator" (nome
+  /// dell'enum UserRole) — "admin" NON viene riconosciuto e fa fallback
+  /// silenzioso a UserRole.user (nessun errore, l'account appare non-admin).
   /// Lancia eccezione se Firestore non è raggiungibile (gestita dal chiamante).
   Future<bool> isCurrentUserAdmin() async {
     return await _userService.isCurrentUserAdmin()

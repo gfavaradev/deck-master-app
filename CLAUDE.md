@@ -133,6 +133,14 @@ Considered but not added: a Sourcegraph code-search MCP server (`sourcegraph-mcp
 
 No secrets are stored in `.mcp.json` for the project-scoped servers — they just invoke local CLIs (`firebase`, `npx`). Don't add servers requiring API keys/tokens at project scope; use `-s local` (or env vars outside the repo) for anything credentialed, as was done for `github`.
 
+For structured web research use the built-in `WebSearch`/`WebFetch` tools rather than a dedicated search MCP server. For a second opinion on a diff, use the `/code-review` skill (supports `ultra` for a multi-agent cloud review) rather than a separate dual-model MCP server — neither a "Kindly" nor a "Lad" MCP server is configured or known here; don't assume they exist without a concrete package/URL to add.
+
+## Spec-Driven Development for non-trivial work
+Before implementing a feature or refactor big enough to span multiple files/services, copy `REQUIREMENTS.md` (repo root) to a feature-specific file and fill it in — objective, constraints, acceptance criteria — before delegating implementation. Skip this for small, single-file fixes.
+
+## TDD workflow
+For bug fixes and new logic in `lib/services/`, `lib/models/`, and `lib/utils/`, write or update the failing test first (`test/unit/...`), confirm it fails for the expected reason, then implement until it passes. This is especially important for areas covered by `integration_test/crashes/` regression tests — check for an existing test before writing a new one.
+
 ## Project Skills (`.claude/skills/`)
 These are invocable with `/<name>` and encode the recurring workflows for this repo — prefer them over re-deriving the commands by hand:
 - `/flutter-build` — build a release artifact (`android`/`windows`/`web`), including the secrets preflight check and the Windows Inno Setup packaging step.

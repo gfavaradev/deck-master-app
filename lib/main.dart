@@ -50,13 +50,20 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // AppCheck: in debug non lo attiviamo per evitare che blocchi Firestore su
-  // dispositivi nuovi il cui debug token non è ancora registrato in Firebase Console.
-  // In release usa Play Integrity per verificare l'autenticità dell'app.
-  if (!kIsWeb && !kDebugMode) {
+  // AppCheck: enforcement è attivo su Firestore, quindi va attivato anche in
+  // debug — altrimenti le richieste partono con un token placeholder che il
+  // backend rifiuta e OGNI lettura Firestore va in timeout (auth continua a
+  // funzionare, ingannando la diagnosi). In debug si usa il debug provider: al
+  // primo avvio logcat stampa un "debug secret" da registrare in
+  // Firebase Console → App Check → App → Gestisci token di debug.
+  // In release si usa Play Integrity / App Attest per verificare l'autenticità.
+  if (!kIsWeb) {
     FirebaseAppCheck.instance.activate(
-      providerAndroid: const AndroidPlayIntegrityProvider(),
-      providerApple: const AppleAppAttestProvider(),
+      providerAndroid: kDebugMode
+          ? const AndroidDebugProvider()
+          : const AndroidPlayIntegrityProvider(),
+      providerApple:
+          kDebugMode ? const AppleDebugProvider() : const AppleAppAttestProvider(),
     ).catchError((_) {});
   }
 

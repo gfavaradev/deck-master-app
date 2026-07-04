@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/user_model.dart';
 import '../services/ad_service.dart';
 import '../services/user_service.dart';
 
@@ -60,7 +61,14 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   }
 
   Future<void> _verifyProInBackground(String? uid, SharedPreferences prefs) async {
-    final user = await UserService().getCurrentUser();
+    UserModel? user;
+    try {
+      user = await UserService().getCurrentUser();
+    } catch (_) {
+      // Firestore unreachable — keep the cached Pro status untouched instead
+      // of treating the failed read as "confirmed not Pro" and wiping it.
+      return;
+    }
     final isProNow = user?.isPro == true;
     if (uid != null) {
       if (isProNow) {

@@ -66,10 +66,7 @@ class UserModel {
       email: data['email'] as String,
       displayName: data['displayName'] as String?,
       photoUrl: data['photoUrl'] as String?,
-      role: UserRole.values.firstWhere(
-        (e) => e.toString().split('.').last == data['role'],
-        orElse: () => UserRole.user,
-      ),
+      role: UserRole.fromFirestoreValue(data['role'] as String?),
       createdAt: DateTime.parse(data['createdAt'] as String),
       lastLoginAt: data['lastLoginAt'] != null
           ? DateTime.parse(data['lastLoginAt'] as String)
@@ -118,5 +115,17 @@ enum UserRole {
   administrator,
 
   /// Regular user - limited access
-  user,
+  user;
+
+  /// Parses the `role` field from a Firestore user doc. Accepts "admin" as a
+  /// tolerant alias for "administrator" — a manual Firebase Console edit
+  /// following the (previously incorrect) doc-comment in auth_service.dart
+  /// would otherwise silently fall back to [UserRole.user] with no error.
+  static UserRole fromFirestoreValue(String? value) {
+    final normalized = value?.trim().toLowerCase();
+    if (normalized == 'admin' || normalized == 'administrator') {
+      return UserRole.administrator;
+    }
+    return UserRole.user;
+  }
 }

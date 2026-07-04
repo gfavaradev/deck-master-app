@@ -130,6 +130,22 @@ class _CatalogPageState extends State<CatalogPage> {
       setState(() => _availableCatalogLanguages = results[3] as Set<String>);
     }
 
+    // The saved/detected preferred language (LanguageService) only knows which
+    // languages a TCG theoretically supports, not which ones the just-downloaded
+    // catalog actually has data for — e.g. the device locale is IT and IT is in
+    // Digimon's theoretical language list, but the catalog was downloaded before
+    // translations were generated. Reconcile against the real DB check so the
+    // flag/label shown always matches an actually-available language.
+    if (mounted && !_availableCatalogLanguages.contains(_preferredLanguage.toUpperCase())) {
+      final corrected = _availableCatalogLanguages.contains('EN')
+          ? 'EN'
+          : (_availableCatalogLanguages.isNotEmpty ? _availableCatalogLanguages.first : 'EN');
+      if (corrected != _preferredLanguage) {
+        setState(() => _preferredLanguage = corrected);
+        _loadCards();
+      }
+    }
+
     // Fallback: if the Firestore check didn't flag the catalog as missing but
     // there are actually zero cards in the local DB, show the download button.
     // We check the real DB count (not the filtered search result) so this
@@ -706,7 +722,7 @@ class _CatalogPageState extends State<CatalogPage> {
                     onChanged: _onSearchChanged,
                   ),
                 ),
-                if (_supportedLanguages.length > 1) ...[
+                if (_supportedLanguages.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   _buildLanguageButton(),
                 ],

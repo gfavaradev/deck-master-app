@@ -11,6 +11,7 @@ import '../services/database_helper.dart';
 import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../theme/app_colors.dart';
+import '../utils/cancellation_token.dart';
 import 'admin_collection_page.dart';
 import 'admin_excel_page.dart';
 import 'admin_news_page.dart';
@@ -34,7 +35,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
   String _statusText = '';
   String _currentOp = '';
   Future<List<Map<String, dynamic>>>? _coverageStatsFuture;
-  _CancellationToken? _cancelToken;
+  CancellationToken? _cancelToken;
 
   // ─── Operations ───────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
       return;
     }
 
-    final token = _CancellationToken();
+    final token = CancellationToken();
     setState(() {
       _isRunning = true;
       _progress = null;
@@ -80,7 +81,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
           duration: const Duration(seconds: 5),
         ),
       );
-    } on _CancelledException {
+    } on CancelledException {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -150,7 +151,7 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
 
   void _onProgress(String status, double? progress) {
     // Controlla il token prima di aggiornare — se annullato interrompe l'operazione.
-    if (_cancelToken?.isCancelled ?? false) throw const _CancelledException();
+    if (_cancelToken?.isCancelled ?? false) throw const CancelledException();
     if (mounted) setState(() { _statusText = status; _progress = progress; });
     BackgroundDownloadService.updateStatus(status);
   }
@@ -1362,18 +1363,6 @@ class _AdminCatalogBodyState extends State<AdminCatalogBody> {
     );
   }
 
-}
-
-// ── Cancellation support ───────────────────────────────────────────────────
-
-class _CancelledException implements Exception {
-  const _CancelledException();
-}
-
-class _CancellationToken {
-  bool _cancelled = false;
-  bool get isCancelled => _cancelled;
-  void cancel() => _cancelled = true;
 }
 
 // ── Data classes for stepper UI ────────────────────────────────────────────

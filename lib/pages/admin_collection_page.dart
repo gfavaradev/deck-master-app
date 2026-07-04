@@ -4,6 +4,7 @@ import '../services/admin_catalog_service.dart';
 import '../services/auth_service.dart';
 import '../models/pending_catalog_change.dart';
 import '../theme/app_colors.dart';
+import '../utils/cancellation_token.dart';
 import '../widgets/admin_card_edit_dialog.dart';
 import 'dart:math';
 
@@ -37,6 +38,8 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
   bool _isLoading = true;
   double? _loadProgress;
   String _loadStatus = 'Caricamento...';
+  bool _isPublishing = false;
+  CancellationToken? _publishCancelToken;
 
   @override
   void initState() {
@@ -269,12 +272,18 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
     );
     if (confirm != true) return;
 
-    setState(() => _isLoading = true);
+    final token = CancellationToken();
+    setState(() {
+      _isLoading = true;
+      _isPublishing = true;
+      _publishCancelToken = token;
+    });
 
     try {
       await _catalogService.publishChanges(
         adminUid: adminUid,
         onProgress: (current, total) {
+          if (token.isCancelled) throw const CancelledException();
           if (mounted) setState(() => _loadStatus = 'Pubblicando $current/$total...');
         },
       );
@@ -288,12 +297,23 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppLocalizations.of(context)!.adminCollectionPublishSuccess), backgroundColor: Colors.green),
       );
+    } on CancelledException {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.adminHomeOperationCancelled),
+          backgroundColor: Colors.orange,
+        ),
+      );
     } catch (e) { // ignore: empty_catches
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Errore pubblicazione: $e'), backgroundColor: Colors.red),
       );
+    } finally {
+      if (mounted) setState(() { _isPublishing = false; _publishCancelToken = null; });
     }
   }
 
@@ -359,6 +379,29 @@ class _AdminCollectionPageState extends State<AdminCollectionPage> {
                       const CircularProgressIndicator(),
                     const SizedBox(height: 16),
                     Text(_loadStatus, style: const TextStyle(color: AppColors.textSecondary)),
+                    if (_isPublishing) ...[
+                      const SizedBox(height: 16),
+                      TextButton.icon(
+                        onPressed: (_publishCancelToken?.isCancelled ?? false)
+                            ? null
+                            : () => setState(() => _publishCancelToken?.cancel()),
+                        icon: Icon(
+                          Icons.stop_circle_outlined,
+                          size: 18,
+                          color: (_publishCancelToken?.isCancelled ?? false)
+                              ? AppColors.textHint
+                              : Colors.orange,
+                        ),
+                        label: Text(
+                          (_publishCancelToken?.isCancelled ?? false) ? 'Annullamento…' : 'Annulla',
+                          style: TextStyle(
+                            color: (_publishCancelToken?.isCancelled ?? false)
+                                ? AppColors.textHint
+                                : Colors.orange,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               )

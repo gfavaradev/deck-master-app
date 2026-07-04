@@ -127,8 +127,13 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _checkAdminStatus() async {
-    final isAdmin = await _authService.isCurrentUserAdmin();
-    if (mounted) setState(() => _isAdmin = isAdmin);
+    try {
+      final isAdmin = await _authService.isCurrentUserAdmin();
+      if (mounted) setState(() => _isAdmin = isAdmin);
+    } catch (_) {
+      // Firestore unreachable — leave _isAdmin at its previous value instead
+      // of assuming non-admin.
+    }
   }
 
   Future<void> _checkProStatus() async {

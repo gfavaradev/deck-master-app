@@ -865,10 +865,18 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   double _getEffectiveValue(CardModel card) {
+    // CardTrader's live-synced price is the source of truth when available.
+    // `value` is only a snapshot frozen at add-time (card_dialogs.dart
+    // pre-fills it with the catalog price at that moment and it's never
+    // refreshed afterwards), so it drifts from the real price over time —
+    // it must stay a fallback, not take priority, or long-held collections
+    // show a stale/inflated total. It's still needed as the only price
+    // source for collections with no CardTrader sync at all (Magic, Digimon,
+    // Lorcana, etc.), where cardtraderValue is always empty.
     if (card.cardtraderValue != null && card.cardtraderValue! > 0) {
       return card.cardtraderValue!;
     }
-    return 0.0;
+    return card.value > 0 ? card.value : 0.0;
   }
 }
 
