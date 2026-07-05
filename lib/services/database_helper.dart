@@ -3834,7 +3834,7 @@ class DatabaseHelper {
   /// Campi restituiti compatibili con i vecchi consumatori: set_name, set_code, set_name_XX.
   Future<List<Map<String, dynamic>>> getDistinctSets(String collection) async {
     final rows = await getExpansions(collection);
-    // Remap set_id → set_code per compatibilità con AdminSetsRaritiesPage
+    // Remap set_id → set_code per compatibilità con l'editor set/rarità
     return rows.map((r) {
       final m = Map<String, dynamic>.from(r);
       m['set_code'] = m['set_id'];
