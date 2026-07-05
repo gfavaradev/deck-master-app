@@ -349,8 +349,7 @@ class DatabaseHelper {
       await _addColumnIfMissing(db, 'pokemon_prints', 'set_price_es', 'REAL');
     }
     if (oldVersion < 26) {
-      // Aggiunge KO/ZH a onepiece_prints e alle tabelle di traduzioni condivise,
-      // necessari per l'editor admin_sets_rarities_page.
+      // Aggiunge KO/ZH a onepiece_prints e alle tabelle di traduzioni condivise.
       // Aggiunge anche ES a catalog_expansions e catalog_rarities per il Pokémon.
       for (final lang in ['ko', 'zh']) {
         await _addColumnIfMissing(db, 'onepiece_prints', 'set_name_$lang', 'TEXT');

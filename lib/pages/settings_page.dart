@@ -20,8 +20,6 @@ import 'main_layout.dart';
 import 'tutorial_page.dart';
 import 'login_page.dart';
 import 'profile_page.dart';
-import 'admin_users_page.dart';
-import 'admin_home_page.dart';
 
 class SettingsPage extends StatefulWidget {
   final String? collectionKey;
@@ -38,7 +36,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isOffline = false;
   bool _isSigningIn = false;
 
-  bool _isAdmin = false;
   bool _isPro = false;
   bool _notificationsEnabled = false;
   bool _notifAppUpdates = true;
@@ -57,7 +54,6 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _checkOfflineMode();
-    _checkAdminStatus();
     _checkProStatus();
     _loadNotificationPreference();
     _loadUnlockedCatalogKeys();
@@ -124,16 +120,6 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _checkOfflineMode() async {
     final offline = await _authService.isOfflineMode();
     if (mounted) setState(() => _isOffline = offline);
-  }
-
-  Future<void> _checkAdminStatus() async {
-    try {
-      final isAdmin = await _authService.isCurrentUserAdmin();
-      if (mounted) setState(() => _isAdmin = isAdmin);
-    } catch (_) {
-      // Firestore unreachable — leave _isAdmin at its previous value instead
-      // of assuming non-admin.
-    }
   }
 
   Future<void> _checkProStatus() async {
@@ -499,10 +485,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   _buildUserSection(),
                   const SizedBox(height: 12),
                   _buildProSection(),
-                  if (_isAdmin) ...[
-                    _buildAdminSection(),
-                    const SizedBox(height: 12),
-                  ],
                   _buildCatalogSection(),
                   const SizedBox(height: 12),
                   _buildCatalogRestoreSection(),
@@ -930,36 +912,6 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildAdminSection() {
-    final l10n = AppLocalizations.of(context)!;
-    return _buildSectionCard(
-      title: l10n.settingsSectionAdmin,
-      icon: Icons.admin_panel_settings,
-      accentColor: Colors.orange,
-      borderColor: Colors.orange.withValues(alpha:0.25),
-      children: [
-        _buildTile(
-          icon: Icons.people,
-          title: l10n.settingsManageUsers,
-          subtitle: l10n.settingsManageUsersSubtitle,
-          iconColor: Colors.orange,
-          trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminUsersPage())),
-        ),
-        _tileDivider(),
-        _buildTile(
-          icon: Icons.storage,
-          title: l10n.settingsManageCatalog,
-          subtitle: l10n.settingsManageCatalogSubtitle,
-          iconColor: Colors.orange,
-          isLast: true,
-          trailing: const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminHomePage())),
-        ),
-      ],
     );
   }
 
