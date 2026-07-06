@@ -15,7 +15,6 @@ import 'stats_page.dart';
 import 'settings_page.dart';
 import 'login_page.dart';
 import 'profile_page.dart';
-import 'admin_home_page.dart';
 import '../services/auth_service.dart';
 import '../services/background_download_service.dart';
 import '../services/data_repository.dart';
@@ -62,7 +61,6 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   late int _currentIndex;
   String? _currentCollectionKey;
   String? _currentCollectionName;
-  bool _isAdmin = false;
   bool _isPro = false;
   int _unreadCount = 0;
   final AuthService _authService = AuthService();
@@ -92,14 +90,13 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _currentCollectionKey = widget.collectionKey;
     _currentCollectionName = widget.collectionName;
     _currentUser = FirebaseAuth.instance.currentUser;
-    _checkAdminAndNotifications();
+    _checkUnreadNotifications();
     SubscriptionService().currentUserHasPro().then((v) { if (mounted) setState(() => _isPro = v); });
     _levelUpSub = XpService().onLevelUp.listen(_onLevelUp);
     _remoteSub = SyncService().onRemoteChange.listen((event) {
       if (event == 'catalog_update_pending' && mounted) _loadPersistedPendingUpdates();
     });
-    // Defer XP sync and real-time listener to reduce peak memory during startup:
-    // the admin/role Firestore check must complete first on low-memory devices.
+    // Defer XP sync and real-time listener to reduce peak memory during startup.
     Future.delayed(const Duration(seconds: 3), () {
       if (!mounted) return;
       XpService().syncFromFirestore();
@@ -139,7 +136,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     if (widget.showTutorial) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await Future.delayed(const Duration(milliseconds: 800));
-        if (!mounted || _isAdmin) return;
+        if (!mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const TutorialPage()),
@@ -150,7 +147,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     // Popup promozionale Pro — mostrato ad ogni avvio per utenti non-Pro
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future.delayed(const Duration(seconds: 6));
-      if (!mounted || _isAdmin) return;
+      if (!mounted) return;
       final isPro = await SubscriptionService().currentUserHasPro();
       if (!mounted || isPro) return;
       showProPromoSheet(context);
@@ -261,43 +258,6 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       MaterialPageRoute(builder: (context) => const LoginPage()),
       (route) => false,
     );
-  }
-
-  static const _kAdminCachePrefix = 'admin_verified_';
-  Future<void> _checkAdminAndNotifications() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    final prefs = await SharedPreferences.getInstance();
-
-    // 1. Applica subito il valore cached per evitare flickering durante il check.
-    final cached = uid != null ? (prefs.getBool('$_kAdminCachePrefix$uid') ?? false) : false;
-    if (cached && mounted) setState(() => _isAdmin = true);
-
-    // 2. Verifica sempre Firestore (fonte autorevole) + notifiche in parallelo.
-    // null = Firestore non raggiungibile (offline/timeout) → mantieni cache.
-    bool? firestoreAdmin;
-    try {
-      firestoreAdmin = await _authService.isCurrentUserAdmin()
-          .timeout(const Duration(seconds: 12));
-      debugPrint('[AdminDebug] uid=$uid firestoreAdmin=$firestoreAdmin cached=$cached');
-    } catch (e, st) {
-      debugPrint('[AdminDebug] uid=$uid FAILED: $e\n$st');
-      firestoreAdmin = null;
-    }
-    final int unread = await unreadNotificationCount().catchError((_) => 0);
-    if (!mounted) return;
-
-    final isAdmin = firestoreAdmin ?? cached; // offline → mantieni ultimo stato noto
-
-    // 3. Aggiorna cache solo se Firestore ha risposto.
-    if (uid != null && firestoreAdmin != null) {
-      if (isAdmin) {
-        await prefs.setBool('$_kAdminCachePrefix$uid', true);
-      } else {
-        await prefs.remove('$_kAdminCachePrefix$uid');
-      }
-    }
-
-    if (mounted) setState(() { _isAdmin = isAdmin; _unreadCount = unread; });
   }
 
   Future<void> _checkUnreadNotifications() async {
@@ -698,22 +658,20 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         ],
       );
     } else {
-      currentPage = _isAdmin
-          ? const AdminCatalogBody()
-          : HomePageSimple(
-              onCollectionSelected: _onCollectionSelected,
-              onCatalogRefreshNeeded: () async {
-                // Piccolo delay affinché il DB registri la nuova collezione sbloccata
-                await Future.delayed(const Duration(milliseconds: 800));
-                if (mounted) _checkCatalogUpdate();
-              },
-            );
+      currentPage = HomePageSimple(
+        onCollectionSelected: _onCollectionSelected,
+        onCatalogRefreshNeeded: () async {
+          // Piccolo delay affinché il DB registri la nuova collezione sbloccata
+          await Future.delayed(const Duration(milliseconds: 800));
+          if (mounted) _checkCatalogUpdate();
+        },
+      );
     }
 
     final l10n = AppLocalizations.of(context)!;
     String appBarTitle;
     if (!inCollection) {
-      appBarTitle = _isAdmin ? 'Admin — Gestione Catalogo' : 'Deck Master';
+      appBarTitle = 'Deck Master';
     } else {
       final titles = [l10n.navHome, l10n.navMyCards, l10n.navCatalog, l10n.navCollection, l10n.navNews];
       appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';

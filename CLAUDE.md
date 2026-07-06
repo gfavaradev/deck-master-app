@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Deck Master (`deck_master`, package `com.giuseppe.deckmaster`) is a Flutter app for managing TCG (trading card game) collections — Yu-Gi-Oh, Pokémon, One Piece, Magic, and several others. It targets Android, iOS, Windows, and Web, with a desktop-first admin catalog tool. Backend support lives in Node.js scripts under `scripts/` and Firestore/Firebase.
+Deck Master (`deck_master`, package `com.giuseppe.deckmaster`) is a Flutter app for managing TCG (trading card game) collections — Yu-Gi-Oh, Pokémon, One Piece, Magic, and several others. It targets Android, iOS, Windows, and Web. Administration (catalog, news, prices, users) lives in a separate Next.js dashboard (`deck-master-web`, `/admin`), **not** in this app. Backend support lives in Node.js scripts under `scripts/` and Firestore/Firebase.
 
 ## Commands
 
@@ -57,16 +57,15 @@ CI (`.github/workflows/release.yml`) runs unit + integration tests first, then r
 ## Architecture
 
 ### Layers
-- **`lib/models/`** — domain types: `card_model`, `collection_model`, `album_model`, `user_model`, `wishlist_model`, `magic_models` (Scryfall-shaped), `pending_catalog_change` (admin local edit queue: add/edit/delete with timestamps + admin uid).
+- **`lib/models/`** — domain types: `card_model`, `collection_model`, `album_model`, `user_model`, `wishlist_model`, `magic_models` (Scryfall-shaped).
 - **`lib/services/`** — all business logic and I/O; pages should call services, not Firestore/SQLite directly. Notable groupings:
   - *Local/cloud data*: `database_helper.dart` (sqflite; use FFI on Windows; use `rawQuery()` for PRAGMA statements — `db.execute()` doesn't work for those), `firestore_service.dart`, `sync_service.dart`, `background_download_service.dart`, `data_repository.dart`.
-  - *Catalog/admin*: `admin_catalog_service.dart` (batch sync, change queue), `admin_translation_service.dart`, `admin_excel_service.dart`.
-  - *External card/price APIs*: `scryfall_service.dart` (Magic), `cardtrader_service.dart` (JWT-authed pricing), `price_alert_service.dart`. Scryfall and similar requests must always send a `User-Agent` header.
+  - *External card/price APIs*: `scryfall_service.dart` (Magic), `cardtrader_service.dart` (reads cached CardTrader prices for the card UI; price *syncing* now runs server-side in `deck-master-web`), `price_alert_service.dart`. Scryfall and similar requests must always send a `User-Agent` header.
   - *Auth*: `auth_service.dart` (Google/Facebook/Apple/Email, platform-aware via `PlatformHelper`), `user_service.dart`.
   - *Monetization*: `ad_service.dart` (Google Mobile Ads — init is deferred ~3s after splash to avoid frame stalls), `revenue_cat_service.dart` (IAP/subscriptions).
   - *AI*: `claude_service.dart` (Anthropic API, used by the AI Deck Builder page).
   - *Misc*: `notification_service.dart` (FCM + local), `backblaze_service.dart` (B2 backups), `image_upload_service.dart`, `export_service.dart`, `update_service.dart`, `xp_service.dart`, `review_service.dart`, `exchange_rate_service.dart`, `language_service.dart`, `app_preferences.dart`.
-- **`lib/pages/`** — screens, grouped by feature: auth/onboarding, core catalog/card browsing, collections & decks, admin (`admin_*`, desktop-first), profile/settings/IAP.
+- **`lib/pages/`** — screens, grouped by feature: auth/onboarding, core catalog/card browsing, collections & decks, profile/settings/IAP. (Admin screens have been removed — administration is the external `deck-master-web` dashboard.)
 - **`lib/utils/platform_helper.dart`** — single source of truth for platform/feature gating (`isWindows/isMobile/isDesktop/isWeb`, `supportsFacebookAuth`, `supportsAppleSignIn`, etc.) and adaptive layout values. Always degrade gracefully through this helper rather than ad hoc `Platform.is*` checks.
 
 ### App bootstrap (`lib/main.dart`)
@@ -90,7 +89,7 @@ Catalog browsing loads in 100-card pages with an 80%-scroll prefetch threshold, 
 - For SQL queries involving `set_id`, use a `COALESCE` fallback for surrogate-ID safety.
 
 ### Localization
-`l10n.yaml` drives codegen from `lib/l10n/app_it.arb` (template) and `app_en.arb` into `AppLocalizations`. Italian is the primary/template locale; English is the secondary. Admin pages are intentionally **not** localized. Access via `AppLocalizations.of(context)!.key`.
+`l10n.yaml` drives codegen from `lib/l10n/app_it.arb` (template) and `app_en.arb` into `AppLocalizations`. Italian is the primary/template locale; English is the secondary. Access via `AppLocalizations.of(context)!.key`.
 
 ## Build Environment (Windows)
 - PowerShell host; `Expand-Archive` fails on large ZIPs — use 7-Zip or `tar` instead.

@@ -349,8 +349,7 @@ class DatabaseHelper {
       await _addColumnIfMissing(db, 'pokemon_prints', 'set_price_es', 'REAL');
     }
     if (oldVersion < 26) {
-      // Aggiunge KO/ZH a onepiece_prints e alle tabelle di traduzioni condivise,
-      // necessari per l'editor admin_sets_rarities_page.
+      // Aggiunge KO/ZH a onepiece_prints e alle tabelle di traduzioni condivise.
       // Aggiunge anche ES a catalog_expansions e catalog_rarities per il Pokémon.
       for (final lang in ['ko', 'zh']) {
         await _addColumnIfMissing(db, 'onepiece_prints', 'set_name_$lang', 'TEXT');
@@ -3835,7 +3834,7 @@ class DatabaseHelper {
   /// Campi restituiti compatibili con i vecchi consumatori: set_name, set_code, set_name_XX.
   Future<List<Map<String, dynamic>>> getDistinctSets(String collection) async {
     final rows = await getExpansions(collection);
-    // Remap set_id → set_code per compatibilità con AdminSetsRaritiesPage
+    // Remap set_id → set_code per compatibilità con l'editor set/rarità
     return rows.map((r) {
       final m = Map<String, dynamic>.from(r);
       m['set_code'] = m['set_id'];
