@@ -92,16 +92,18 @@ const RARITY_KEYS = {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 const keyPath = resolve(__dir, "serviceAccountKey.json");
-if (!existsSync(keyPath)) {
-  console.error("❌ serviceAccountKey.json non trovato in scripts/price_sync/");
-  process.exit(1);
-}
 if (!CT_JWT) {
-  console.error("❌ CARDTRADER_JWT non configurato nel file .env");
+  console.error("❌ CARDTRADER_JWT non configurato (env o .env)");
   process.exit(1);
 }
 
-initializeApp({ credential: cert(JSON.parse(readFileSync(keyPath, "utf8"))) });
+// Locale: usa serviceAccountKey.json. Cloud Run / ambienti gestiti: nessun key
+// file → Application Default Credentials (il service account del runtime).
+if (existsSync(keyPath)) {
+  initializeApp({ credential: cert(JSON.parse(readFileSync(keyPath, "utf8"))) });
+} else {
+  initializeApp();
+}
 const db = getFirestore();
 
 // ─── CT API helpers ───────────────────────────────────────────────────────────
@@ -786,7 +788,9 @@ async function main() {
   const args = process.argv.slice(2);
   const catalogsArg =
     args.find((a) => a.startsWith("--catalogs="))?.slice(11) ??
-    (args.includes("--catalogs") ? args[args.indexOf("--catalogs") + 1] : null);
+    (args.includes("--catalogs") ? args[args.indexOf("--catalogs") + 1] : null) ??
+    process.env.CATALOGS ??
+    null;
   const catalogs = catalogsArg
     ? catalogsArg.split(",").map((s) => s.trim()).filter(Boolean)
     : ALL_CATALOGS;
