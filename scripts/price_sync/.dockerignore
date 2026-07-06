@@ -1,0 +1,9 @@
+node_modules
+serviceAccountKey.json
+.env
+*.log
+price_sync.log
+Dockerfile
+.dockerignore
+deploy-cloudrun.sh
+CLOUDRUN.md
