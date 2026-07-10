@@ -4,6 +4,10 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 class TestDataFactory {
   static const String testUserId = 'test-user-regression';
 
+  /// Max writes per batch commit. Firestore (and fake_cloud_firestore) reject
+  /// batches larger than 500 operations.
+  static const int _batchLimit = 450;
+
   /// Seeds [count] card documents into the fake Firestore under the user's cards
   /// collection. Uses the same field names as FirestoreService.insertCard().
   static Future<void> seedUserCards(
@@ -11,25 +15,29 @@ class TestDataFactory {
     int count = 10000,
     String userId = testUserId,
   }) async {
-    final batch = firestore.batch();
     final col = firestore.collection('users/$userId/cards');
-    for (int i = 0; i < count; i++) {
-      batch.set(col.doc('card_$i'), {
-        'catalogId': 'cat_$i',
-        'name': 'Card $i',
-        'serialNumber': 'SN-${i.toString().padLeft(5, '0')}',
-        'collection': 'yugioh',
-        'albumId': (i % 5) + 1,
-        'albumFirestoreId': 'album_${(i % 5) + 1}',
-        'type': 'Monster',
-        'rarity': 'Common',
-        'description': 'Test card $i',
-        'quantity': 1,
-        'value': 1.5 + (i % 100) * 0.1,
-        'imageUrl': null,
-      });
+    // Chunk commits at ≤500 ops — Firestore's hard per-batch limit.
+    for (int b = 0; b < count; b += _batchLimit) {
+      final batch = firestore.batch();
+      final end = (b + _batchLimit).clamp(0, count);
+      for (int i = b; i < end; i++) {
+        batch.set(col.doc('card_$i'), {
+          'catalogId': 'cat_$i',
+          'name': 'Card $i',
+          'serialNumber': 'SN-${i.toString().padLeft(5, '0')}',
+          'collection': 'yugioh',
+          'albumId': (i % 5) + 1,
+          'albumFirestoreId': 'album_${(i % 5) + 1}',
+          'type': 'Monster',
+          'rarity': 'Common',
+          'description': 'Test card $i',
+          'quantity': 1,
+          'value': 1.5 + (i % 100) * 0.1,
+          'imageUrl': null,
+        });
+      }
+      await batch.commit();
     }
-    await batch.commit();
   }
 
   /// Seeds [count] album documents.
@@ -38,16 +46,20 @@ class TestDataFactory {
     int count = 500,
     String userId = testUserId,
   }) async {
-    final batch = firestore.batch();
     final col = firestore.collection('users/$userId/albums');
-    for (int i = 0; i < count; i++) {
-      batch.set(col.doc('album_$i'), {
-        'name': 'Album $i',
-        'collection': 'yugioh',
-        'maxCapacity': 100,
-      });
+    // Chunk commits at ≤500 ops — Firestore's hard per-batch limit.
+    for (int b = 0; b < count; b += _batchLimit) {
+      final batch = firestore.batch();
+      final end = (b + _batchLimit).clamp(0, count);
+      for (int i = b; i < end; i++) {
+        batch.set(col.doc('album_$i'), {
+          'name': 'Album $i',
+          'collection': 'yugioh',
+          'maxCapacity': 100,
+        });
+      }
+      await batch.commit();
     }
-    await batch.commit();
   }
 
   /// Builds a catalog metadata + chunk structure with [chunksCount] chunks,

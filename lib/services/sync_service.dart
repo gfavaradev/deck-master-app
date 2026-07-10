@@ -156,8 +156,8 @@ class SyncService {
       // Calling it before would delete local-only items if the fetch fails (offline).
       final results = await Future.wait([
         _firestoreService.getCollections(userId),
-        _firestoreService.getAlbums(userId),
-        _firestoreService.getCards(userId),
+        _firestoreService.getAllAlbums(userId),
+        _firestoreService.getAllCards(userId),
         _firestoreService.getDecks(userId),
       ]).timeout(const Duration(seconds: 20));
 
