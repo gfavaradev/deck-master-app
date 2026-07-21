@@ -5,6 +5,7 @@ service cloud.firestore {
     // Admin check — email-based (matches production deployment)
     function isAdmin() {
       return request.auth != null &&
+        request.auth.token.email_verified == true &&
         (request.auth.token.email == 'g.favara.dev@gmail.com' ||
          request.auth.token.email == 'vivianaferreri98@gmail.com');
     }
