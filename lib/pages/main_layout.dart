@@ -673,7 +673,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     if (!inCollection) {
       appBarTitle = 'Deck Master';
     } else {
-      final titles = [l10n.navHome, l10n.navMyCards, l10n.navCatalog, l10n.navCollection, l10n.navNews];
+      // Le schede "Le mie carte", "Catalogo" e "Raccolta" non mostrano il
+      // titolo in alto (richiesta esplicita): l'AppBar resta senza scritta.
+      final titles = [l10n.navHome, '', '', '', l10n.navNews];
       appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';
     }
 

@@ -8,9 +8,11 @@ import '../services/language_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/card_dialogs.dart';
-import '../widgets/full_screen_gallery.dart';
+import '../widgets/language_flag.dart';
 import '../models/album_model.dart';
+import '../models/card_model.dart';
 import '../models/wishlist_model.dart';
+import 'card_detail_page.dart';
 
 class CatalogPage extends StatefulWidget {
   final String collectionName;
@@ -995,7 +997,7 @@ class _CatalogPageState extends State<CatalogPage> {
       );
     }
     return GestureDetector(
-      onTap: _isSelectionMode ? null : () => _showFullScreenImage(cardIndex),
+      onTap: _isSelectionMode ? null : () => _showCardDetail(cardIndex),
       child: CachedNetworkImage(
         imageUrl: imageUrl,
         fit: BoxFit.cover,
@@ -1015,21 +1017,42 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
-  void _showFullScreenImage(int initialIndex) {
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black87,
-      builder: (_) => FullScreenGallery(
-        imageUrls: _catalogCards.map((c) => c['artwork'] as String?).toList(),
-        names: _catalogCards
-            .map((c) => (c['localizedName'] ?? c['name'] ?? '') as String)
-            .toList(),
-        initialIndex: initialIndex,
-        onCardTap: (index) {
-          if (index < _catalogCards.length) {
-            _showAddDialog(_catalogCards[index]);
-          }
-        },
+  /// Converte una carta del catalogo (mappa grezza) in un [CardModel] leggero
+  /// sufficiente per la pagina di dettaglio in sola lettura. La carta non è
+  /// posseduta: nessun id locale, album -1, quantità di default.
+  CardModel _catalogCardToModel(Map<String, dynamic> card) {
+    return CardModel(
+      catalogId: card['id']?.toString(),
+      name: (card['localizedName'] ?? card['name'] ?? '').toString(),
+      serialNumber: (card['localizedSetCode'] ?? card['setCode'] ?? '').toString(),
+      collection: (card['collection'] ?? widget.collectionKey).toString(),
+      albumId: -1,
+      type: (card['humanReadableCardType'] ?? card['type'] ?? '').toString(),
+      rarity: (card['localizedRarityCode'] ??
+              card['rarityCode'] ??
+              card['rarity'] ??
+              '')
+          .toString(),
+      description:
+          (card['localizedDescription'] ?? card['description'] ?? '').toString(),
+      imageUrl: card['artwork'] as String?,
+    );
+  }
+
+  /// Apre la pagina di dettaglio della carta del catalogo (sola lettura),
+  /// navigabile con swipe fra tutte le carte attualmente caricate.
+  void _showCardDetail(int index) {
+    if (index < 0 || index >= _catalogCards.length) return;
+    final cards = _catalogCards.map(_catalogCardToModel).toList();
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => CardDetailPage(
+          cards: cards,
+          initialIndex: index,
+          onDelete: (_) {},
+          catalogMode: true,
+        ),
       ),
     );
   }
@@ -1161,7 +1184,6 @@ class _CatalogPageState extends State<CatalogPage> {
 
   /// Badge lingua per carte One Piece.
   Widget _buildLanguageButton() {
-    final flag = LanguageService.flagEmoji[_preferredLanguage] ?? '🌐';
     return GestureDetector(
       onTap: _showLanguagePicker,
       child: Container(
@@ -1173,7 +1195,7 @@ class _CatalogPageState extends State<CatalogPage> {
           border: Border.all(color: AppColors.border, width: 0.5),
         ),
         child: Center(
-          child: Text(flag, style: const TextStyle(fontSize: 22)),
+          child: LanguageFlag(languageCode: _preferredLanguage, width: 26),
         ),
       ),
     );
@@ -1251,10 +1273,7 @@ class _CatalogPageState extends State<CatalogPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                         child: Row(
                           children: [
-                            Text(
-                              LanguageService.flagEmoji[code] ?? '',
-                              style: const TextStyle(fontSize: 24),
-                            ),
+                            LanguageFlag(languageCode: code, width: 30),
                             const SizedBox(width: 14),
                             Expanded(
                               child: Text(

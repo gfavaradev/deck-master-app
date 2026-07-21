@@ -51,6 +51,10 @@ class CardDetailPage extends StatefulWidget {
   final VoidCallback? onAlbumChanged;
   /// Deck della carta all'indice iniziale; vengono ricaricati ad ogni navigazione.
   final List<Map<String, dynamic>> initialDecks;
+  /// Modalità sola-lettura per sfogliare una carta del catalogo (non posseduta):
+  /// nasconde eliminazione, gestione album e deck — mostra solo immagine,
+  /// informazioni, descrizione e prezzi di mercato.
+  final bool catalogMode;
 
   const CardDetailPage({
     super.key,
@@ -60,6 +64,7 @@ class CardDetailPage extends StatefulWidget {
     this.availableAlbums = const [],
     this.onAlbumChanged,
     this.initialDecks = const [],
+    this.catalogMode = false,
   });
 
   @override
@@ -179,11 +184,12 @@ class _CardDetailPageState extends State<CardDetailPage> {
               overflow: TextOverflow.ellipsis,
             ),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                tooltip: AppLocalizations.of(context)!.cardDetailTooltipDelete,
-                onPressed: _delete,
-              ),
+              if (!widget.catalogMode)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                  tooltip: AppLocalizations.of(context)!.cardDetailTooltipDelete,
+                  onPressed: _delete,
+                ),
             ],
           ),
 
@@ -217,13 +223,14 @@ class _CardDetailPageState extends State<CardDetailPage> {
 
                 const Divider(color: AppColors.divider, height: 1),
 
-                // Album
-                _AlbumPanel(
-                  availableAlbums: widget.availableAlbums,
-                  selectedId: _selectedAlbumId,
-                  currentName: _currentAlbumName(),
-                  onChanged: _changeAlbum,
-                ),
+                // Album — solo per carte possedute, non nel catalogo
+                if (!widget.catalogMode)
+                  _AlbumPanel(
+                    availableAlbums: widget.availableAlbums,
+                    selectedId: _selectedAlbumId,
+                    currentName: _currentAlbumName(),
+                    onChanged: _changeAlbum,
+                  ),
 
                 // Prezzi CardTrader
                 if (card.serialNumber.isNotEmpty) ...[
