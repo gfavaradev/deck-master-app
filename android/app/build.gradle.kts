@@ -20,7 +20,7 @@ dependencies {
   // When using the BoM, don't specify versions in Firebase dependencies
   implementation("com.google.firebase:firebase-analytics")
 
-  // Edge-to-edge e Theme.AppCompat richiesti da Android 15 (targetSdk 35)
+  // Edge-to-edge e Theme.AppCompat richiesti da Android 15+ (targetSdk 36)
   implementation("androidx.core:core-ktx:1.16.0")
   implementation("androidx.appcompat:appcompat:1.7.0")
 
@@ -48,7 +48,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24 // Android 7.0
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36 // Android 16 — API target Play Store (pinnato: compliance esplicita, non segue silenziosamente il default di Flutter)
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
