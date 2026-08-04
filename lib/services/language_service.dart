@@ -52,6 +52,21 @@ class LanguageService {
     'ZH': '🇨🇳',
   };
 
+  /// Bandiere vettoriali (SVG) — rese affidabilmente su tutte le piattaforme
+  /// (le emoji-bandiera non vengono disegnate su Windows e a volte nemmeno su
+  /// iOS/Android a seconda del font). Usare con [LanguageFlag].
+  static const Map<String, String> flagAsset = {
+    'EN': 'assets/flags/gb.svg',
+    'IT': 'assets/flags/it.svg',
+    'FR': 'assets/flags/fr.svg',
+    'DE': 'assets/flags/de.svg',
+    'PT': 'assets/flags/pt.svg',
+    'SP': 'assets/flags/es.svg',
+    'JP': 'assets/flags/jp.svg',
+    'KO': 'assets/flags/kr.svg',
+    'ZH': 'assets/flags/cn.svg',
+  };
+
   // Per-collection in-memory cache: avoids repeated SharedPreferences I/O
   static final Map<String, String> _cache = {};
 

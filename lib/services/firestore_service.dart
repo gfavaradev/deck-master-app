@@ -17,6 +17,15 @@ class FirestoreService {
 
   final FirebaseFirestore _firestore;
 
+  /// Safe per-call ceiling for user-owned collection reads.
+  ///
+  /// Firestore `.get()` on an unbounded collection deserializes every document
+  /// into memory at once, which OOMs / crashes on Android with realistic
+  /// collection sizes (>500 docs). Every user-collection read caps at this
+  /// limit; callers that need the full set must paginate (see
+  /// `integration_test/crashes/firestore_oom_test.dart`).
+  static const int kQueryLimit = 500;
+
   // ============================================================
   // Catalog Methods (Generic for all catalogs)
   // ============================================================
@@ -312,20 +321,34 @@ class FirestoreService {
         .delete();
   }
 
+  Map<String, dynamic> _albumDocToMap(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? const {};
+    return {
+      'firestoreId': doc.id,
+      'name': data['name'],
+      'collection': data['collection'],
+      'maxCapacity': data['maxCapacity'],
+    };
+  }
+
+  /// Capped read (≤ [kQueryLimit]). For a full sync use [getAllAlbums].
   Future<List<Map<String, dynamic>>> getAlbums(String userId) async {
     final snapshot = await _firestore
         .collection(FirestorePaths.userAlbums(userId))
+        .limit(kQueryLimit)
         .get();
 
-    return snapshot.docs.map((doc) {
-      final data = doc.data();
-      return {
-        'firestoreId': doc.id,
-        'name': data['name'],
-        'collection': data['collection'],
-        'maxCapacity': data['maxCapacity'],
-      };
-    }).toList();
+    return snapshot.docs.map(_albumDocToMap).toList();
+  }
+
+  /// Reads every album, paginating in [kQueryLimit]-sized pages so a large
+  /// collection never deserializes into memory in a single query (Android OOM).
+  Future<List<Map<String, dynamic>>> getAllAlbums(String userId) {
+    return _readAllPaged(
+      _firestore.collection(FirestorePaths.userAlbums(userId)),
+      _albumDocToMap,
+    );
   }
 
   // ============================================================
@@ -381,29 +404,68 @@ class FirestoreService {
         .delete();
   }
 
+  Map<String, dynamic> _cardDocToMap(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? const {};
+    return {
+      'firestoreId': doc.id,
+      'catalogId': data['catalogId'],
+      'name': data['name'],
+      'serialNumber': data['serialNumber'],
+      'collection': data['collection'],
+      'albumId': data['albumId'],
+      'albumFirestoreId': data['albumFirestoreId'],
+      'type': data['type'],
+      'rarity': data['rarity'],
+      'description': data['description'],
+      'quantity': data['quantity'],
+      'value': (data['value'] as num?)?.toDouble(),
+      'imageUrl': data['imageUrl'],
+    };
+  }
+
+  /// Capped read (≤ [kQueryLimit]). For a full sync use [getAllCards].
   Future<List<Map<String, dynamic>>> getCards(String userId) async {
     final snapshot = await _firestore
         .collection(FirestorePaths.userCards(userId))
+        .limit(kQueryLimit)
         .get();
 
-    return snapshot.docs.map((doc) {
-      final data = doc.data();
-      return {
-        'firestoreId': doc.id,
-        'catalogId': data['catalogId'],
-        'name': data['name'],
-        'serialNumber': data['serialNumber'],
-        'collection': data['collection'],
-        'albumId': data['albumId'],
-        'albumFirestoreId': data['albumFirestoreId'],
-        'type': data['type'],
-        'rarity': data['rarity'],
-        'description': data['description'],
-        'quantity': data['quantity'],
-        'value': (data['value'] as num?)?.toDouble(),
-        'imageUrl': data['imageUrl'],
-      };
-    }).toList();
+    return snapshot.docs.map(_cardDocToMap).toList();
+  }
+
+  /// Reads every card, paginating in [kQueryLimit]-sized pages so a large
+  /// collection never deserializes into memory in a single query (Android OOM).
+  Future<List<Map<String, dynamic>>> getAllCards(String userId) {
+    return _readAllPaged(
+      _firestore.collection(FirestorePaths.userCards(userId)),
+      _cardDocToMap,
+    );
+  }
+
+  /// Reads every document of [collection] in [kQueryLimit]-sized pages using
+  /// document-id cursor pagination, mapping each with [mapper]. Every underlying
+  /// Firestore query stays bounded, so the full set is retrieved without a single
+  /// oversized query.
+  Future<List<Map<String, dynamic>>> _readAllPaged(
+    Query<Map<String, dynamic>> collection,
+    Map<String, dynamic> Function(DocumentSnapshot<Map<String, dynamic>>) mapper,
+  ) async {
+    final results = <Map<String, dynamic>>[];
+    DocumentSnapshot<Map<String, dynamic>>? cursor;
+    while (true) {
+      // Apply the cursor before .limit(): some Firestore backends (and
+      // fake_cloud_firestore) drop startAfterDocument if it is chained after limit.
+      Query<Map<String, dynamic>> page =
+          collection.orderBy(FieldPath.documentId);
+      if (cursor != null) page = page.startAfterDocument(cursor);
+      final snapshot = await page.limit(kQueryLimit).get();
+      if (snapshot.docs.isEmpty) break;
+      results.addAll(snapshot.docs.map(mapper));
+      if (snapshot.docs.length < kQueryLimit) break;
+      cursor = snapshot.docs.last;
+    }
+    return results;
   }
 
   // ============================================================

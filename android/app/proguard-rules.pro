@@ -19,6 +19,14 @@
 -dontwarn com.google.android.play.core.tasks.OnSuccessListener
 -dontwarn com.google.android.play.core.tasks.Task
 
+# RevenueCat / Amazon Appstore — le consumer rules di `purchases-store-amazon`
+# sono ignorate via `optimization.keepRules.ignoreFrom` in build.gradle.kts perché
+# contengono un `-dontoptimize` globale. Qui reimportiamo le due regole utili di
+# quel file: senza `-dontwarn` R8 fallisce sulle classi Amazon mancanti (l'app è
+# distribuita solo sul Play Store, il backend Amazon non viene mai istanziato).
+-dontwarn com.amazon.**
+-keep class com.amazon.** { *; }
+
 # ML Kit text recognition — only Latin script is used; suppress missing optional script modules
 -dontwarn com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions$Builder
 -dontwarn com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions

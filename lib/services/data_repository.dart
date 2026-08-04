@@ -567,7 +567,7 @@ class DataRepository {
     if (kIsWeb) {
       final userId = _authService.currentUserId;
       if (userId == null) return [];
-      final rawAlbums = await _firestoreService.getAlbums(userId);
+      final rawAlbums = await _firestoreService.getAllAlbums(userId);
       return rawAlbums
           .where((a) => a['collection'] == collection)
           .map((a) {
@@ -707,7 +707,7 @@ class DataRepository {
     if (kIsWeb) {
       final userId = _authService.currentUserId;
       if (userId == null) return [];
-      final rawCards = await _firestoreService.getCards(userId);
+      final rawCards = await _firestoreService.getAllCards(userId);
       return rawCards
           .where((c) => c['collection'] == collection)
           .map((c) {
@@ -800,7 +800,7 @@ class DataRepository {
       if (userId == null) return 0;
       final albumFid = _webAlbumFirestoreIdById[albumId];
       if (albumFid == null) return 0;
-      final rawCards = await _firestoreService.getCards(userId);
+      final rawCards = await _firestoreService.getAllCards(userId);
       return rawCards.where((c) => c['albumFirestoreId'] == albumFid).length;
     }
     return await _dbHelper.getCardCountByAlbum(albumId);
