@@ -191,6 +191,9 @@
   "navNews": "News",
   "@navNews": { "description": "News navigation label" },
 
+  "navScan": "Scansiona",
+  "@navScan": { "description": "Card scanner navigation label" },
+
   "navMyCards": "Le mie Carte",
   "@navMyCards": { "description": "My cards label in app bar" },
 

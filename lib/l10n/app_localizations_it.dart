@@ -213,6 +213,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get navNews => 'News';
 
   @override
+  String get navScan => 'Scansiona';
+
+  @override
   String get navMyCards => 'Le mie Carte';
 
   @override

@@ -16,7 +16,18 @@ class CardScannerPage extends StatefulWidget {
   final String? collectionKey;
   final String? collectionName;
 
-  const CardScannerPage({super.key, this.collectionKey, this.collectionName});
+  /// True quando la pagina è montata come scheda della bottom bar di
+  /// [MainLayout] invece che come route a sé. In quel caso l'AppBar la fornisce
+  /// già MainLayout, quindi qui non va costruita (sarebbero due barre) e il
+  /// contatore di scansioni viene mostrato in sovrimpressione sul corpo.
+  final bool embedded;
+
+  const CardScannerPage({
+    super.key,
+    this.collectionKey,
+    this.collectionName,
+    this.embedded = false,
+  });
 
   @override
   State<CardScannerPage> createState() => _CardScannerPageState();
@@ -374,63 +385,85 @@ class _CardScannerPageState extends State<CardScannerPage> {
     final isNearLimit = _scansRemaining <= 5;
     final inCameraView = _state == _ScanState.preview || _state == _ScanState.analyzing;
 
+    final Widget body = switch (_state) {
+      _ScanState.preview || _ScanState.analyzing => _buildLiveScanner(),
+      _ScanState.found    => _buildFound(),
+      _ScanState.notFound => _buildNotFound(),
+    };
+
     return Scaffold(
       backgroundColor: inCameraView ? Colors.black : AppColors.bgDark,
-      extendBodyBehindAppBar: inCameraView,
-      appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.cardScannerTitle),
-        backgroundColor: inCameraView ? Colors.black.withValues(alpha: 0.35) : AppColors.bgMedium,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          if (showCounter)
-            Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: Center(
-                child: GestureDetector(
-                  onTap: isNearLimit || _scansRemaining == 0 ? _showLimitDialog : null,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isNearLimit
-                          ? AppColors.error.withValues(alpha: 0.20)
-                          : Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isNearLimit ? AppColors.error : Colors.white.withValues(alpha: 0.4),
-                        width: 0.8,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.document_scanner_outlined,
-                          size: 12,
-                          color: isNearLimit ? AppColors.error : Colors.white,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$_scansUsed / $_kFreeLimit',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: isNearLimit ? AppColors.error : Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
+      extendBodyBehindAppBar: inCameraView && !widget.embedded,
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: Text(AppLocalizations.of(context)!.cardScannerTitle),
+              backgroundColor: inCameraView ? Colors.black.withValues(alpha: 0.35) : AppColors.bgMedium,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              actions: [
+                if (showCounter)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: Center(child: _buildScanCounter(isNearLimit)),
                   ),
-                ),
+              ],
+            ),
+      // Da embedded l'AppBar è quella di MainLayout, che non può ospitare il
+      // contatore: lo sovrapponiamo in alto a destra sul corpo.
+      body: widget.embedded
+          ? Stack(
+              children: [
+                Positioned.fill(child: body),
+                if (showCounter)
+                  Positioned(
+                    top: 10,
+                    right: 14,
+                    child: SafeArea(child: _buildScanCounter(isNearLimit)),
+                  ),
+              ],
+            )
+          : body,
+    );
+  }
+
+  /// Chip "usate / totali" del piano free. Condiviso fra l'AppBar della pagina
+  /// a sé stante e la sovrimpressione usata in modalità embedded.
+  Widget _buildScanCounter(bool isNearLimit) {
+    return GestureDetector(
+      onTap: isNearLimit || _scansRemaining == 0 ? _showLimitDialog : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isNearLimit
+              ? AppColors.error.withValues(alpha: 0.20)
+              : Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isNearLimit ? AppColors.error : Colors.white.withValues(alpha: 0.4),
+            width: 0.8,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.document_scanner_outlined,
+              size: 12,
+              color: isNearLimit ? AppColors.error : Colors.white,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$_scansUsed / $_kFreeLimit',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: isNearLimit ? AppColors.error : Colors.white,
               ),
             ),
-        ],
+          ],
+        ),
       ),
-      body: switch (_state) {
-        _ScanState.preview || _ScanState.analyzing => _buildLiveScanner(),
-        _ScanState.found    => _buildFound(),
-        _ScanState.notFound => _buildNotFound(),
-      },
     );
   }
 

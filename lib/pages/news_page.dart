@@ -41,6 +41,13 @@ class _NewsPageState extends State<NewsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
+      // La pagina è aperta con Navigator.push dall'icona nell'AppBar di
+      // MainLayout: serve una AppBar propria per titolo e tasto indietro
+      // (prima era una scheda della bottom bar e la barra la dava MainLayout).
+      appBar: AppBar(
+        title: Text(AppLocalizations.of(context)!.navNews),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
       body: SafeArea(
         top: false,
         bottom: true,

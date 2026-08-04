@@ -488,6 +488,12 @@ abstract class AppLocalizations {
   /// **'News'**
   String get navNews;
 
+  /// Card scanner navigation label
+  ///
+  /// In it, this message translates to:
+  /// **'Scansiona'**
+  String get navScan;
+
   /// My cards label in app bar
   ///
   /// In it, this message translates to:

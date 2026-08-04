@@ -637,24 +637,49 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     final Widget currentPage;
 
     if (inCollection) {
-      currentPage = IndexedStack(
-        key: ValueKey(_currentCollectionKey),
-        index: _currentIndex - 1, // _currentIndex is always 1–4 inside a collection
+      // Lo scanner (indice 4) sta FUORI dall'IndexedStack di proposito: quello
+      // costruisce tutti i figli subito e li tiene vivi, e CardScannerPage
+      // accende la fotocamera in initState. Dentro lo stack la camera
+      // resterebbe aperta per tutta la permanenza nella collezione anche senza
+      // mai aprire la scheda. Qui viene montata solo quando la scheda è attiva
+      // e smontata (con dispose del controller) appena la lasci, mentre le
+      // altre tre schede restano vive dietro l'Offstage.
+      final bool onScanner = _currentIndex == 4;
+      currentPage = Stack(
+        // expand: entrambi i figli sono pagine intere e devono ricevere vincoli
+        // stretti, altrimenti con il fit loose di default si dimensionerebbero
+        // sul contenuto invece che sullo spazio disponibile.
+        fit: StackFit.expand,
         children: [
-          CardListPage(
-            collectionKey: _currentCollectionKey!,
-            collectionName: _currentCollectionName!,
-            showOwnBannerAd: false,
+          Offstage(
+            offstage: onScanner,
+            child: IndexedStack(
+              key: ValueKey(_currentCollectionKey),
+              index: (_currentIndex - 1).clamp(0, 2),
+              children: [
+                CardListPage(
+                  collectionKey: _currentCollectionKey!,
+                  collectionName: _currentCollectionName!,
+                  showOwnBannerAd: false,
+                ),
+                CatalogPage(
+                  collectionKey: _currentCollectionKey!,
+                  collectionName: _currentCollectionName!,
+                ),
+                AlbumDeckPage(
+                  collectionKey: _currentCollectionKey!,
+                  collectionName: _currentCollectionName!,
+                ),
+              ],
+            ),
           ),
-          CatalogPage(
-            collectionKey: _currentCollectionKey!,
-            collectionName: _currentCollectionName!,
-          ),
-          AlbumDeckPage(
-            collectionKey: _currentCollectionKey!,
-            collectionName: _currentCollectionName!,
-          ),
-          const NewsPage(),
+          if (onScanner)
+            CardScannerPage(
+              key: ValueKey('scanner-$_currentCollectionKey'),
+              collectionKey: _currentCollectionKey,
+              collectionName: _currentCollectionName,
+              embedded: true,
+            ),
         ],
       );
     } else {
@@ -675,7 +700,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     } else {
       // Le schede "Le mie carte", "Catalogo" e "Raccolta" non mostrano il
       // titolo in alto (richiesta esplicita): l'AppBar resta senza scritta.
-      final titles = [l10n.navHome, '', '', '', l10n.navNews];
+      final titles = [l10n.navHome, '', '', '', l10n.cardScannerTitle];
       appBarTitle = _currentIndex < titles.length ? titles[_currentIndex] : _currentCollectionName ?? 'Deck Master';
     }
 
@@ -710,16 +735,11 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
         actions: [
           if (inCollection)
             IconButton(
-              icon: const Icon(Icons.document_scanner_outlined),
-              tooltip: l10n.tooltipScanCard,
+              icon: const Icon(Icons.newspaper_outlined),
+              tooltip: l10n.navNews,
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => CardScannerPage(
-                    collectionKey: _currentCollectionKey,
-                    collectionName: _currentCollectionName,
-                  ),
-                ),
+                MaterialPageRoute(builder: (_) => const NewsPage()),
               ),
             ),
           Stack(
@@ -981,7 +1001,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 BottomNavigationBarItem(icon: const Icon(Icons.style), label: l10n.navCards),
                 BottomNavigationBarItem(icon: const Icon(Icons.search), label: l10n.navCatalog),
                 BottomNavigationBarItem(icon: const Icon(Icons.book), label: l10n.navCollection),
-                BottomNavigationBarItem(icon: const Icon(Icons.newspaper_outlined), label: l10n.navNews),
+                BottomNavigationBarItem(icon: const Icon(Icons.document_scanner_outlined), label: l10n.navScan),
               ],
               onTap: _onNavTap,
             )
