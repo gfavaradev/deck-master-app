@@ -51,8 +51,16 @@ class CardScannerService {
   /// Pass [collectionHint] (e.g. 'pokemon', 'yugioh') when the current context
   /// is known — Gemini will be biased toward that game for better accuracy.
   Future<CardScanResult?> scanFromCamera({String? collectionHint}) async {
+    // maxWidth/maxHeight non sono cosmetici: senza di essi `ImageResizer` di
+    // image_picker decodifica lo scatto a piena risoluzione (inSampleSize = 1),
+    // cioè ~50MB di bitmap per una fotocamera da 12MP. Con il cap la decodifica
+    // avviene già sottocampionata. 1920px sul lato lungo restano abbondanti per
+    // leggere il seriale stampato sulla carta e riducono anche il payload verso
+    // Gemini. L'aspect ratio è preservato dal plugin.
     final image = await _picker.pickImage(
       source: ImageSource.camera,
+      maxWidth: 1920,
+      maxHeight: 1920,
       imageQuality: 90,
       preferredCameraDevice: CameraDevice.rear,
     );

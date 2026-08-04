@@ -74,6 +74,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+
+            // `purchases-store-amazon` (dipendenza transitiva di purchases_flutter)
+            // pubblica un `-dontoptimize` nelle sue consumer proguard rules: quella
+            // direttiva è globale e spegne le ottimizzazioni R8 per TUTTA l'app —
+            // è ciò che Play Console segnala come "ottimizzazione R8". Ignoriamo le
+            // sue keep rules e reimportiamo a mano quelle utili (senza
+            // `-dontoptimize`) in proguard-rules.pro.
+            optimization {
+                keepRules {
+                    ignoreFrom("com.revenuecat.purchases:purchases-store-amazon")
+                }
+            }
         }
         debug {
             // uses default debug signing
