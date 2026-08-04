@@ -112,3 +112,7 @@ test_*.json
 # Node.js
 node_modules/
 package-lock.json
+
+# Backup accidentali
+*.bak
+*.orig
