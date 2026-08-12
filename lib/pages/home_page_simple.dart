@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -42,6 +44,12 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   bool _isPro = false;
   RewardedAd? _rewardedAd;
   bool _adLoading = false;
+  // Backoff del preload: un fallimento non deve lasciare _rewardedAd a null
+  // fino al tap dell'utente, altrimenti il primo tentativo mostra sempre
+  // "Video non disponibile".
+  int _adRetries = 0;
+  Timer? _adRetryTimer;
+  static const _maxAdRetries = 4;
   // Riferimento al setState del dialog aperto: permette di aggiornare il dialog
   // quando l'ad finisce di caricarsi (showDialog ha un context separato).
   StateSetter? _dialogSetState;
@@ -55,6 +63,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
 
   @override
   void dispose() {
+    _adRetryTimer?.cancel();
     _rewardedAd?.dispose();
     super.dispose();
   }
@@ -67,11 +76,19 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   }
 
   void _preloadRewardedAd() {
+    // Guardia single-flight. I quattro punti che chiamano questo metodo possono
+    // sovrapporsi (preload iniziale, tap a vuoto, chiusura dell'ad, errore di
+    // show): con due caricamenti in volo il secondo onLoaded sovrascriveva
+    // _rewardedAd senza fare dispose del primo, perdendo l'istanza nativa.
+    if (_adLoading || _rewardedAd != null) return;
+
+    _adRetryTimer?.cancel();
     setState(() => _adLoading = true);
     _dialogSetState?.call(() {}); // aggiorna subito il dialog se aperto
     AdService.loadRewardedAd(
       onLoaded: (ad) {
         if (!mounted) { ad.dispose(); return; }
+        _adRetries = 0;
         setState(() { _rewardedAd = ad; _adLoading = false; });
         _dialogSetState?.call(() {}); // l'ad è pronta: aggiorna il dialog
       },
@@ -79,8 +96,21 @@ class _HomePageSimpleState extends State<HomePageSimple> {
         if (!mounted) return;
         setState(() { _rewardedAd = null; _adLoading = false; });
         _dialogSetState?.call(() {}); // fallimento: aggiorna il dialog
+        _scheduleAdRetry();
       },
     );
+  }
+
+  /// Riprova il preload con backoff esponenziale: 2s, 4s, 8s, 16s.
+  /// L'errore vero è già loggato da AdService.loadRewardedAd.
+  void _scheduleAdRetry() {
+    if (_adRetries >= _maxAdRetries) return;
+    final delay = Duration(seconds: 2 << _adRetries);
+    _adRetries++;
+    _adRetryTimer?.cancel();
+    _adRetryTimer = Timer(delay, () {
+      if (mounted && !_isPro) _preloadRewardedAd();
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -242,6 +272,9 @@ class _HomePageSimpleState extends State<HomePageSimple> {
             duration: const Duration(seconds: 3),
           ),
         );
+        // Il tap è un'azione esplicita dell'utente: fa ripartire il ciclo di
+        // backoff anche se i tentativi automatici erano già esauriti.
+        _adRetries = 0;
         _preloadRewardedAd();
       }
       return;

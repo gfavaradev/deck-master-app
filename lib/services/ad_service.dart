@@ -51,10 +51,48 @@ class AdService {
     return _isIos ? _iosRewardedProdId : _androidRewardedProdId;
   }
 
-  /// Inizializza AdMob. Chiamare una sola volta in main() prima di runApp.
-  static Future<void> initialize() async {
-    if (!isSupportedPlatform) return;
-    if (_isIos && !kDebugMode && !_iosReady) return;
+  // ── Inizializzazione ──────────────────────────────────────────────────────
+
+  /// Inizializzazione in corso o completata. Condivisa fra tutti i chiamanti.
+  static Future<void>? _initFuture;
+
+  /// Init effettiva del plugin. Sostituibile nei test: `MobileAds` parla con i
+  /// canali nativi, che sotto `flutter test` non esistono.
+  @visibleForTesting
+  static Future<void> Function() platformInitializer = _initializePlatform;
+
+  /// Load effettiva del rewarded. Stesso motivo di [platformInitializer].
+  @visibleForTesting
+  static void Function(String adUnitId, RewardedAdLoadCallback callback)
+      rewardedLoader = _loadRewardedPlatform;
+
+  /// Riporta il servizio allo stato iniziale fra un test e l'altro.
+  @visibleForTesting
+  static void debugReset() {
+    _initFuture = null;
+    platformInitializer = _initializePlatform;
+    rewardedLoader = _loadRewardedPlatform;
+  }
+
+  /// Inizializza AdMob una sola volta.
+  ///
+  /// Chiamate ripetute e concorrenti condividono lo stesso Future, così chi
+  /// deve caricare un annuncio può attenderlo: `main()` rimanda l'init di
+  /// qualche secondo per non rubare frame all'intro, e un load partito prima
+  /// che l'SDK sia pronto fallisce sempre.
+  ///
+  /// Un'inizializzazione fallita non viene memorizzata: il tentativo successivo
+  /// riparte da capo invece di restare bloccato su un Future in errore.
+  static Future<void> initialize() {
+    if (!isSupportedPlatform) return Future.value();
+    if (_isIos && !kDebugMode && !_iosReady) return Future.value();
+    return _initFuture ??= platformInitializer().catchError((Object e) {
+      _initFuture = null;
+      debugPrint('[AdService] inizializzazione fallita: $e');
+    });
+  }
+
+  static Future<void> _initializePlatform() async {
     await MobileAds.instance.initialize();
     MobileAds.instance.updateRequestConfiguration(
       RequestConfiguration(
@@ -66,20 +104,45 @@ class AdService {
     );
   }
 
+  // ── Rewarded ──────────────────────────────────────────────────────────────
+
   /// Carica un rewarded ad e lo restituisce via callback.
+  ///
+  /// Attende [initialize] prima di partire, altrimenti il preload della home
+  /// può scattare a SDK non ancora pronto e fallire sistematicamente.
+  ///
   /// [onLoaded] → ad pronto.
-  /// [onFailed] → errore di caricamento.
-  static void loadRewardedAd({
+  /// [onFailed] → errore di caricamento, già loggato qui con il codice AdMob.
+  static Future<void> loadRewardedAd({
     required void Function(RewardedAd ad) onLoaded,
     required void Function(LoadAdError error) onFailed,
-  }) {
-    RewardedAd.load(
-      adUnitId: rewardedAdUnitId,
-      request: const AdRequest(nonPersonalizedAds: true),
-      rewardedAdLoadCallback: RewardedAdLoadCallback(
+  }) async {
+    await initialize();
+    rewardedLoader(
+      rewardedAdUnitId,
+      RewardedAdLoadCallback(
         onAdLoaded: onLoaded,
-        onAdFailedToLoad: onFailed,
+        onAdFailedToLoad: (error) {
+          // Senza questo log l'unica traccia del fallimento era la snackbar
+          // "Video non disponibile", che non dice quale sia la causa.
+          debugPrint(
+            '[AdService] rewarded non caricato: code=${error.code} '
+            'domain=${error.domain} message=${error.message}',
+          );
+          onFailed(error);
+        },
       ),
+    );
+  }
+
+  static void _loadRewardedPlatform(
+    String adUnitId,
+    RewardedAdLoadCallback callback,
+  ) {
+    RewardedAd.load(
+      adUnitId: adUnitId,
+      request: const AdRequest(nonPersonalizedAds: true),
+      rewardedAdLoadCallback: callback,
     );
   }
 

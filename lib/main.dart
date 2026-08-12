@@ -82,8 +82,11 @@ void main() async {
   // ritardiamo di qualche secondo per non sovrapporlo ai frame più "pesanti"
   // dell'intro booster (caduta/strappo/apertura bustina), che altrimenti
   // laggava proprio nei primi istanti.
+  // Il ritardo resta, ma non è più anche la garanzia di ordinamento: chi carica
+  // un annuncio attende AdService.initialize(), che logga e assorbe da sé i
+  // propri errori invece di scartarli in silenzio.
   Future.delayed(const Duration(seconds: 3), () {
-    AdService.initialize().catchError((_) {});
+    AdService.initialize();
   });
   BackgroundDownloadService.initialize().catchError((_) {});
   NotificationService().initialize().catchError((_) {});
