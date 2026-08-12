@@ -96,8 +96,14 @@ class AdService {
     await MobileAds.instance.initialize();
     MobileAds.instance.updateRequestConfiguration(
       RequestConfiguration(
-        tagForChildDirectedTreatment: TagForChildDirectedTreatment.no,
-        tagForUnderAgeOfConsent: TagForUnderAgeOfConsent.no,
+        // google_mobile_ads 9 ha fuso i due flag COPPA/GDPR
+        // (tagForChildDirectedTreatment + tagForUnderAgeOfConsent) in un unico
+        // segnale. La coppia precedente era "no"/"no", cioè app non rivolta ai
+        // minori e utenti non sotto l'età del consenso: l'equivalente nel nuovo
+        // enum è `unspecified`, che dichiara che nessun trattamento per età si
+        // applica alla richiesta. `child` e `teen` sono gli unici altri valori
+        // e attiverebbero restrizioni che prima non c'erano.
+        ageRestrictedTreatment: AgeRestrictedTreatment.unspecified,
         maxAdContentRating: MaxAdContentRating.ma,
         testDeviceIds: kDebugMode ? ['1F9CDB810B965089B9CAD8D41B30B255'] : [],
       ),
