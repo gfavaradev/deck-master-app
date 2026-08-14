@@ -2030,7 +2030,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String proSaveNote(String price, String percent) {
-    return '€$price/mese · risparmia il $percent%';
+    return '$price/mese · risparmia il $percent%';
   }
 
   @override

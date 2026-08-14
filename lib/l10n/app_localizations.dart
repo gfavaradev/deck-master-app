@@ -3686,10 +3686,10 @@ abstract class AppLocalizations {
   /// **'Flessibile, disdici quando vuoi'**
   String get proMonthlyNote;
 
-  /// Plan saving note
+  /// Plan saving note. price arrives already formatted with the store currency symbol, do not add one
   ///
   /// In it, this message translates to:
-  /// **'€{price}/mese · risparmia il {percent}%'**
+  /// **'{price}/mese · risparmia il {percent}%'**
   String proSaveNote(String price, String percent);
 
   /// Launch tag on plan card

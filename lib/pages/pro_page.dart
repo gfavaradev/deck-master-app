@@ -1,9 +1,11 @@
 import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import '../services/subscription_service.dart';
 import '../services/revenue_cat_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/subscription_pricing.dart';
 
 enum _Plan { monthly, semiannual, annual }
 
@@ -22,10 +24,18 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   late final Future<bool> _proStatusFuture;
 
   // ─── Prezzi ───────────────────────────────────────────────────────────────
-  static const double _monthly        = 2.99;
-  static const double _semiannual     = 12.99;  // €2.17/mese  −27%
-  static const double _annual         = 19.99;  // €1.67/mese  −44%
-  static const double _annualOriginal = 35.88;  // 2.99 × 12
+  //
+  // I prezzi mostrati vengono dal negozio (StoreProduct.priceString), già
+  // localizzati nella valuta del paese dell'utente, e le percentuali di
+  // risparmio sono calcolate sui prezzi reali. Le costanti qui sotto sono solo
+  // un listino di riserva in euro, usato finché le offerte non sono
+  // disponibili: RevenueCat non ancora inizializzato, dispositivo offline, o
+  // prodotti non ancora propagati dagli store.
+  //
+  // Vanno tenute allineate a Play Console e App Store Connect.
+  static const double _fallbackMonthly    = 4.99;
+  static const double _fallbackSemiannual = 22.99;
+  static const double _fallbackAnnual     = 34.99;
 
   @override
   void initState() {
@@ -43,27 +53,76 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
     if (mounted) setState(() => _offerings = offerings);
   }
 
-  Future<void> _onPurchaseTap() async {
-    final offerings = _offerings;
-    Package? package;
+  static int _monthsOf(_Plan plan) => switch (plan) {
+    _Plan.monthly    => 1,
+    _Plan.semiannual => 6,
+    _Plan.annual     => 12,
+  };
 
-    if (offerings != null) {
-      final current = offerings.current;
-      if (current != null) {
-        final packages = current.availablePackages;
-        if (packages.isNotEmpty) {
-          final id = switch (_selectedPlan) {
-            _Plan.monthly    => kProductMonthly,
-            _Plan.semiannual => kProductSemiannual,
-            _Plan.annual     => kProductAnnual,
-          };
-          package = packages.firstWhere(
-            (p) => p.storeProduct.identifier == id,
-            orElse: () => packages.first,
-          );
-        }
-      }
+  static String _productIdOf(_Plan plan) => switch (plan) {
+    _Plan.monthly    => kProductMonthly,
+    _Plan.semiannual => kProductSemiannual,
+    _Plan.annual     => kProductAnnual,
+  };
+
+  static double _fallbackPriceOf(_Plan plan) => switch (plan) {
+    _Plan.monthly    => _fallbackMonthly,
+    _Plan.semiannual => _fallbackSemiannual,
+    _Plan.annual     => _fallbackAnnual,
+  };
+
+  /// Package del negozio corrispondente a [plan], `null` se non c'è.
+  ///
+  /// Il confronto passa da [matchesProductId] perché Google Play espone gli
+  /// abbonamenti come `<subscriptionId>:<basePlanId>`: un `==` secco non
+  /// troverebbe mai nulla.
+  Package? _packageFor(_Plan plan) {
+    final packages = _offerings?.current?.availablePackages;
+    if (packages == null || packages.isEmpty) return null;
+    final id = _productIdOf(plan);
+    for (final package in packages) {
+      if (matchesProductId(package.storeProduct.identifier, id)) return package;
     }
+    return null;
+  }
+
+  /// Prezzi da mostrare per [plan]: dal negozio quando disponibili, altrimenti
+  /// dal listino di riserva in euro.
+  _PlanPrices _pricesFor(_Plan plan) {
+    final months = _monthsOf(plan);
+    final product = _packageFor(plan)?.storeProduct;
+    final monthlyPrice =
+        _packageFor(_Plan.monthly)?.storeProduct.price ?? _fallbackMonthly;
+    final price = product?.price ?? _fallbackPriceOf(plan);
+
+    // Il totale usa priceString del negozio, già formattato con il separatore
+    // e il simbolo giusti per il paese. Gli importi derivati (al mese, prezzo
+    // barrato) li formattiamo noi nella stessa valuta.
+    String money(double value) => product == null
+        ? '€${value.toStringAsFixed(2)}'
+        : NumberFormat.simpleCurrency(name: product.currencyCode).format(value);
+
+    final savings = plan == _Plan.monthly
+        ? 0
+        : savingsPercent(
+            monthlyPrice: monthlyPrice,
+            planPrice: price,
+            months: months,
+          );
+
+    return _PlanPrices(
+      price: product?.priceString ?? money(price),
+      perMonth: money(price / months),
+      savings: savings == 0 ? null : savings,
+      // Barrato solo sull'annuale: quanto costerebbero 12 mesi di mensile.
+      original: plan == _Plan.annual ? money(monthlyPrice * 12) : null,
+    );
+  }
+
+  Future<void> _onPurchaseTap() async {
+    // Nessun ripiego sul primo package disponibile: prima, quando il matching
+    // falliva, l'utente sceglieva l'annuale e ne comprava un altro.
+    final package = _packageFor(_selectedPlan);
 
     if (package == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -239,6 +298,9 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
 
   Widget _buildPricingSection() {
     final l10n = AppLocalizations.of(context)!;
+    final monthly = _pricesFor(_Plan.monthly);
+    final semiannual = _pricesFor(_Plan.semiannual);
+    final annual = _pricesFor(_Plan.annual);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -253,7 +315,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           plan: _Plan.monthly,
           selected: _selectedPlan == _Plan.monthly,
           title: l10n.proMonthlyLabel,
-          price: _monthly,
+          prices: monthly,
           period: l10n.proMonthPeriod,
           note: l10n.proMonthlyNote,
           onTap: () => setState(() => _selectedPlan = _Plan.monthly),
@@ -263,10 +325,12 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           plan: _Plan.semiannual,
           selected: _selectedPlan == _Plan.semiannual,
           title: l10n.proSemiannualLabel,
-          price: _semiannual,
+          prices: semiannual,
           period: l10n.proSemiannualPeriod,
-          note: l10n.proSaveNote((_semiannual / 6).toStringAsFixed(2), '27'),
-          badge: '−27%',
+          note: semiannual.savings == null
+              ? l10n.proMonthlyNote
+              : l10n.proSaveNote(semiannual.perMonth, '${semiannual.savings}'),
+          badge: semiannual.savings == null ? null : '−${semiannual.savings}%',
           onTap: () => setState(() => _selectedPlan = _Plan.semiannual),
         ),
         const SizedBox(height: 10),
@@ -274,11 +338,12 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           plan: _Plan.annual,
           selected: _selectedPlan == _Plan.annual,
           title: l10n.proYearlyLabel,
-          price: _annual,
+          prices: annual,
           period: l10n.proYearPeriod,
-          originalPrice: _annualOriginal,
-          note: l10n.proSaveNote((_annual / 12).toStringAsFixed(2), '44'),
-          badge: '−44%',
+          note: annual.savings == null
+              ? l10n.proMonthlyNote
+              : l10n.proSaveNote(annual.perMonth, '${annual.savings}'),
+          badge: annual.savings == null ? null : '−${annual.savings}%',
           isLaunchDeal: true,
           onTap: () => setState(() => _selectedPlan = _Plan.annual),
         ),
@@ -354,15 +419,36 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
 
 // ─── Plan Card ────────────────────────────────────────────────────────────────
 
+/// Prezzi di un piano, già formattati e pronti da mostrare.
+class _PlanPrices {
+  const _PlanPrices({
+    required this.price,
+    required this.perMonth,
+    this.savings,
+    this.original,
+  });
+
+  /// Totale del piano, es. "€22,99".
+  final String price;
+
+  /// Equivalente mensile, es. "€3,83".
+  final String perMonth;
+
+  /// Sconto sul mensile in percentuale, `null` se assente o non applicabile.
+  final int? savings;
+
+  /// Prezzo barrato di confronto, `null` se non va mostrato.
+  final String? original;
+}
+
 class _PlanCard extends StatelessWidget {
   final _Plan plan;
   final bool selected;
   final String title;
-  final double price;
+  final _PlanPrices prices;
   final String period;
   final String note;
   final String? badge;
-  final double? originalPrice;
   final bool isLaunchDeal;
   final VoidCallback onTap;
 
@@ -370,12 +456,11 @@ class _PlanCard extends StatelessWidget {
     required this.plan,
     required this.selected,
     required this.title,
-    required this.price,
+    required this.prices,
     required this.period,
     required this.note,
     required this.onTap,
     this.badge,
-    this.originalPrice,
     this.isLaunchDeal = false,
   });
 
@@ -445,9 +530,9 @@ class _PlanCard extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (originalPrice != null)
+                if (prices.original != null)
                   Text(
-                    '€${originalPrice!.toStringAsFixed(2)}',
+                    prices.original!,
                     style: const TextStyle(
                       color: AppColors.textHint,
                       fontSize: 12,
@@ -458,7 +543,7 @@ class _PlanCard extends StatelessWidget {
                   text: TextSpan(
                     children: [
                       TextSpan(
-                        text: '€${price.toStringAsFixed(2)}',
+                        text: prices.price,
                         style: TextStyle(
                           color: selected ? AppColors.gold : AppColors.textPrimary,
                           fontSize: 20,

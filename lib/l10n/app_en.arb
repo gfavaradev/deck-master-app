@@ -659,7 +659,7 @@
   "proSemiannualLabel": "Semiannual",
   "proSemiannualPeriod": "6 months",
   "proMonthlyNote": "Flexible, cancel anytime",
-  "proSaveNote": "€{price}/month · save {percent}%",
+  "proSaveNote": "{price}/month · save {percent}%",
   "proLaunchTag": "LAUNCH",
   "proProcessing": "Processing...",
   "proSubscribeNow": "Subscribe now",

@@ -2011,7 +2011,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String proSaveNote(String price, String percent) {
-    return '€$price/month · save $percent%';
+    return '$price/month · save $percent%';
   }
 
   @override

@@ -1994,8 +1994,8 @@
   "proMonthlyNote": "Flessibile, disdici quando vuoi",
   "@proMonthlyNote": { "description": "Monthly plan note" },
 
-  "proSaveNote": "€{price}/mese · risparmia il {percent}%",
-  "@proSaveNote": { "description": "Plan saving note", "placeholders": { "price": { "type": "String" }, "percent": { "type": "String" } } },
+  "proSaveNote": "{price}/mese · risparmia il {percent}%",
+  "@proSaveNote": { "description": "Plan saving note. price arrives already formatted with the store currency symbol, do not add one", "placeholders": { "price": { "type": "String" }, "percent": { "type": "String" } } },
 
   "proLaunchTag": "LANCIO",
   "@proLaunchTag": { "description": "Launch tag on plan card" },
