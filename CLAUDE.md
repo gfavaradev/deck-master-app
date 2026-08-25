@@ -47,7 +47,11 @@ flutter build windows --release --dart-define-from-file=dart_defines.json
 flutter build web --release
 build_installer.bat                      # Windows: builds + packages via Inno Setup -> installer_output/
 ```
-CI (`.github/workflows/release.yml`) runs unit + integration tests first, then restores secrets (`google-services.json`, keystore, `key.properties`, `.env` from base64 GitHub secrets), builds the App Bundle with `--build-number=${{ github.run_number }}`, and uploads to the Play Store internal track.
+CI (`.github/workflows/release.yml`) runs `flutter test test/` first, then restores secrets (`google-services.json`, keystore, `key.properties`, `.env` from base64 GitHub secrets), builds the App Bundle with `--build-number=${{ github.run_number }}`, and uploads to the Play Store internal track.
+
+> Il workflow **non ha mai funzionato** fino al 25/08/2026: 0 successi su 107 run. Un `if: ${{ secrets.X != '' }}` (contesto `secrets` vietato nelle condizioni) faceva fallire ogni run in avvio, senza eseguire un solo job — quindi nessun caricamento sul Play Store è mai partito dalla CI. Corretto passando dal contesto `env`. Non reintrodurre `secrets` dentro un `if:`.
+
+> La CI **non** può eseguire `flutter test integration_test/...`: quel comando richiede un device connesso e ubuntu-latest non ne ha. La copertura delle sei classi di crash arriva comunque da `flutter test test/`, perché `test/regression_tests.dart` ri-esporta le stesse suite come widget test.
 
 ### Backend scripts (Node.js, under `scripts/`)
 - `scripts/price_sync/index.js` — CardTrader → Firestore price sync. Raw prices are written for every CT-backed catalog; prices are embedded into catalog chunks only for yugioh/pokemon/onepiece. Runs in production as the Cloud Run Job `price-sync` (`europe-west1`, Cloud Scheduler `0 3 * * *` Europe/Rome, JWT from Secret Manager) — see `scripts/price_sync/CLOUDRUN.md` and `deploy-cloudrun.sh`. Locally: `npm start` / `npm run yugioh`, reading `CARDTRADER_JWT` from the **repo-root** `.env` plus a local `serviceAccountKey.json`. Manual single-catalog runs also available from the `deck-master-web` dashboard (`POST /api/admin/jobs/price-sync`, ~300s cap).

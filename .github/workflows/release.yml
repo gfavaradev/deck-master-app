@@ -37,8 +37,13 @@ jobs:
       - name: Run unit tests
         run: flutter test test/ --no-pub --reporter=github
 
-      - name: Run regression integration tests (headless)
-        run: flutter test integration_test/regression_suite.dart --no-pub --reporter=github
+      # NB: `flutter test integration_test/...` richiede un device connesso (fallisce
+      # con "No devices are connected") e quindi non e' eseguibile su ubuntu-latest.
+      # Le stesse sei suite di regressione girano headless qui sopra, perche'
+      # test/regression_tests.dart le ri-esporta come widget test. L'entry point
+      # integration_test/regression_suite.dart resta per l'esecuzione su device:
+      #   flutter drive --driver test_driver/integration_test.dart \
+      #                 --target integration_test/regression_suite.dart
 
   # ── Build only proceeds when tests pass ───────────────────────────────────
   build-and-deploy:
@@ -87,9 +92,14 @@ jobs:
           EOF
 
       # 8. Ricrea il file .env dal secret (se presente)
+      # Il contesto `secrets` NON e' utilizzabile in `if:`: usarlo li' produce
+      # "Unrecognized named-value: 'secrets'" e fa fallire il run in avvio, senza
+      # eseguire un solo job. Si passa dal contesto `env`, che in `if:` e' valido.
       - name: Restore .env
-        if: ${{ secrets.ENV_FILE_BASE64 != '' }}
-        run: echo "${{ secrets.ENV_FILE_BASE64 }}" | base64 --decode > .env
+        env:
+          ENV_FILE_BASE64: ${{ secrets.ENV_FILE_BASE64 }}
+        if: ${{ env.ENV_FILE_BASE64 != '' }}
+        run: echo "$ENV_FILE_BASE64" | base64 --decode > .env
 
       # 9. Build del bundle con versionCode automatico (= numero del run GitHub)
       - name: Build App Bundle
