@@ -1,4 +1,6 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:deck_master/constants/app_constants.dart';
+import 'package:deck_master/utils/firestore_paths.dart';
 
 /// Generates realistic Firestore test data for regression tests.
 class TestDataFactory {
@@ -72,8 +74,8 @@ class TestDataFactory {
   }) async {
     // Metadata doc
     await firestore
-        .collection('catalogs/$catalogName/meta')
-        .doc('metadata')
+        .collection(FirestorePaths.catalog(catalogName))
+        .doc(FirestoreConstants.catalogMetadata)
         .set({'totalChunks': chunksCount, 'version': 1});
 
     // Chunk docs (batched to avoid hitting fake Firestore limits)
@@ -89,8 +91,10 @@ class TestDataFactory {
         });
         batch.set(
           firestore
-              .collection('catalogs/$catalogName/chunks/chunk_list/items')
-              .doc('chunk_${(i + 1).toString().padLeft(3, '0')}'),
+              .collection(FirestorePaths.catalog(catalogName))
+              .doc(FirestoreConstants.catalogChunks)
+              .collection(FirestoreConstants.catalogItems)
+              .doc(FirestoreConstants.getChunkId(i + 1)),
           {'cards': cards},
         );
       }

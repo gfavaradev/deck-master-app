@@ -34,7 +34,11 @@ class _UnguardedAsyncWidgetState extends State<_UnguardedAsyncWidget> {
     // Mirrors the pattern in catalog_page._loadAlbumsAndOwned:
     // async op fires, then setState is called with no mounted guard.
     widget.asyncOp(() {
-      setState(() => _label = 'updated'); // ← BUG: no mounted check
+      try {
+        setState(() => _label = 'updated'); // ← BUG: no mounted check
+      } catch (e) {
+        FlutterError.reportError(FlutterErrorDetails(exception: e));
+      }
     });
   }
 
@@ -74,6 +78,7 @@ void main() {
         (tester) async {
       // Capture Flutter errors instead of letting them propagate
       final errors = <FlutterErrorDetails>[];
+      final originalOnError = FlutterError.onError;
       FlutterError.onError = (details) => errors.add(details);
 
       final completer = Future<void>.delayed(const Duration(milliseconds: 50));
@@ -96,16 +101,17 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Restore error handler
-      FlutterError.onError = FlutterError.presentError;
+      FlutterError.onError = originalOnError;
+
+      // Consume any exception from the test framework
+      final exception = tester.takeException();
 
       // The unguarded version SHOULD have produced an error.
-      // If it does not, this test needs updating.
-      // (With the bug present, errors.isNotEmpty — this is the regression marker.)
       expect(
-        errors.any((e) => e.toString().contains('setState') || e.toString().contains('mounted')),
+        errors.any((e) => e.toString().contains('setState') || e.toString().contains('mounted')) ||
+            (exception != null && exception.toString().contains('setState')),
         isTrue,
-        reason: 'Expected a "setState after dispose" error with the unguarded pattern. '
-            'If this assertion fails, the bug may already be fixed — verify and update this test.',
+        reason: 'Expected a "setState after dispose" error with the unguarded pattern.',
       );
     });
 

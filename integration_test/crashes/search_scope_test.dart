@@ -23,7 +23,7 @@ import '../helpers/test_data_factory.dart';
 // Mirrors _applyFilter in card_list_page.dart — update this if the production
 // code is widened to include name/rarity/type.
 bool _localMatches(CardModel card, String query) {
-  final q = query.toLowerCase();
+  final q = query.trim().toLowerCase();
   if (q.isEmpty) return true;
   return card.serialNumber.toLowerCase().contains(q) ||
       card.name.toLowerCase().contains(q); // name search MUST be included

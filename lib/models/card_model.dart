@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 class CardModel {
   final int? id;
   final String? firestoreId;
@@ -28,14 +30,17 @@ class CardModel {
     required this.type,
     required this.rarity,
     required this.description,
-    this.quantity = 1,
-    this.value = 0.0,
-    this.cardtraderValue,
+    int quantity = 1,
+    double value = 0.0,
+    double? cardtraderValue,
     this.imageUrl,
     this.cardtraderSyncedAt,
     this.cardtraderListingCount,
-    this.purchasePrice,
-  });
+    double? purchasePrice,
+  })  : quantity = quantity < 0 ? 0 : quantity,
+        value = value < 0 ? 0.0 : value,
+        cardtraderValue = (cardtraderValue != null && cardtraderValue < 0) ? 0.0 : cardtraderValue,
+        purchasePrice = (purchasePrice != null && purchasePrice < 0) ? 0.0 : purchasePrice;
 
   Map<String, dynamic> toMap() {
     return {
@@ -59,6 +64,11 @@ class CardModel {
   }
 
   factory CardModel.fromMap(Map<String, dynamic> map) {
+    final rawQty = (map['quantity'] as num?)?.toInt() ?? 1;
+    final rawVal = (map['value'] as num?)?.toDouble() ?? 0.0;
+    final rawCtVal = (map['cardtrader_value'] as num?)?.toDouble();
+    final rawPurch = (map['purchase_price'] as num?)?.toDouble();
+
     return CardModel(
       id: map['id'],
       firestoreId: map['firestoreId'],
@@ -70,13 +80,13 @@ class CardModel {
       type: map['type'] ?? '',
       rarity: map['rarity'] ?? '',
       description: map['description'] ?? '',
-      quantity: map['quantity'] ?? 1,
-      value: (map['value'] as num?)?.toDouble() ?? 0.0,
-      cardtraderValue: (map['cardtrader_value'] as num?)?.toDouble(),
+      quantity: rawQty < 0 ? 0 : rawQty,
+      value: math.max(0.0, rawVal),
+      cardtraderValue: rawCtVal != null ? math.max(0.0, rawCtVal) : null,
       imageUrl: map['imageUrl'],
       cardtraderSyncedAt: map['ct_synced_at'] as String?,
       cardtraderListingCount: map['ct_listing_count'] as int?,
-      purchasePrice: (map['purchase_price'] as num?)?.toDouble(),
+      purchasePrice: rawPurch != null ? math.max(0.0, rawPurch) : null,
     );
   }
 
@@ -98,6 +108,10 @@ class CardModel {
   }
 
   factory CardModel.fromFirestore(String docId, Map<String, dynamic> data) {
+    final rawQty = (data['quantity'] as num?)?.toInt() ?? 1;
+    final rawVal = (data['value'] as num?)?.toDouble() ?? 0.0;
+    final rawCtVal = (data['cardtraderValue'] as num?)?.toDouble();
+
     return CardModel(
       firestoreId: docId,
       catalogId: data['catalogId'],
@@ -108,9 +122,9 @@ class CardModel {
       type: data['type'] ?? '',
       rarity: data['rarity'] ?? '',
       description: data['description'] ?? '',
-      quantity: data['quantity'] ?? 1,
-      value: (data['value'] as num?)?.toDouble() ?? 0.0,
-      cardtraderValue: (data['cardtraderValue'] as num?)?.toDouble(),
+      quantity: rawQty < 0 ? 0 : rawQty,
+      value: math.max(0.0, rawVal),
+      cardtraderValue: rawCtVal != null ? math.max(0.0, rawCtVal) : null,
       imageUrl: data['imageUrl'],
     );
   }

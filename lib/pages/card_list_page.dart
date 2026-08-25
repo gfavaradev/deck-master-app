@@ -146,9 +146,12 @@ class _CardListPageState extends State<CardListPage> {
 
   // Pure computation — does NOT call setState. Callers must wrap in setState.
   void _applyFilter(String query) {
-    final q = query.toLowerCase();
-    bool matches(CardModel card) =>
-        card.serialNumber.toLowerCase().contains(q);
+    final q = query.trim().toLowerCase();
+    bool matches(CardModel card) {
+      if (q.isEmpty) return true;
+      return card.serialNumber.toLowerCase().contains(q) ||
+          card.name.toLowerCase().contains(q);
+    }
 
     _filteredCards = _allCards.where(matches).toList();
     _filteredDoppioniCards = _doppioniCards.where(matches).toList();

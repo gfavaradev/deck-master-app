@@ -14,6 +14,7 @@ import 'firebase_options.dart';
 import 'services/app_preferences.dart';
 import 'services/background_download_service.dart';
 import 'services/notification_service.dart';
+import 'services/revenue_cat_service.dart';
 import 'services/ad_service.dart';
 
 void main() async {
@@ -90,6 +91,9 @@ void main() async {
   });
   BackgroundDownloadService.initialize().catchError((_) {});
   NotificationService().initialize().catchError((_) {});
+  // Aggancia RevenueCat all'auth Firebase: si inizializza a ogni login usando
+  // l'UID come appUserID, e si scollega al logout.
+  RevenueCatService().attachToAuthChanges();
   // Mostra reminder catalogo se era stato posticipato nella sessione precedente
   NotificationService().checkAndShowPendingCatalogReminder().catchError((_) {});
 

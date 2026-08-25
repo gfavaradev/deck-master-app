@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
@@ -25,30 +26,79 @@ class RevenueCatService {
   static const String _googleApiKey = 'goog_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 
   bool _initialized = false;
+  StreamSubscription<User?>? _authSubscription;
+
+  static bool get isSupportedPlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
+  static String get _apiKey =>
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+              defaultTargetPlatform == TargetPlatform.macOS)
+          ? _appleApiKey
+          : _googleApiKey;
+
+  /// Vero quando le API key sono state sostituite con quelle reali.
+  ///
+  /// Con i segnaposto `Purchases.configure` fallisce a ogni login: meglio non
+  /// chiamarlo affatto che riempire i log di errori a ogni avvio.
+  static bool get isConfigured => !_apiKey.contains('XXXX');
+
+  /// Collega RevenueCat allo stato di autenticazione Firebase.
+  ///
+  /// Da chiamare una volta all'avvio. L'UID Firebase diventa l'appUserID, così
+  /// l'abbonamento segue l'account e non il dispositivo, ed è la stessa chiave
+  /// con cui il webhook ritrova l'utente su Firestore.
+  void attachToAuthChanges() {
+    if (!isSupportedPlatform || !isConfigured) return;
+    _authSubscription ??= FirebaseAuth.instance.authStateChanges().listen((
+      user,
+    ) {
+      if (user != null) {
+        initialize(user.uid);
+      } else {
+        logOut();
+      }
+    });
+  }
 
   /// Inizializza RevenueCat con l'UID Firebase come customerID.
-  /// Chiamare dopo il login dell'utente.
+  /// Normalmente la chiama [attachToAuthChanges] a ogni login.
   Future<void> initialize(String userId) async {
-    if (kIsWeb) return;
-    if (_initialized) {
-      await Purchases.logIn(userId);
-      return;
+    if (!isSupportedPlatform || !isConfigured) return;
+    try {
+      if (_initialized) {
+        await Purchases.logIn(userId);
+        return;
+      }
+      await Purchases.configure(
+        PurchasesConfiguration(_apiKey)..appUserID = userId,
+      );
+      Purchases.addCustomerInfoUpdateListener(_customerInfoController.add);
+      _initialized = true;
+    } catch (e) {
+      // Un errore qui non deve impedire il login: l'utente resta senza Pro
+      // finché non si risolve, ma l'app funziona.
+      debugPrint('[RevenueCat] inizializzazione fallita: $e');
     }
+  }
 
-    final apiKey = defaultTargetPlatform == TargetPlatform.iOS
-        ? _appleApiKey
-        : _googleApiKey;
-
-    await Purchases.configure(
-      PurchasesConfiguration(apiKey)..appUserID = userId,
-    );
-    Purchases.addCustomerInfoUpdateListener(_customerInfoController.add);
-    _initialized = true;
+  /// Scollega l'utente da RevenueCat al logout, così l'abbonamento non resta
+  /// associato al prossimo account che accede dallo stesso dispositivo.
+  Future<void> logOut() async {
+    if (!isSupportedPlatform || !_initialized) return;
+    try {
+      await Purchases.logOut();
+    } catch (e) {
+      debugPrint('[RevenueCat] logout fallito: $e');
+    }
   }
 
   /// Ritorna le offerte disponibili (packages mensile/annuale).
   Future<Offerings?> getOfferings() async {
-    if (kIsWeb || !_initialized) return null;
+    if (!isSupportedPlatform || !_initialized) return null;
     try {
       return await Purchases.getOfferings();
     } catch (e) { // ignore: empty_catches
@@ -59,7 +109,7 @@ class RevenueCatService {
   /// Esegue l'acquisto di un package.
   /// Ritorna true se l'acquisto è andato a buon fine.
   Future<bool> purchasePackage(Package package) async {
-    if (kIsWeb || !_initialized) return false;
+    if (!isSupportedPlatform || !_initialized) return false;
     try {
       final result = await Purchases.purchase(PurchaseParams.package(package));
       return result.customerInfo.entitlements.active.containsKey(_kProEntitlement);
@@ -73,7 +123,7 @@ class RevenueCatService {
 
   /// Controlla se l'utente corrente ha l'entitlement Pro attivo.
   Future<bool> hasPro() async {
-    if (kIsWeb || !_initialized) return false;
+    if (!isSupportedPlatform || !_initialized) return false;
     try {
       final info = await Purchases.getCustomerInfo();
       return info.entitlements.active.containsKey(_kProEntitlement);
@@ -85,7 +135,7 @@ class RevenueCatService {
   /// Ripristina gli acquisti precedenti.
   /// Ritorna true se Pro è stato ripristinato.
   Future<bool> restorePurchases() async {
-    if (kIsWeb || !_initialized) return false;
+    if (!isSupportedPlatform || !_initialized) return false;
     try {
       final info = await Purchases.restorePurchases();
       return info.entitlements.active.containsKey(_kProEntitlement);
