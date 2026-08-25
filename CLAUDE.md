@@ -50,9 +50,10 @@ build_installer.bat                      # Windows: builds + packages via Inno S
 CI (`.github/workflows/release.yml`) runs unit + integration tests first, then restores secrets (`google-services.json`, keystore, `key.properties`, `.env` from base64 GitHub secrets), builds the App Bundle with `--build-number=${{ github.run_number }}`, and uploads to the Play Store internal track.
 
 ### Backend scripts (Node.js, under `scripts/`)
-- `scripts/price_sync/index.js` — daily CardTrader → Firestore price sync for yugioh/pokemon/onepiece (other catalogs are read-only). Run with `npm start` or `npm run yugioh` for a single catalog; requires `.env` with `CARDTRADER_JWT`. Cron: `0 3 * * * node index.js >> price_sync.log 2>&1`.
-- `scripts/populate_firestore/index.js` — seeds catalog collections (e.g. `yugioh_catalog`) from source APIs (YGOProDeck etc.) with multi-language translations, chunked to stay under Firestore's 1MB document limit. Run with `npm start`.
-- `scripts/update_app_version/index.js` — updates the `app_config/version` Firestore doc the app reads for update prompts: `node index.js --version 1.3.8 --android-url <url> --windows-url <url> --min-version <x> --notes "<text>"`.
+- `scripts/price_sync/index.js` — CardTrader → Firestore price sync. Raw prices are written for every CT-backed catalog; prices are embedded into catalog chunks only for yugioh/pokemon/onepiece. Runs in production as the Cloud Run Job `price-sync` (`europe-west1`, Cloud Scheduler `0 3 * * *` Europe/Rome, JWT from Secret Manager) — see `scripts/price_sync/CLOUDRUN.md` and `deploy-cloudrun.sh`. Locally: `npm start` / `npm run yugioh`, reading `CARDTRADER_JWT` from the **repo-root** `.env` plus a local `serviceAccountKey.json`. Manual single-catalog runs also available from the `deck-master-web` dashboard (`POST /api/admin/jobs/price-sync`, ~300s cap).
+- `scripts/populate_firestore/index.js` — full rebuild of `yugioh_catalog` from YGOProDeck with multi-language translations, chunked to stay under Firestore's 1MB document limit. Run with `npm start`. `scripts/populate_catalog.dart` (`flutter run -t scripts/populate_catalog.dart -d chrome`) is the incremental alternative. Other TCG catalogs are managed from `deck-master-web`, not from here.
+- `scripts/update_app_version/index.js` — updates the `app_config/version` Firestore doc the app reads for update prompts: `node index.js --version 1.3.8 --android-url <url> --windows-url <url> --min-version <x> --notes "<text>"`. `--version` and `--android-url` are required; the write is a merge, so pass `--notes` on every bump.
+- `scripts/news_sync/index.js` — daily RSS pull (sources in `sources.js`) into `news_drafts` with `status: "pending"`; publishing to `news` is a manual approval in `deck-master-web`. Cron: `0 4 * * *`.
 
 ## Architecture
 
@@ -60,7 +61,7 @@ CI (`.github/workflows/release.yml`) runs unit + integration tests first, then r
 - **`lib/models/`** — domain types: `card_model`, `collection_model`, `album_model`, `user_model`, `wishlist_model`, `magic_models` (Scryfall-shaped).
 - **`lib/services/`** — all business logic and I/O; pages should call services, not Firestore/SQLite directly. Notable groupings:
   - *Local/cloud data*: `database_helper.dart` (sqflite; use FFI on Windows; use `rawQuery()` for PRAGMA statements — `db.execute()` doesn't work for those), `firestore_service.dart`, `sync_service.dart`, `background_download_service.dart`, `data_repository.dart`.
-  - *External card/price APIs*: `scryfall_service.dart` (Magic), `cardtrader_service.dart` (reads cached CardTrader prices for the card UI; price *syncing* now runs server-side in `deck-master-web`), `price_alert_service.dart`. Scryfall and similar requests must always send a `User-Agent` header.
+  - *External card/price APIs*: `scryfall_service.dart` (Magic), `cardtrader_service.dart` (reads cached CardTrader prices for the card UI; price *syncing* runs server-side — Cloud Run Job `price-sync` on a schedule, plus a manual endpoint in `deck-master-web`), `price_alert_service.dart`. Scryfall and similar requests must always send a `User-Agent` header.
   - *Auth*: `auth_service.dart` (Google/Facebook/Apple/Email, platform-aware via `PlatformHelper`), `user_service.dart`.
   - *Monetization*: `ad_service.dart` (Google Mobile Ads — init is deferred ~3s after splash to avoid frame stalls), `revenue_cat_service.dart` (IAP/subscriptions).
   - *AI*: `claude_service.dart` (Anthropic API, used by the AI Deck Builder page).
@@ -142,13 +143,17 @@ For bug fixes and new logic in `lib/services/`, `lib/models/`, and `lib/utils/`,
 
 ## Project Skills (`.claude/skills/`)
 These are invocable with `/<name>` and encode the recurring workflows for this repo — prefer them over re-deriving the commands by hand:
-- `/flutter-build` — build a release artifact (`android`/`windows`/`web`), including the secrets preflight check and the Windows Inno Setup packaging step.
-- `/flutter-test` — run unit tests, the `integration_test/regression_suite.dart` regression suite, or a single test file.
-- `/price-sync` — run `scripts/price_sync` to sync CardTrader prices into Firestore for yugioh/pokemon/onepiece.
-- `/populate-catalog` — run `scripts/populate_firestore` to seed/rebuild a `*_catalog` collection from source card APIs.
+- `/flutter-build` — build a release artifact (`android`/`ios`/`windows`/`web`), including the secrets preflight (`app_secrets.dart`, `.env`, `dart_defines.json` for Windows), the Inno Setup packaging step, and what pushing to `main` triggers in CI.
+- `/flutter-test` — run the two CI test commands, the on-device `flutter drive` variant, or a single test file; explains how `test/regression_tests.dart` and `integration_test/regression_suite.dart` mirror each other.
+- `/price-sync` — run, redeploy, or debug the CardTrader price sync (local script, Cloud Run Job, dashboard endpoint).
+- `/populate-catalog` — rebuild or incrementally top up `yugioh_catalog` from YGOProDeck.
+- `/news-sync` — run or extend the daily news feed sync into `news_drafts`.
 - `/bump-app-version` — run `scripts/update_app_version` to publish a new version/update-prompt to `app_config/version`.
 
 Generic (non-project) skills worth reaching for here: `/run` to launch and visually verify the app after a UI change, `/code-review` before considering a non-trivial change done, `/security-review` before touching auth/Firestore rules/secrets handling.
+
+Vendored upstream skills (`firebase/agent-skills`, `flutter/skills`) are managed with `npx skills add/update/remove` and tracked in `skills-lock.json` — don't hand-edit them, or the next `skills update` will clobber the change.
+**Caveat on `firebase-auth-basics`:** it tells you to declare an `auth` block in `firebase.json` and run `firebase deploy --only auth`. Don't. This project has no `auth` block — providers (Google, Facebook, Apple, Email) are configured in the Firebase Console, and Facebook/Apple can't be expressed via the CLI at all, so deploying a generated block would push a provider config that omits them. Use the skill for client-SDK and rules guidance only.
 
 ## Workflow Rules
 - **Crash investigation:** before suggesting any code change, trace the full data flow first — every call site, data sizes involved, concurrency model — and report findings before proposing fixes.
