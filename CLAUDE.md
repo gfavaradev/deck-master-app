@@ -100,6 +100,12 @@ Catalog browsing loads in 100-card pages with an 80%-scroll prefetch threshold, 
 - Inno Setup (or equivalent) must be installed before the Windows packaging step — verify it exists before starting a Windows build.
 - Be aware of OneDrive Files-On-Demand virtualization issues with large files — keep large assets/models outside OneDrive-synced folders.
 
+## iOS Gotchas
+- **CI non copre iOS** (`release.yml` ha solo la lane Android): una `main` verde non dice nulla sulla build iOS. Verificare a mano dopo ogni bump di dipendenze native.
+- `CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES = YES` è impostato sia nel `post_install` del `Podfile` sia nei tre `ios/Flutter/*.xcconfig`. **Serve in entrambi i posti**: il `post_install` itera solo `installer.pods_project.targets` e non tocca il target Runner, con cui il modulo viene comunque validato. Non rimuoverne uno solo "perché è duplicato".
+- Il motivo è `google_mobile_ads` 9.1.0, che importa `<GoogleMobileAds/GoogleMobileAds_Beta.h>`: in Google-Mobile-Ads-SDK 13.8.0 quell'header è in `PrivateHeaders/`, fuori dal module map. Il podspec ammette `~> 13.7`, quindi la minor incompatibile entra da sola.
+- La prima build iOS da pulito richiede ~20 minuti (pod install + compilazione completa); `flutter run` rigenera `project.pbxproj` e `Runner.xcscheme` con modifiche cosmetiche, è normale.
+
 ## Android/Flutter Conventions & Gotchas
 - Never change signing config from release to debug — Google Sign-In requires release signing.
 - Firestore: avoid parallel downloads and oversized collection queries (causes Android heap OOM); batch/sequence reads to prevent UI freezing and OOM crashes.
