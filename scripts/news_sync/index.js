@@ -6,8 +6,9 @@
  *   2. Normalizza in {title, body, externalUrl, imageUrl, publishedAt, collections, source, kind}
  *   3. Salta gli item già presenti (dedup su externalUrl, sia in `news` che in `news_drafts`)
  *   4. Scrive i nuovi item in `news_drafts` con status "pending" — la pubblicazione
- *      verso `news` (visibile agli utenti) richiede approvazione admin dalla pagina
- *      "Gestione News" (lib/pages/admin_news_page.dart)
+ *      verso `news` (visibile agli utenti) richiede approvazione admin dalla
+ *      dashboard esterna `deck-master-web` (/admin → Gestione News); l'app Flutter
+ *      non ha più pagine di amministrazione.
  *
  * Setup:
  *   1. Metti serviceAccountKey.json in questa cartella
