@@ -31,8 +31,25 @@ jobs:
         run: flutter pub get
 
       # app_secrets.dart is required by lib/ even for test compilation.
+      # Preflight esplicito: un secret assente o non-base64 qui fallirebbe con un
+      # messaggio incomprensibile di `base64`, quindi lo diagnostichiamo noi.
       - name: Restore app_secrets.dart
-        run: echo "${{ secrets.APP_SECRETS_DART_BASE64 }}" | base64 --decode > lib/config/app_secrets.dart
+        env:
+          APP_SECRETS_DART_BASE64: ${{ secrets.APP_SECRETS_DART_BASE64 }}
+        run: |
+          if [ -z "$APP_SECRETS_DART_BASE64" ]; then
+            echo "::error::Secret APP_SECRETS_DART_BASE64 assente o vuoto. Crealo con: base64 -i lib/config/app_secrets.dart | pbcopy"
+            exit 1
+          fi
+          if ! printf '%s' "$APP_SECRETS_DART_BASE64" | base64 --decode > lib/config/app_secrets.dart 2>/dev/null; then
+            echo "::error::APP_SECRETS_DART_BASE64 non contiene base64 valido (va incollato il risultato di base64, non il file in chiaro)."
+            exit 1
+          fi
+          if ! grep -q 'class\|const' lib/config/app_secrets.dart; then
+            echo "::error::app_secrets.dart decodificato ma non sembra codice Dart valido."
+            exit 1
+          fi
+          echo "app_secrets.dart ripristinato ($(wc -c < lib/config/app_secrets.dart) byte)"
 
       - name: Run unit tests
         run: flutter test test/ --no-pub --reporter=github
@@ -72,6 +89,33 @@ jobs:
       # 4. Installa dipendenze
       - name: Flutter pub get
         run: flutter pub get
+
+      # 4b. Preflight: verifica in un colpo solo TUTTI i secret usati piu' avanti,
+      #     cosi' un secret mancante si scopre subito e tutti insieme, invece di
+      #     un push per volta. Non stampa mai i valori.
+      - name: Check required secrets
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          PLAY_STORE_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          missing=""
+          for name in GOOGLE_SERVICES_JSON_BASE64 KEYSTORE_BASE64 KEYSTORE_PASSWORD \
+                      KEY_PASSWORD KEY_ALIAS PLAY_STORE_SERVICE_ACCOUNT_JSON; do
+            eval "val=\${$name}"
+            if [ -z "$val" ]; then
+              missing="$missing $name"
+            else
+              echo "  presente: $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Secret mancanti o vuoti:$missing"
+            exit 1
+          fi
 
       # 5. Ricrea google-services.json dal secret
       - name: Restore google-services.json
