@@ -33,6 +33,10 @@ jobs:
       # app_secrets.dart is required by lib/ even for test compilation.
       # Preflight esplicito: un secret assente o non-base64 qui fallirebbe con un
       # messaggio incomprensibile di `base64`, quindi lo diagnostichiamo noi.
+      # `lib/config/` non esiste dopo il checkout: app_secrets.dart e' l'unico file
+      # della cartella ed e' gitignored, quindi git non traccia la directory. Senza
+      # il mkdir la redirezione fallisce con "No such file or directory" e sembra,
+      # a torto, un problema di codifica del secret.
       - name: Restore app_secrets.dart
         env:
           APP_SECRETS_DART_BASE64: ${{ secrets.APP_SECRETS_DART_BASE64 }}
@@ -41,7 +45,8 @@ jobs:
             echo "::error::Secret APP_SECRETS_DART_BASE64 assente o vuoto. Crealo con: base64 -i lib/config/app_secrets.dart | pbcopy"
             exit 1
           fi
-          if ! printf '%s' "$APP_SECRETS_DART_BASE64" | base64 --decode > lib/config/app_secrets.dart 2>/dev/null; then
+          mkdir -p lib/config
+          if ! printf '%s' "$APP_SECRETS_DART_BASE64" | base64 --decode > lib/config/app_secrets.dart; then
             echo "::error::APP_SECRETS_DART_BASE64 non contiene base64 valido (va incollato il risultato di base64, non il file in chiaro)."
             exit 1
           fi
@@ -95,6 +100,7 @@ jobs:
       #     un push per volta. Non stampa mai i valori.
       - name: Check required secrets
         env:
+          APP_SECRETS_DART_BASE64: ${{ secrets.APP_SECRETS_DART_BASE64 }}
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -103,8 +109,9 @@ jobs:
           PLAY_STORE_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
         run: |
           missing=""
-          for name in GOOGLE_SERVICES_JSON_BASE64 KEYSTORE_BASE64 KEYSTORE_PASSWORD \
-                      KEY_PASSWORD KEY_ALIAS PLAY_STORE_SERVICE_ACCOUNT_JSON; do
+          for name in APP_SECRETS_DART_BASE64 GOOGLE_SERVICES_JSON_BASE64 KEYSTORE_BASE64 \
+                      KEYSTORE_PASSWORD KEY_PASSWORD KEY_ALIAS \
+                      PLAY_STORE_SERVICE_ACCOUNT_JSON; do
             eval "val=\${$name}"
             if [ -z "$val" ]; then
               missing="$missing $name"
@@ -116,6 +123,17 @@ jobs:
             echo "::error::Secret mancanti o vuoti:$missing"
             exit 1
           fi
+
+      # 4c. Ricrea app_secrets.dart: e' importato da lib/services/ (claude_service,
+      #     card_scanner_service, backblaze_service), quindi senza questo step
+      #     `flutter build appbundle` non compila. Vale anche qui il mkdir: la
+      #     cartella lib/config/ non esiste dopo il checkout.
+      - name: Restore app_secrets.dart
+        env:
+          APP_SECRETS_DART_BASE64: ${{ secrets.APP_SECRETS_DART_BASE64 }}
+        run: |
+          mkdir -p lib/config
+          printf '%s' "$APP_SECRETS_DART_BASE64" | base64 --decode > lib/config/app_secrets.dart
 
       # 5. Ricrea google-services.json dal secret
       - name: Restore google-services.json
