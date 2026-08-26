@@ -49,7 +49,10 @@ build_installer.bat                      # Windows: builds + packages via Inno S
 ```
 CI (`.github/workflows/release.yml`) runs `flutter test test/` first, then restores secrets (`google-services.json`, keystore, `key.properties`, `.env` from base64 GitHub secrets), builds the App Bundle with `--build-number=${{ github.run_number }}`, and uploads to the Play Store internal track.
 
-> Il workflow **non ha mai funzionato** fino al 25/08/2026: 0 successi su 107 run. Un `if: ${{ secrets.X != '' }}` (contesto `secrets` vietato nelle condizioni) faceva fallire ogni run in avvio, senza eseguire un solo job — quindi nessun caricamento sul Play Store è mai partito dalla CI. Corretto passando dal contesto `env`. Non reintrodurre `secrets` dentro un `if:`.
+> Il workflow **non ha mai funzionato** fino al 25/08/2026: 0 successi su 107 run. Il primo upload riuscito sul track `internal` è del 25/08/2026 (run 32869252332). Tre cause distinte, tutte da non reintrodurre:
+> 1. Un `if: ${{ secrets.X != '' }}` (contesto `secrets` vietato nelle condizioni) faceva fallire ogni run in avvio, senza eseguire un solo job. Corretto passando dal contesto `env`. Non usare `secrets` dentro un `if:`.
+> 2. **Nessuno degli 8 secret era configurato sul repo** (`gh secret list` vuoto). Popolati dai file locali; se la CI ricomincia a fallire in avvio, ricontrollare prima questo.
+> 3. `lib/config/` non esiste dopo il checkout — `app_secrets.dart` è l'unico file della cartella ed è gitignored, quindi git non traccia la directory. Serve `mkdir -p lib/config` prima di ogni `base64 --decode > lib/config/app_secrets.dart`, in **entrambi** i job. Senza, la redirezione falliva con "No such file or directory" e (con `2>/dev/null`) il run accusava a torto il secret di non essere base64 valido. Il job di build inoltre non ripristinava affatto `app_secrets.dart`, pur essendo importato da `claude_service`/`card_scanner_service`/`backblaze_service`.
 
 > La CI **non** può eseguire `flutter test integration_test/...`: quel comando richiede un device connesso e ubuntu-latest non ne ha. La copertura delle sei classi di crash arriva comunque da `flutter test test/`, perché `test/regression_tests.dart` ri-esporta le stesse suite come widget test.
 
@@ -113,6 +116,8 @@ Catalog browsing loads in 100-card pages with an 80%-scroll prefetch threshold, 
 ## Android/Flutter Conventions & Gotchas
 - Never change signing config from release to debug — Google Sign-In requires release signing.
 - Firestore: avoid parallel downloads and oversized collection queries (causes Android heap OOM); batch/sequence reads to prevent UI freezing and OOM crashes.
+- **Mai una `.get()` singola su una collection che cresce.** Il plugin Firestore serializza l'intero QuerySnapshot in **un solo** messaggio del platform channel: `ByteArrayOutputStream` raddoppia il buffer finché non arriva `java.lang.OutOfMemoryError`, che uccide il processo e **non è catturabile da Dart** (`catch (_)` non lo vede: è un Error della JVM su un thread del plugin). Ha fatto crashare in loop tutta la produzione sulla 1.3.9 vc113 via `fetchCardtraderPriceRows`, con `cardtrader_prices/yugioh/chunks` a 626 chunk / ~250.400 righe / ~69 MB. Usare sempre lo streaming a batch: `streamCatalog()` per i cataloghi, `streamCardtraderPriceRows()` per i prezzi. Gli id dei chunk sono deterministici (offset numerico) e il conteggio sta nel doc padre, quindi non serve elencare la collection.
+- Attenzione ai crash che non si auto-risolvono: in `SyncService.syncOne()` il timestamp locale si scrive **dopo** il download, quindi un crash durante il fetch fa ritentare all'avvio successivo, all'infinito. Quando aggiungi un passo di sync, chiediti cosa succede se fallisce a metà.
 - `DropdownButtonFormField` with `initialValue`/`value` is unreliable — use a controlled `DropdownButton` with an explicit state variable instead.
 - Use `SizedBox(height: N)` for vertical spacing, never a bare `height(N)`.
 - Verify third-party package import paths (e.g. `flutter_markdown_plus`) against the installed package's actual export path before use — wrong paths cause silent compile failures.
@@ -137,7 +142,7 @@ Configured for Claude Code in this project (`.mcp.json`, project-scoped, plus on
 | `playwright` (`@playwright/mcp`) | project | Browser automation for the web build/companion site (`site/`, Flutter Web output) — use for verifying frontend changes that can't be checked with `flutter analyze`/unit tests alone. |
 | `git` (`uvx mcp-server-git --repository <repo>`) | project | Structured git log/diff/blame/status tools as MCP calls rather than parsing raw `git` CLI output — useful for tracing history during the crash-investigation workflow below. |
 | `memory` (`@modelcontextprotocol/server-memory`) | project | A generic in-session knowledge-graph scratchpad for the MCP client — separate from Claude Code's own file-based auto-memory under `~/.claude/projects/.../memory/`; don't confuse the two. |
-| `github` (`https://api.githubcopilot.com/mcp/`) | local (private, not committed) | Issue/PR/CI access beyond what `gh`/git already cover. Requires OAuth login on first use in an interactive session — `gh` CLI itself is not installed on this machine, so prefer this MCP server or install `gh` for GitHub operations. |
+| `github` (`https://api.githubcopilot.com/mcp/`) | local (private, not committed) | Issue/PR/CI access beyond what `gh`/git already cover. Requires OAuth login on first use in an interactive session. Il `gh` CLI **è** installato e autenticato su questa macchina (account `gfavaradev`, scope `gist`/`read:org`/`repo`/`workflow`): per run, log, secret e PR è la via più diretta — `gh run list`, `gh run view --log-failed`, `gh secret list`. |
 
 Considered but not added: a Sourcegraph code-search MCP server (`sourcegraph-mcp-server`) — skipped because it needs a `SOURCEGRAPH_URL`/`SOURCEGRAPH_TOKEN` for a self-hosted or cloud instance that isn't in use here. Revisit if that changes.
 
