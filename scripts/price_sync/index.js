@@ -724,7 +724,7 @@ const SCRYFALL_HEADERS = {
  * in `cardtrader_prices/magic` con schema { api_id, price_eur, price_eur_foil }.
  *
  * Usa la stessa collection/chunk structure di saveCardtraderPrices() così
- * il client li legge con getCardtraderPricesSyncedAt / fetchCardtraderPriceRows.
+ * il client li legge con getCardtraderPricesSyncedAt / streamCardtraderPriceRows.
  */
 async function syncMagicPrices() {
   console.log(`\n${"─".repeat(60)}`);

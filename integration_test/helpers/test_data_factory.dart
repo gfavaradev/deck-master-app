@@ -42,6 +42,42 @@ class TestDataFactory {
     }
   }
 
+  /// Seeds `cardtrader_prices/{catalog}` with [chunks] chunk documents of
+  /// [rowsPerChunk] price rows each, mirroring the layout written by
+  /// `FirestoreService.saveCardtraderPrices()` and `scripts/price_sync`:
+  /// chunk doc ids are the numeric row offset (`'0'`, `'400'`, …) and the
+  /// parent doc carries `count` = total rows.
+  static Future<void> seedCardtraderPriceChunks(
+    FakeFirebaseFirestore firestore, {
+    String catalog = 'yugioh',
+    int chunks = 40,
+    int rowsPerChunk = 400,
+  }) async {
+    final ref = firestore.collection('cardtrader_prices').doc(catalog);
+    for (int c = 0; c < chunks; c++) {
+      final start = c * rowsPerChunk;
+      await ref.collection('chunks').doc('$start').set({
+        'rows': [
+          for (int i = 0; i < rowsPerChunk; i++)
+            {
+              'blueprint_id': start + i,
+              'language': 'en',
+              'first_edition': 0,
+              'rarity': 'Common',
+              'min_price_nm_cents': 100 + ((start + i) % 500),
+              'listing_count': 3,
+              'synced_at': '2026-08-26T03:00:00.000Z',
+            },
+        ],
+      });
+    }
+    await ref.set({
+      'catalog': catalog,
+      'count': chunks * rowsPerChunk,
+      'syncedAt': DateTime.utc(2026, 8, 26, 3),
+    });
+  }
+
   /// Seeds [count] album documents.
   static Future<void> seedUserAlbums(
     FakeFirebaseFirestore firestore, {

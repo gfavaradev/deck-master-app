@@ -352,13 +352,21 @@ class SyncService {
         final localSyncedAt = localStr != null ? DateTime.tryParse(localStr) : null;
         if (localSyncedAt != null && !remoteSyncedAt.isAfter(localSyncedAt)) return;
 
-        // 3. Scarica righe prezzi e inserisci in SQLite
-        final rows = await _firestoreService
-            .fetchCardtraderPriceRows(catalog)
-            .timeout(const Duration(minutes: 3));
-        if (rows.isEmpty) return;
-
-        await _dbHelper.upsertCardtraderPrices(rows);
+        // 3. Scarica righe prezzi e inseriscile in SQLite a batch.
+        //    NON usare una .get() unica sulla collection chunks: yugioh e' a
+        //    626 chunk / ~250.400 righe / ~69 MB e il codec del platform
+        //    channel andava in OutOfMemoryError (crash della 1.3.9 vc113).
+        //    Lo streaming tiene la memoria costante: ogni batch viene scritto
+        //    e liberato prima del successivo.
+        var fetched = 0;
+        await _firestoreService.streamCardtraderPriceRows(
+          catalog,
+          onBatch: (rows) async {
+            fetched += rows.length;
+            await _dbHelper.upsertCardtraderPrices(rows);
+          },
+        );
+        if (fetched == 0) return;
 
         // 4. Applica i prezzi alle tabelle di stampa e aggiorna il valore
         //    delle carte in collezione
@@ -389,12 +397,16 @@ class SyncService {
           return;
         }
 
-        final rows = await _firestoreService
-            .fetchCardtraderPriceRows('magic')
-            .timeout(const Duration(minutes: 3));
-        if (rows.isEmpty) return;
-
-        await _dbHelper.applyMagicPricesFromFirestore(rows);
+        // Stesso streaming a batch del percorso CT: vedi syncOne().
+        var fetched = 0;
+        await _firestoreService.streamCardtraderPriceRows(
+          'magic',
+          onBatch: (rows) async {
+            fetched += rows.length;
+            await _dbHelper.applyMagicPricesFromFirestore(rows);
+          },
+        );
+        if (fetched == 0) return;
         await prefs.setString(localKey, remoteSyncedAt.toIso8601String());
         _remoteChangeController.add('cards');
       } catch (_) {}

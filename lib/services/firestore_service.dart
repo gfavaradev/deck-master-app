@@ -695,20 +695,80 @@ class FirestoreService {
     }
   }
 
-  /// Downloads all raw price rows from cardtrader_prices/{catalog}/chunks.
-  /// Each row has the same schema as the local cardtrader_prices SQLite table.
-  Future<List<Map<String, dynamic>>> fetchCardtraderPriceRows(String catalog) async {
+  /// Streams raw price rows from `cardtrader_prices/{catalog}/chunks` a few
+  /// chunks at a time, calling [onBatch] for each batch so it can be written to
+  /// SQLite and freed. Each row has the same schema as the local
+  /// cardtrader_prices SQLite table.
+  ///
+  /// Never load this collection with a single `.get()`. Doing so made every
+  /// production install crash on 1.3.9 (vc113): the Firestore plugin encodes
+  /// the whole QuerySnapshot into ONE platform-channel message, so
+  /// `ByteArrayOutputStream.grow` doubled its buffer until
+  /// `java.lang.OutOfMemoryError` killed the process. yugioh alone is 626
+  /// chunks / ~250 400 rows / ~69 MB, and grows daily — see
+  /// `integration_test/crashes/firestore_oom_test.dart`.
+  ///
+  /// Chunk ids are the numeric row offset (`'0'`, `'400'`, …) and the parent
+  /// doc carries `count` = total rows, written identically by
+  /// [saveCardtraderPrices] and by `scripts/price_sync/index.js`. That makes
+  /// ids derivable without listing the collection, exactly as [streamCatalog]
+  /// derives them from `totalChunks`.
+  Future<void> streamCardtraderPriceRows(
+    String catalog, {
+    required Future<void> Function(List<Map<String, dynamic>> rows) onBatch,
+    int chunksPerBatch = 5,
+  }) async {
     final ref = _firestore.collection('cardtrader_prices').doc(catalog);
-    final chunks = await ref.collection('chunks').get();
+    final meta = await ref.get().timeout(const Duration(seconds: 8));
+    final count = (meta.data()?['count'] as num?)?.toInt() ?? 0;
+    if (count <= 0) return;
+
+    final step = _ctChunkSize * chunksPerBatch;
+    for (int start = 0; start < count; start += step) {
+      // Fetched in a separate method so the DocumentSnapshot objects go out of
+      // scope (and become GC-eligible) before onBatch runs the SQLite insert.
+      // Retry once on a timeout/network hiccup before giving up on the batch.
+      List<Map<String, dynamic>> rows;
+      try {
+        rows = await _fetchPriceChunkRows(ref, start, count, chunksPerBatch);
+      } on TimeoutException {
+        await Future.delayed(const Duration(seconds: 2));
+        rows = await _fetchPriceChunkRows(ref, start, count, chunksPerBatch);
+      }
+      if (rows.isNotEmpty) await onBatch(rows);
+      // Yield to the event loop so the GC can collect between batches and the
+      // UI thread stays responsive during the download.
+      await Future.delayed(Duration.zero);
+    }
+  }
+
+  /// Fetches up to [chunksPerBatch] price chunks starting at row offset [start]
+  /// and returns only plain row maps. Kept in its own stack frame so the
+  /// DocumentSnapshot objects are released before the caller's onBatch runs.
+  Future<List<Map<String, dynamic>>> _fetchPriceChunkRows(
+    DocumentReference<Map<String, dynamic>> ref,
+    int start,
+    int count,
+    int chunksPerBatch,
+  ) async {
+    final futures = <Future<DocumentSnapshot<Map<String, dynamic>>>>[];
+    for (int i = 0; i < chunksPerBatch; i++) {
+      final offset = start + i * _ctChunkSize;
+      if (offset >= count) break;
+      futures.add(ref.collection('chunks').doc('$offset').get());
+    }
+    final docs =
+        await Future.wait(futures).timeout(const Duration(seconds: 30));
     final rows = <Map<String, dynamic>>[];
-    for (final doc in chunks.docs) {
-      final rawRows = doc.data()['rows'] as List<dynamic>?;
+    for (final doc in docs) {
+      final rawRows = doc.data()?['rows'] as List<dynamic>?;
       if (rawRows == null) continue;
       for (final r in rawRows) {
         if (r is Map) rows.add(Map<String, dynamic>.from(r));
       }
     }
     return rows;
+    // docs goes out of scope here -> DocumentSnapshot objects eligible for GC
   }
 
   /// Returns syncedAt + modifiedChunks from the catalog metadata,
