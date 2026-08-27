@@ -19,11 +19,10 @@
 -dontwarn com.google.android.play.core.tasks.OnSuccessListener
 -dontwarn com.google.android.play.core.tasks.Task
 
-# RevenueCat / Amazon Appstore — le consumer rules di `purchases-store-amazon`
-# sono ignorate via `optimization.keepRules.ignoreFrom` in build.gradle.kts perché
-# contengono un `-dontoptimize` globale. Qui reimportiamo le due regole utili di
-# quel file: senza `-dontwarn` R8 fallisce sulle classi Amazon mancanti (l'app è
-# distribuita solo sul Play Store, il backend Amazon non viene mai istanziato).
+# RevenueCat / Amazon Appstore — build.gradle.kts ignora le consumer rules di
+# `purchases-store-amazon` (vedi lì il perché), quindi le reimportiamo qui: senza
+# `-dontwarn` R8 fallisce sulle classi Amazon mancanti. L'app è solo su Play, il
+# backend Amazon non viene mai istanziato.
 -dontwarn com.amazon.**
 -keep class com.amazon.** { *; }
 

@@ -11,10 +11,14 @@
     <!-- required="false": la fotocamera è opzionale — l'app funziona anche senza -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
-    <!-- Accesso foto per profilo utente (Android 13+) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    <!-- Accesso storage per dispositivi con Android < 13 -->
+    <!-- Niente READ_MEDIA_IMAGES/VIDEO: Play li rifiuta su target 33+ quando
+         bastano i picker di sistema, e qui bastano (ImageSource.camera + SAF). -->
+    <!-- Sotto Android 13; il cap a 32 lo tiene fuori da quella norma -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <!-- camera_android_camerax lo inietta, ma non registriamo video e il
+         CameraController usa enableAudio: false. Chiedere il microfono senza
+         usarlo spaventa gli utenti e attira controlli inutili da Play. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
 
     <application
         android:label="Deck Master"

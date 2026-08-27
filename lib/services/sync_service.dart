@@ -352,12 +352,9 @@ class SyncService {
         final localSyncedAt = localStr != null ? DateTime.tryParse(localStr) : null;
         if (localSyncedAt != null && !remoteSyncedAt.isAfter(localSyncedAt)) return;
 
-        // 3. Scarica righe prezzi e inseriscile in SQLite a batch.
-        //    NON usare una .get() unica sulla collection chunks: yugioh e' a
-        //    626 chunk / ~250.400 righe / ~69 MB e il codec del platform
-        //    channel andava in OutOfMemoryError (crash della 1.3.9 vc113).
-        //    Lo streaming tiene la memoria costante: ogni batch viene scritto
-        //    e liberato prima del successivo.
+        // 3. Scarica le righe prezzi a batch. Mai una .get() unica sui chunk:
+        //    OOM garantito sopra il migliaio di righe — vedi
+        //    FirestoreService.streamCardtraderPriceRows().
         var fetched = 0;
         await _firestoreService.streamCardtraderPriceRows(
           catalog,
@@ -397,7 +394,7 @@ class SyncService {
           return;
         }
 
-        // Stesso streaming a batch del percorso CT: vedi syncOne().
+        // Stesso streaming a batch di syncOne().
         var fetched = 0;
         await _firestoreService.streamCardtraderPriceRows(
           'magic',

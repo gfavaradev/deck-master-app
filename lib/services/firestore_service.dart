@@ -696,23 +696,18 @@ class FirestoreService {
   }
 
   /// Streams raw price rows from `cardtrader_prices/{catalog}/chunks` a few
-  /// chunks at a time, calling [onBatch] for each batch so it can be written to
-  /// SQLite and freed. Each row has the same schema as the local
-  /// cardtrader_prices SQLite table.
+  /// chunks at a time, calling [onBatch] so each batch can be written to SQLite
+  /// and freed. Rows share the schema of the local cardtrader_prices table.
   ///
-  /// Never load this collection with a single `.get()`. Doing so made every
-  /// production install crash on 1.3.9 (vc113): the Firestore plugin encodes
-  /// the whole QuerySnapshot into ONE platform-channel message, so
-  /// `ByteArrayOutputStream.grow` doubled its buffer until
-  /// `java.lang.OutOfMemoryError` killed the process. yugioh alone is 626
-  /// chunks / ~250 400 rows / ~69 MB, and grows daily — see
+  /// Never load this collection with a single `.get()`: the plugin encodes the
+  /// whole QuerySnapshot into ONE platform-channel message, which killed every
+  /// production install on 1.3.9 with an OutOfMemoryError (yugioh: 626 chunks,
+  /// ~250 400 rows, ~69 MB, growing daily). See
   /// `integration_test/crashes/firestore_oom_test.dart`.
   ///
-  /// Chunk ids are the numeric row offset (`'0'`, `'400'`, …) and the parent
-  /// doc carries `count` = total rows, written identically by
-  /// [saveCardtraderPrices] and by `scripts/price_sync/index.js`. That makes
-  /// ids derivable without listing the collection, exactly as [streamCatalog]
-  /// derives them from `totalChunks`.
+  /// Chunk ids are the numeric row offset and the parent doc carries `count`,
+  /// written identically by [saveCardtraderPrices] and `scripts/price_sync`, so
+  /// ids are derivable without listing the collection.
   Future<void> streamCardtraderPriceRows(
     String catalog, {
     required Future<void> Function(List<Map<String, dynamic>> rows) onBatch,
