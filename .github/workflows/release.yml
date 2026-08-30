@@ -200,9 +200,20 @@ jobs:
           releaseFiles: build/app/outputs/bundle/release/app-release.aab
           tracks: internal
           status: completed
-          # Con una segnalazione di policy aperta l'API non puo' inviare da sola
-          # le modifiche in revisione e l'edit viene annullata al commit
-          # ("Changes cannot be sent for review automatically"), come successo
-          # al run 116. Con questo flag la release viene committata e va poi
-          # inviata in revisione a mano dalla Play Console.
-          changesNotSentForReview: true
+          # `changesNotSentForReview` NON va impostato qui, ma il valore giusto
+          # dipende dallo stato dell'app su Play e si inverte nel tempo. Sono
+          # due errori speculari, entrambi al commit dell'edit, entrambi visti
+          # su questo repo:
+          #
+          #   - senza il flag, con una segnalazione di policy aperta:
+          #     "Changes cannot be sent for review automatically" (run 116, la
+          #     vc116 non arrivo' mai su Play);
+          #   - con il flag, a segnalazione risolta:
+          #     "Changes are sent for review automatically. The query parameter
+          #     changesNotSentForReview must not be set" (run 33308280466).
+          #
+          # Il flag era stato aggiunto per il primo caso ed e' passato il
+          # 27/08; risolta la segnalazione sui permessi foto (638ed46), Play e'
+          # tornato a inviare da solo e lo stesso flag ha rotto il commit.
+          # Se ricompare il primo errore, rimettere `changesNotSentForReview:
+          # true` e inviare poi la revisione a mano dalla Play Console.
