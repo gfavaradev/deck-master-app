@@ -38,7 +38,19 @@ initializeApp();
 // della costante _kFunctionsRegion in lib/services/billing_service.dart: un
 // mismatch qui si manifesta come "not-found" sulla callable, che è un sintomo
 // che non fa pensare alla regione.
-setGlobalOptions({ region: "europe-west1", maxInstances: 10 });
+//
+// Service account dedicato, non quello di Compute predefinito. Questo è il SA
+// che va autorizzato in Play Console per la Developer API (play-api.ts usa le
+// credenziali di default del runtime): col SA predefinito, l'accesso ai dati
+// finanziari del Play Console sarebbe stato ereditato da ogni altro servizio
+// del progetto che gira con la stessa identità, a partire dal Job Cloud Run
+// price-sync. Deve esistere, con `actAs` per chi fa il deploy, prima del
+// primo deploy che lo referenzia.
+setGlobalOptions({
+  region: "europe-west1",
+  maxInstances: 10,
+  serviceAccount: "play-billing@deck-master-1a35a.iam.gserviceaccount.com",
+});
 
 /// Topic Pub/Sub configurato in Play Console → Monetizzazione → Notifiche
 /// per sviluppatori in tempo reale.
