@@ -74,17 +74,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-
-            // `purchases-store-amazon` <= 10.14.1 pubblicava un `-dontoptimize`
-            // nelle sue consumer rules: direttiva globale, spegneva le ottimizzazioni
-            // R8 per TUTTA l'app. La 10.16.0 l'ha tolto, quindi oggi questo blocco è
-            // un presidio contro un downgrade, non un fix attivo. Le keep rules utili
-            // sono reimportate a mano in proguard-rules.pro.
-            optimization {
-                keepRules {
-                    ignoreFrom("com.revenuecat.purchases:purchases-store-amazon")
-                }
-            }
         }
         debug {
             // uses default debug signing

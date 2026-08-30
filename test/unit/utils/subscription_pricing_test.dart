@@ -40,42 +40,4 @@ void main() {
       expect(savingsPercent(monthlyPrice: 0, planPrice: 34.99, months: 12), 0);
     });
   });
-
-  group('matchesProductId', () {
-    test('accetta l\'identificatore nudo', () {
-      expect(
-        matchesProductId('deck_master_pro_annual', 'deck_master_pro_annual'),
-        isTrue,
-      );
-    });
-
-    test('accetta il formato Google Play <subscriptionId>:<basePlanId>', () {
-      // Play espone gli abbonamenti con il piano base appeso dopo i due punti.
-      expect(
-        matchesProductId(
-          'deck_master_pro_annual:annual-autorenewing',
-          'deck_master_pro_annual',
-        ),
-        isTrue,
-      );
-    });
-
-    test('rifiuta un prodotto diverso', () {
-      expect(
-        matchesProductId(
-          'deck_master_pro_monthly:mensile',
-          'deck_master_pro_annual',
-        ),
-        isFalse,
-      );
-    });
-
-    test('non si accontenta di un prefisso parziale', () {
-      // Senza lo split sui due punti, uno startsWith ingenuo direbbe di sì.
-      expect(
-        matchesProductId('deck_master_pro_monthly', 'deck_master_pro_month'),
-        isFalse,
-      );
-    });
-  });
 }

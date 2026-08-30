@@ -1,9 +1,10 @@
 import '../l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import '../services/billing_service.dart';
 import '../services/subscription_service.dart';
-import '../services/revenue_cat_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/subscription_pricing.dart';
 
@@ -19,18 +20,21 @@ class ProPage extends StatefulWidget {
 class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   _Plan _selectedPlan = _Plan.annual;
   bool _isPurchasing = false;
-  Offerings? _offerings;
+
+  /// Ricaricata a ogni `loadProducts`: il paywall la usa solo per ridisegnarsi
+  /// quando i prezzi reali arrivano. Le offerte vivono in [BillingService].
+  bool _productsLoaded = false;
   late AnimationController _shimmerController;
   late final Future<bool> _proStatusFuture;
 
   // ─── Prezzi ───────────────────────────────────────────────────────────────
   //
-  // I prezzi mostrati vengono dal negozio (StoreProduct.priceString), già
+  // I prezzi mostrati vengono dal negozio (ProductDetails.price), già
   // localizzati nella valuta del paese dell'utente, e le percentuali di
   // risparmio sono calcolate sui prezzi reali. Le costanti qui sotto sono solo
   // un listino di riserva in euro, usato finché le offerte non sono
-  // disponibili: RevenueCat non ancora inizializzato, dispositivo offline, o
-  // prodotti non ancora propagati dagli store.
+  // disponibili: piattaforma senza billing (Windows/Web), dispositivo offline,
+  // o prodotti non ancora propagati da Play.
   //
   // Vanno tenute allineate a Play Console e App Store Connect.
   static const double _fallbackMonthly    = 4.99;
@@ -45,12 +49,12 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
-    _loadOfferings();
+    _loadProducts();
   }
 
-  Future<void> _loadOfferings() async {
-    final offerings = await RevenueCatService().getOfferings();
-    if (mounted) setState(() => _offerings = offerings);
+  Future<void> _loadProducts() async {
+    await BillingService().loadProducts();
+    if (mounted) setState(() => _productsLoaded = true);
   }
 
   static int _monthsOf(_Plan plan) => switch (plan) {
@@ -71,32 +75,23 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
     _Plan.annual     => _fallbackAnnual,
   };
 
-  /// Package del negozio corrispondente a [plan], `null` se non c'è.
+  /// Offerta del negozio corrispondente a [plan], `null` se non c'è.
   ///
-  /// Il confronto passa da [matchesProductId] perché Google Play espone gli
-  /// abbonamenti come `<subscriptionId>:<basePlanId>`: un `==` secco non
-  /// troverebbe mai nulla.
-  Package? _packageFor(_Plan plan) {
-    final packages = _offerings?.current?.availablePackages;
-    if (packages == null || packages.isEmpty) return null;
-    final id = _productIdOf(plan);
-    for (final package in packages) {
-      if (matchesProductId(package.storeProduct.identifier, id)) return package;
-    }
-    return null;
-  }
+  /// La selezione fra i base plan dello stesso abbonamento la fa
+  /// [BillingService.productFor]: qui il piano è già scelto.
+  ProductDetails? _productFor(_Plan plan) =>
+      BillingService().productFor(_productIdOf(plan));
 
   /// Prezzi da mostrare per [plan]: dal negozio quando disponibili, altrimenti
   /// dal listino di riserva in euro.
   _PlanPrices _pricesFor(_Plan plan) {
     final months = _monthsOf(plan);
-    final product = _packageFor(plan)?.storeProduct;
-    final monthlyPrice =
-        _packageFor(_Plan.monthly)?.storeProduct.price ?? _fallbackMonthly;
-    final price = product?.price ?? _fallbackPriceOf(plan);
+    final product = _productFor(plan);
+    final monthlyPrice = _productFor(_Plan.monthly)?.rawPrice ?? _fallbackMonthly;
+    final price = product?.rawPrice ?? _fallbackPriceOf(plan);
 
-    // Il totale usa priceString del negozio, già formattato con il separatore
-    // e il simbolo giusti per il paese. Gli importi derivati (al mese, prezzo
+    // Il totale usa il prezzo formattato dal negozio, già con il separatore e
+    // il simbolo giusti per il paese. Gli importi derivati (al mese, prezzo
     // barrato) li formattiamo noi nella stessa valuta.
     String money(double value) => product == null
         ? '€${value.toStringAsFixed(2)}'
@@ -111,7 +106,7 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           );
 
     return _PlanPrices(
-      price: product?.priceString ?? money(price),
+      price: product?.price ?? money(price),
       perMonth: money(price / months),
       savings: savings == 0 ? null : savings,
       // Barrato solo sull'annuale: quanto costerebbero 12 mesi di mensile.
@@ -120,44 +115,77 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   }
 
   Future<void> _onPurchaseTap() async {
-    // Nessun ripiego sul primo package disponibile: prima, quando il matching
+    // Nessun ripiego sul primo prodotto disponibile: prima, quando il matching
     // falliva, l'utente sceglieva l'annuale e ne comprava un altro.
-    final package = _packageFor(_selectedPlan);
+    final product = _productFor(_selectedPlan);
+    final l10n = AppLocalizations.of(context)!;
 
-    if (package == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.proNotAvailable)),
-      );
+    if (product == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.proNotAvailable)));
       return;
     }
 
     setState(() => _isPurchasing = true);
-    final success = await RevenueCatService().purchasePackage(package);
+    final outcome = await BillingService().purchase(product);
     if (!mounted) return;
     setState(() => _isPurchasing = false);
 
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context)!.proWelcomeMsg),
-          backgroundColor: AppColors.gold,
-        ),
-      );
-      Navigator.pop(context);
+    switch (outcome) {
+      case BillingOutcome.success:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.proWelcomeMsg),
+            backgroundColor: AppColors.gold,
+          ),
+        );
+        Navigator.pop(context);
+
+      case BillingOutcome.pending:
+        // Pagamento differito (es. contanti in cartoleria): l'utente non ha
+        // ancora il Pro e non deve credere di averlo, ma non è un errore.
+        _showInfo(l10n.proPurchasePending);
+
+      case BillingOutcome.verificationFailed:
+        // L'addebito può esserci stato: l'acquisto resta pendente e riparte da
+        // solo al prossimo avvio. Dirlo, invece di mostrare un errore secco.
+        _showInfo(l10n.proVerificationPending);
+
+      case BillingOutcome.cancelled:
+        break;
+
+      case BillingOutcome.unavailable:
+      case BillingOutcome.error:
+        _showInfo(l10n.proNotAvailable);
     }
   }
 
   Future<void> _onRestoreTap() async {
     setState(() => _isPurchasing = true);
-    final restored = await RevenueCatService().restorePurchases();
+    final restored = await BillingService().restore();
     if (!mounted) return;
     setState(() => _isPurchasing = false);
     final l10n = AppLocalizations.of(context)!;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(restored ? l10n.proPurchasesRestored : l10n.proNoPurchasesToRestore),
-      ),
+    _showInfo(
+      restored ? l10n.proPurchasesRestored : l10n.proNoPurchasesToRestore,
     );
+  }
+
+  /// Manda l'utente alla pagina Play da cui gestisce o disdice l'abbonamento.
+  /// La disdetta non avviene mai dentro l'app: l'abbonamento è fra l'utente e
+  /// Google.
+  Future<void> _openSubscriptionManagement() async {
+    final l10n = AppLocalizations.of(context)!;
+    final opened = await launchUrl(
+      BillingService().manageSubscriptionUri(),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) _showInfo(l10n.proManageSubscriptionFailed);
+  }
+
+  void _showInfo(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -355,13 +383,30 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
 
   Widget _buildCTA() {
     final l10n = AppLocalizations.of(context)!;
+
+    // Su Windows, Web e (per ora) iOS non c'è un negozio da cui comprare: il
+    // paywall resta visibile con il listino di riserva, ma senza pulsanti che
+    // non porterebbero da nessuna parte.
+    if (!BillingService.isSupportedPlatform) {
+      return Text(
+        l10n.proPlatformUnsupported,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: AppColors.textHint, fontSize: 13),
+      );
+    }
+
+    // Finché Play non ha risposto i prezzi a schermo sono quelli di riserva:
+    // lasciar premere significherebbe far comprare un piano a un prezzo che
+    // non è detto sia quello mostrato.
+    final canBuy = _productsLoaded && !_isPurchasing;
+
     return Column(
       children: [
         SizedBox(
           width: double.infinity,
           height: 54,
           child: FilledButton.icon(
-            onPressed: _isPurchasing ? null : _onPurchaseTap,
+            onPressed: canBuy ? _onPurchaseTap : null,
             icon: _isPurchasing
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
                 : const Icon(Icons.star, size: 20),
@@ -380,10 +425,27 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
         FutureBuilder<bool>(
           future: _proStatusFuture,
           builder: (context, snap) {
-            if (snap.data == true) {
-              return Text(l10n.proAlreadySubscribed, style: const TextStyle(color: AppColors.gold, fontSize: 13));
-            }
-            return const SizedBox.shrink();
+            if (snap.data != true) return const SizedBox.shrink();
+            // Prima qui c'era solo la scritta "sei già abbonato": un vicolo
+            // cieco per chi voleva cambiare piano o disdire.
+            return Column(
+              children: [
+                Text(
+                  l10n.proAlreadySubscribed,
+                  style: const TextStyle(color: AppColors.gold, fontSize: 13),
+                ),
+                if (BillingService.isSupportedPlatform)
+                  TextButton.icon(
+                    onPressed: _openSubscriptionManagement,
+                    icon: const Icon(Icons.open_in_new, size: 15),
+                    label: Text(l10n.proManageSubscription),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+              ],
+            );
           },
         ),
       ],
@@ -407,11 +469,13 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
           style: const TextStyle(color: AppColors.textHint, fontSize: 11),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 12),
-        TextButton(
-          onPressed: _isPurchasing ? null : _onRestoreTap,
-          child: Text(l10n.proRestorePurchases, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-        ),
+        if (BillingService.isSupportedPlatform) ...[
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: _isPurchasing ? null : _onRestoreTap,
+            child: Text(l10n.proRestorePurchases, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          ),
+        ],
       ],
     );
   }

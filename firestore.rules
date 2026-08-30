@@ -10,6 +10,32 @@ service cloud.firestore {
          request.auth.token.email == 'vivianaferreri98@gmail.com');
     }
 
+    // I campi dell'abbonamento Pro li scrive solo il backend (Cloud Functions
+    // verifyPurchase/playRtdn, via Admin SDK, che non passa da queste regole).
+    // Senza questo vincolo l'update del proprio profilo — permesso perché
+    // l'utente deve poter cambiare nome e foto — basterebbe a regalarsi il Pro.
+    // Il default è `null`, non `''`: UserModel.toFirestore() scrive i campi Pro
+    // valorizzati a null anziché ometterli, e con un default diverso da null
+    // la registrazione di ogni nuovo utente verrebbe rifiutata.
+    function proFieldsUnchanged() {
+      return request.resource.data.get('isPro', false)
+               == resource.data.get('isPro', false) &&
+             request.resource.data.get('proSource', null)
+               == resource.data.get('proSource', null) &&
+             request.resource.data.get('proExpiresAt', null)
+               == resource.data.get('proExpiresAt', null) &&
+             request.resource.data.get('proEventAtMs', 0)
+               == resource.data.get('proEventAtMs', 0);
+    }
+
+    // Un profilo appena creato non è mai già Pro.
+    function proFieldsAbsent() {
+      return request.resource.data.get('isPro', false) == false &&
+             request.resource.data.get('proSource', null) == null &&
+             request.resource.data.get('proExpiresAt', null) == null &&
+             request.resource.data.get('proEventAtMs', 0) == 0;
+    }
+
     // ── Core TCG catalogs ─────────────────────────────────────────────────────
 
     match /yugioh_catalog/{document=**} {
@@ -111,23 +137,35 @@ service cloud.firestore {
       allow read: if request.auth != null &&
         (request.auth.uid == userId || isAdmin());
 
-      // New users create own doc (cannot self-promote to admin)
+      // New users create own doc (cannot self-promote to admin, cannot self-grant Pro)
       allow create: if request.auth != null &&
         request.auth.uid == userId &&
-        request.resource.data.get('role', 'user') == 'user';
+        request.resource.data.get('role', 'user') == 'user' &&
+        proFieldsAbsent();
 
-      // Owner updates own profile (cannot change role); admins update anything
+      // Owner updates own profile (cannot change role né i campi Pro);
+      // admins update anything — la dashboard usa comunque l'Admin SDK, ma
+      // l'attivazione manuale da client resta possibile per loro.
       allow update: if request.auth != null && (
         isAdmin() ||
         (request.auth.uid == userId &&
-         request.resource.data.get('role', 'user') == resource.data.get('role', 'user'))
+         request.resource.data.get('role', 'user') == resource.data.get('role', 'user') &&
+         proFieldsUnchanged())
       );
 
       allow delete: if isAdmin();
     }
 
     // User sub-collections (collections, albums, cards, decks, wishlists)
-    match /users/{userId}/{document=**} {
+    //
+    // Il segmento {collection} è obbligatorio, non decorativo: in
+    // rules_version 2 un {document=**} da solo matcha anche ZERO segmenti,
+    // quindi `/users/{userId}/{document=**}` copriva pure `/users/{userId}`.
+    // Poiché basta una regola che consenta, quel write scavalcava sia il
+    // divieto di cambiare `role` sia quello sui campi Pro: chiunque poteva
+    // scriversi `role: "administrator"` e ottenere il Pro (UserModel.
+    // hasProAccess è vero per gli admin). Non rimuovere {collection}.
+    match /users/{userId}/{collection}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }

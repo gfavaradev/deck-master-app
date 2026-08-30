@@ -1343,6 +1343,31 @@ class AppLocalizationsIt extends AppLocalizations {
   String get proNoPurchasesToRestore => 'Nessun acquisto da ripristinare.';
 
   @override
+  String get proPurchasePending =>
+      'Pagamento in attesa di conferma da Google Play. Il Pro si attiva appena viene completato.';
+
+  @override
+  String get proVerificationPending =>
+      'Acquisto ricevuto ma non ancora verificato. Riproveremo al prossimo avvio: non ti verrà addebitato due volte.';
+
+  @override
+  String get proPlatformUnsupported =>
+      'Gli abbonamenti si acquistano dall\'app Android.';
+
+  @override
+  String get proManageSubscription => 'Gestisci abbonamento';
+
+  @override
+  String get proManageSubscriptionSubtitle =>
+      'Cambia piano o disdici su Google Play';
+
+  @override
+  String get proManageSubscriptionFailed => 'Impossibile aprire Google Play.';
+
+  @override
+  String get settingsSectionSubscription => 'Abbonamento';
+
+  @override
   String get proMonthlyLabel => 'Mensile';
 
   @override

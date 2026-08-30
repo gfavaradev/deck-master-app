@@ -26,15 +26,3 @@ int savingsPercent({
   final saving = (1 - perMonth / monthlyPrice) * 100;
   return saving <= 0 ? 0 : saving.floor();
 }
-
-/// Vero se [storeIdentifier] identifica il prodotto [productId].
-///
-/// Google Play espone gli abbonamenti nel formato
-/// `<subscriptionId>:<basePlanId>` (es. `deck_master_pro_annual:annuale`),
-/// mentre App Store Connect restituisce l'ID nudo. Il confronto va fatto sulla
-/// parte prima dei due punti: un `startsWith` farebbe combaciare per sbaglio
-/// prodotti con nomi che si sovrappongono.
-bool matchesProductId(String storeIdentifier, String productId) {
-  final base = storeIdentifier.split(':').first;
-  return base == productId;
-}

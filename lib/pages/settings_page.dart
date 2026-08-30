@@ -10,6 +10,7 @@ import '../services/export_service.dart';
 import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import '../services/data_repository.dart';
+import '../services/billing_service.dart' show BillingService;
 import '../services/subscription_service.dart' show SubscriptionService;
 import 'pro_page.dart';
 import '../models/collection_model.dart';
@@ -485,6 +486,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _buildUserSection(),
                   const SizedBox(height: 12),
                   _buildProSection(),
+                  _buildSubscriptionSection(),
                   _buildCatalogSection(),
                   const SizedBox(height: 12),
                   _buildCatalogRestoreSection(),
@@ -510,6 +512,52 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   // ─── Design helpers ──────────────────────────────────────────────────────────
+
+  /// Accesso alla gestione dell'abbonamento su Google Play.
+  ///
+  /// La policy Play pretende che dall'app ci sia "an easy-to-use, online
+  /// method to cancel the subscription": la disdetta avviene su Play, ma il
+  /// link per arrivarci deve stare qui.
+  ///
+  /// Visibile a tutti su Android, non solo a chi risulta Pro: in account hold,
+  /// in pausa o in periodo di tolleranza `isPro` è falso, ed è proprio in quei
+  /// casi che l'utente deve poter sistemare il pagamento o disdire.
+  Widget _buildSubscriptionSection() {
+    if (!BillingService.isSupportedPlatform) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context)!;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: _buildSectionCard(
+        title: l10n.settingsSectionSubscription,
+        icon: Icons.workspace_premium_outlined,
+        accentColor: AppColors.gold,
+        children: [
+          _buildTile(
+            icon: Icons.manage_accounts_outlined,
+            title: l10n.proManageSubscription,
+            subtitle: l10n.proManageSubscriptionSubtitle,
+            iconColor: AppColors.gold,
+            isLast: true,
+            trailing: const Icon(Icons.open_in_new, color: AppColors.textHint, size: 18),
+            onTap: _openSubscriptionManagement,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openSubscriptionManagement() async {
+    final l10n = AppLocalizations.of(context)!;
+    final opened = await launchUrl(
+      BillingService().manageSubscriptionUri(),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.proManageSubscriptionFailed)),
+      );
+    }
+  }
 
   Widget _buildSectionCard({
     required String title,

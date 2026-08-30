@@ -14,8 +14,9 @@ import 'firebase_options.dart';
 import 'services/app_preferences.dart';
 import 'services/background_download_service.dart';
 import 'services/notification_service.dart';
-import 'services/revenue_cat_service.dart';
+import 'services/billing_service.dart';
 import 'services/ad_service.dart';
+import 'services/startup_gate.dart';
 
 void main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -76,26 +77,30 @@ void main() async {
   await AppPreferences.init();
 
   // Avvia in background — non bloccano runApp, errori non critici ignorati.
-  // AdMob non blocca più runApp: lo splash mostra sempre l'intro booster (~7s)
-  // prima di qualsiasi pagina con banner, quindi MobileAds ha tempo di finire
-  // l'init senza la race condition che il blocking await preveniva in origine.
-  // Il caricamento dei moduli AdMob (Dynamite) è pesante sulla CPU: lo
-  // ritardiamo di qualche secondo per non sovrapporlo ai frame più "pesanti"
-  // dell'intro booster (caduta/strappo/apertura bustina), che altrimenti
-  // laggava proprio nei primi istanti.
-  // Il ritardo resta, ma non è più anche la garanzia di ordinamento: chi carica
-  // un annuncio attende AdService.initialize(), che logga e assorbe da sé i
-  // propri errori invece di scartarli in silenzio.
-  Future.delayed(const Duration(seconds: 3), () {
-    AdService.initialize();
+  // Nessuno di questi init parte subito: aspettano tutti la fine dell'intro
+  // animata dello splash (StartupGate). Un ritardo fisso di 3s per AdMob non
+  // bastava, perché con l'intro a ~7s finiva comunque dentro la fase di burst;
+  // il caricamento dei moduli AdMob (Dynamite) è pesante sulla CPU e faceva
+  // perdere frame proprio lì. Gli altri servizi partivano addirittura a t=0,
+  // sopra la caduta della bustina.
+  // Il ritardo non è una garanzia di ordinamento: chi carica un annuncio
+  // attende AdService.initialize(), che logga e assorbe da sé i propri errori
+  // invece di scartarli in silenzio.
+  StartupGate.introFinished.then((_) {
+    BackgroundDownloadService.initialize().catchError((_) {});
+    NotificationService().initialize().catchError((_) {});
+    // Play Billing va agganciato qui, non all'apertura del paywall: lo stream
+    // degli acquisti consegna anche quelli conclusi mentre l'app era chiusa, e
+    // a ogni login si ripescano gli acquisti rimasti senza acknowledge. Il
+    // paywall non è raggiungibile prima della fine dello splash, quindi
+    // aspettare il cancello non cambia nulla per questo caso.
+    BillingService().initialize().catchError((_) {});
+    // Mostra reminder catalogo se era stato posticipato nella sessione prima
+    NotificationService().checkAndShowPendingCatalogReminder().catchError((_) {});
+    // AdMob per ultimo e un po' staccato: è l'init più costoso e si sovrappone
+    // altrimenti alla transizione in dissolvenza verso MainLayout.
+    Future.delayed(const Duration(milliseconds: 800), AdService.initialize);
   });
-  BackgroundDownloadService.initialize().catchError((_) {});
-  NotificationService().initialize().catchError((_) {});
-  // Aggancia RevenueCat all'auth Firebase: si inizializza a ogni login usando
-  // l'UID come appUserID, e si scollega al logout.
-  RevenueCatService().attachToAuthChanges();
-  // Mostra reminder catalogo se era stato posticipato nella sessione precedente
-  NotificationService().checkAndShowPendingCatalogReminder().catchError((_) {});
 
   runApp(const MyApp());
 }

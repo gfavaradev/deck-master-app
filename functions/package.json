@@ -1,0 +1,29 @@
+{
+  "name": "deck-master-functions",
+  "description": "Cloud Functions per la verifica degli acquisti Google Play",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "npm run build && node --test --test-reporter=spec lib/play-events.test.js",
+    "lint": "tsc --noEmit",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "test:rules": "npm run build && firebase emulators:exec --only firestore --project demo-deck-master \"node --test --test-reporter=spec lib/rules-check.js\""
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0",
+    "firebase-functions": "^6.6.0",
+    "googleapis": "^160.0.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@types/node": "^22.10.0",
+    "firebase": "^12.18.0",
+    "typescript": "^5.9.0"
+  }
+}

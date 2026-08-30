@@ -2456,6 +2456,48 @@ abstract class AppLocalizations {
   /// **'Nessun acquisto da ripristinare.'**
   String get proNoPurchasesToRestore;
 
+  /// Deferred payment pending snackbar
+  ///
+  /// In it, this message translates to:
+  /// **'Pagamento in attesa di conferma da Google Play. Il Pro si attiva appena viene completato.'**
+  String get proPurchasePending;
+
+  /// Server verification failed, purchase will be retried
+  ///
+  /// In it, this message translates to:
+  /// **'Acquisto ricevuto ma non ancora verificato. Riproveremo al prossimo avvio: non ti verrà addebitato due volte.'**
+  String get proVerificationPending;
+
+  /// Shown instead of the buy button where in-app purchases are unavailable
+  ///
+  /// In it, this message translates to:
+  /// **'Gli abbonamenti si acquistano dall\'app Android.'**
+  String get proPlatformUnsupported;
+
+  /// Opens the Google Play subscription management page
+  ///
+  /// In it, this message translates to:
+  /// **'Gestisci abbonamento'**
+  String get proManageSubscription;
+
+  /// Subtitle for the manage subscription settings tile
+  ///
+  /// In it, this message translates to:
+  /// **'Cambia piano o disdici su Google Play'**
+  String get proManageSubscriptionSubtitle;
+
+  /// Shown when the Play subscriptions deep link cannot be opened
+  ///
+  /// In it, this message translates to:
+  /// **'Impossibile aprire Google Play.'**
+  String get proManageSubscriptionFailed;
+
+  /// Settings section title for subscription management
+  ///
+  /// In it, this message translates to:
+  /// **'Abbonamento'**
+  String get settingsSectionSubscription;
+
   /// Monthly plan label
   ///
   /// In it, this message translates to:
