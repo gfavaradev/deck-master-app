@@ -43,16 +43,20 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   // ── Rewarded ad & Pro ────────────────────────────────────────────────────
   bool _isPro = false;
   RewardedAd? _rewardedAd;
-  bool _adLoading = false;
+  // Notifier invece di un bool: il dialog ci si aggancia da sé con un
+  // ValueListenableBuilder. Prima la pagina teneva il `setState` dello
+  // StatefulBuilder del dialog (`_dialogSetState`) e lo richiamava a mano, ma
+  // quel riferimento sopravviveva alla chiusura del dialog: il timer di retry
+  // che scattava subito dopo chiamava il setState di uno State già smontato,
+  // "Null check operator used on a null value" — visto in produzione su
+  // 1.3.11 vc118.
+  final ValueNotifier<bool> _adLoading = ValueNotifier(false);
   // Backoff del preload: un fallimento non deve lasciare _rewardedAd a null
   // fino al tap dell'utente, altrimenti il primo tentativo mostra sempre
   // "Video non disponibile".
   int _adRetries = 0;
   Timer? _adRetryTimer;
   static const _maxAdRetries = 4;
-  // Riferimento al setState del dialog aperto: permette di aggiornare il dialog
-  // quando l'ad finisce di caricarsi (showDialog ha un context separato).
-  StateSetter? _dialogSetState;
 
   @override
   void initState() {
@@ -65,6 +69,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
   void dispose() {
     _adRetryTimer?.cancel();
     _rewardedAd?.dispose();
+    _adLoading.dispose();
     super.dispose();
   }
 
@@ -80,22 +85,24 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     // sovrapporsi (preload iniziale, tap a vuoto, chiusura dell'ad, errore di
     // show): con due caricamenti in volo il secondo onLoaded sovrascriveva
     // _rewardedAd senza fare dispose del primo, perdendo l'istanza nativa.
-    if (_adLoading || _rewardedAd != null) return;
+    if (_adLoading.value || _rewardedAd != null) return;
+    // La guardia sta qui e non solo nei quattro chiamanti: dopo il dispose il
+    // notifier è chiuso e scrivergli dentro lancerebbe.
+    if (!mounted) return;
 
     _adRetryTimer?.cancel();
-    setState(() => _adLoading = true);
-    _dialogSetState?.call(() {}); // aggiorna subito il dialog se aperto
+    _adLoading.value = true;
     AdService.loadRewardedAd(
       onLoaded: (ad) {
         if (!mounted) { ad.dispose(); return; }
         _adRetries = 0;
-        setState(() { _rewardedAd = ad; _adLoading = false; });
-        _dialogSetState?.call(() {}); // l'ad è pronta: aggiorna il dialog
+        setState(() => _rewardedAd = ad);
+        _adLoading.value = false;
       },
       onFailed: (_) {
         if (!mounted) return;
-        setState(() { _rewardedAd = null; _adLoading = false; });
-        _dialogSetState?.call(() {}); // fallimento: aggiorna il dialog
+        setState(() => _rewardedAd = null);
+        _adLoading.value = false;
         _scheduleAdRetry();
       },
     );
@@ -178,11 +185,13 @@ class _HomePageSimpleState extends State<HomePageSimple> {
     final l10n = AppLocalizations.of(context)!;
     showDialog<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          // Registra il setState del dialog: _preloadRewardedAd lo notificherà
-          // quando lo stato dell'ad cambia, così il pulsante si aggiorna live.
-          _dialogSetState = setDialogState;
+      // Il dialog si aggancia al notifier e si ridisegna da sé quando il
+      // preload cambia stato. Prima era uno StatefulBuilder il cui setState
+      // veniva salvato nella pagina e richiamato a mano: quel riferimento
+      // restava valido anche dopo la chiusura del dialog.
+      builder: (ctx) => ValueListenableBuilder<bool>(
+        valueListenable: _adLoading,
+        builder: (ctx, loading, _) {
           return AppDialog(
             title: l10n.homeWatchVideoTitle(collection.name),
             icon: Icons.ondemand_video_outlined,
@@ -238,7 +247,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                 child: Text(l10n.btnCancel),
               ),
               FilledButton.icon(
-                icon: _adLoading
+                icon: loading
                     ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.play_circle_outline, size: 18),
                 label: Text(l10n.homeWatchVideoBtn),
@@ -247,7 +256,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                onPressed: _adLoading
+                onPressed: loading
                     ? null
                     : () {
                         Navigator.pop(ctx);
@@ -258,7 +267,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
           );
         },
       ),
-    ).then((_) => _dialogSetState = null);
+    );
   }
 
   void _playRewardedAdFor(CollectionModel collection) {
