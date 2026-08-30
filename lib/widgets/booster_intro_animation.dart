@@ -18,6 +18,15 @@ import 'package:package_info_plus/package_info_plus.dart';
 // secondo utilizzo riusa il bitmap già decodificato invece di rifare il decode.
 const kLogoDecodeCacheWidth = 280;
 
+/// Chiave del canvas virtuale 360x640 della scena: serve ai test per misurare
+/// le posizioni in coordinate di canvas invece che in pixel di schermo.
+/// Larghezza minima del canvas che deve restare visibile: l'album è largo 280
+/// su 360 e il badge finale arriva a 324, quindi sotto questa soglia il
+/// ritaglio laterale comincerebbe a tagliare la scena.
+const _kSceneSafeWidth = 296.0;
+
+const introCanvasKey = ValueKey('booster-intro-canvas');
+
 // ── Palette (dal design originale) ──────────────────────────────────────────
 const _ink = Color(0xFF1A1A24);
 const _paper = Color(0xFFFBF8F1);
@@ -780,27 +789,60 @@ class _BoosterIntroAnimationState extends State<BoosterIntroAnimation> with Sing
     super.dispose();
   }
 
+  /// Scala con cui il canvas virtuale 360x640 viene proiettato sullo schermo.
+  ///
+  /// Parte da cover — la scena deve riempire lo schermo, non lasciare bande
+  /// vuote dove si vedrebbe il gradiente della pagina dietro — ma la limita:
+  /// su un telefono più alto di 360:640 cover scala sull'altezza e ritaglia i
+  /// lati, e a 20:9 i bordi dell'album (280 di larghezza su 360) arrivavano a
+  /// filo dello schermo, a 21:9 ci finivano fuori. Il tetto è il punto in cui
+  /// il ritaglio comincerebbe a mangiare la scena.
+  ///
+  /// Quel che resta scoperto sopra e sotto è comunque invisibile: lo dipinge
+  /// il [ColoredBox] con lo stesso colore di sfondo della scena.
+  static double _sceneScale(Size box) {
+    if (box.isEmpty || !box.width.isFinite || !box.height.isFinite) return 1;
+    final cover = math.max(box.width / _SceneE.w, box.height / _SceneE.h);
+    final maxBeforeClipping = box.width / _kSceneSafeWidth;
+    return math.min(cover, maxBeforeClipping);
+  }
+
   @override
   Widget build(BuildContext context) {
     final totalSeconds = widget.duration.inMilliseconds / 1000.0;
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) {
-        final t = _c.value * totalSeconds;
-        // cover (non contain): il canvas virtuale 360x640 deve riempire tutto
-        // lo schermo. Con contain, su telefoni più "alti" del rapporto 360:640
-        // restavano bande vuote sopra/sotto dove si vedeva il colore del
-        // gradiente dietro invece del blu della scena.
-        return FittedBox(
-          fit: BoxFit.cover,
-          clipBehavior: Clip.hardEdge,
-          child: SizedBox(
-            width: 360,
-            height: 640,
-            child: _SceneE(t: t),
-          ),
-        );
-      },
+    return ColoredBox(
+      color: _splashBg,
+      child: ClipRect(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // OverflowBox impone al canvas i suoi 360x640 anche su schermi più
+            // stretti (altrimenti la geometria fissa della scena si
+            // deformerebbe) e lo centra; Transform.scale scala attorno al
+            // centro, quindi la scena resta centrata su entrambi gli assi.
+            return OverflowBox(
+              alignment: Alignment.center,
+              minWidth: _SceneE.w,
+              maxWidth: _SceneE.w,
+              minHeight: _SceneE.h,
+              maxHeight: _SceneE.h,
+              child: Transform.scale(
+                scale: _sceneScale(constraints.biggest),
+                child: SizedBox(
+                  key: introCanvasKey,
+                  width: _SceneE.w,
+                  height: _SceneE.h,
+                  // Solo la scena si ricostruisce a ogni frame: sfondo, clip,
+                  // layout e scala restano fuori dall'AnimatedBuilder.
+                  child: AnimatedBuilder(
+                    animation: _c,
+                    builder: (context, _) => _SceneE(t: _c.value * totalSeconds),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -810,10 +852,34 @@ class _SceneE extends StatelessWidget {
   const _SceneE({required this.t});
 
   static const w = 360.0;
+  static const h = 640.0;
   static const cx = w / 2;
+  static const cy = h / 2;
   static const num = 7;
   static const fanSpread = 90.0;
   static const fanRadius = 130.0;
+
+  // ── Geometria verticale ──────────────────────────────────────────────────
+  // La composizione finale (header + album) è centrata nel canvas *per
+  // costruzione*: l'header occupa un'altezza riservata fissa, quindi il
+  // margine sopra e quello sotto risultano uguali senza costanti da ritarare
+  // a mano. Prima header e album erano ancorati a top fissi (24 e 170) e la
+  // scena finale restava 73px sopra il centro, con tutto lo spazio morto in
+  // basso.
+  static const headerH = 140.0;
+  static const headerAlbumGap = 12.0;
+  static const albumW = 280.0;
+  static const albumH = 300.0;
+  static const contentH = headerH + headerAlbumGap + albumH;
+  static const sceneTop = (h - contentH) / 2;
+  static const albumX = (w - albumW) / 2;
+  static const albumY = sceneTop + headerH + headerAlbumGap;
+
+  // Bustina (110x200 col lembo) e ventaglio sono centrati sul canvas, così
+  // anche le fasi intermedie stanno esattamente al centro dello schermo.
+  static const packBoxH = 200.0;
+  static const packTargetY = (h - packBoxH) / 2;
+  static const fanCy = cy;
 
   // Fasi (in secondi), identiche al design originale.
   static const pDrop = [0.0, 0.8];
@@ -830,8 +896,10 @@ class _SceneE extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dropT = Curves.easeOutCubic.transform(_seg(pDrop, t));
-    const packTargetY = 200.0;
-    final packY = -200 + (packTargetY + 200) * dropT;
+    // La bustina parte fuori dal canvas di tutta la sua altezza, così non si
+    // vede spuntare dal bordo prima che inizi la caduta.
+    const packStartY = -packBoxH;
+    final packY = packStartY + (packTargetY - packStartY) * dropT;
     final tearT = _seg(pTear, t);
     final openT = Curves.easeOutCubic.transform(_seg(pOpen, t));
     final packFade = 1 - _clamp01((t - 2.0) / 0.5);
@@ -839,13 +907,10 @@ class _SceneE extends StatelessWidget {
     final headerT = Curves.easeOutBack.transform(_seg(pHeader, t));
     final albumT = Curves.easeOutCubic.transform(_seg(pAlbum, t));
 
-    const albumW = 280.0, albumH = 300.0;
-    const albumX = (w - albumW) / 2;
-    const albumY = 170.0;
     final slotW = (albumW - 50) / 3;
     final slotH = (albumH - 30) / 3;
 
-    const fanCx = cx, fanCy = 320.0;
+    const fanCx = cx;
     const openX = cx, openY = packTargetY;
 
     return Container(
@@ -858,45 +923,28 @@ class _SceneE extends StatelessWidget {
             Positioned(
               left: 0,
               right: 0,
-              top: 24,
-              child: Opacity(
-                opacity: _clamp01(headerT),
-                child: Transform.scale(
-                  scale: 0.85 + 0.15 * math.min(headerT, 1.0),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(13),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, 6)),
-                          ],
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Image.asset(
-                          'assets/icon/dm_logo_no_white.png',
-                          fit: BoxFit.cover,
-                          cacheWidth: kLogoDecodeCacheWidth,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Deck Master',
-                        style: TextStyle(
-                          fontFamily: 'Caveat',
-                          fontSize: 38,
-                          color: _gold,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      const Text(
-                        '— MY COLLECTION —',
-                        style: TextStyle(fontSize: 8, color: _goldSoft, letterSpacing: 2.2),
-                      ),
-                    ],
+              top: sceneTop,
+              // Altezza riservata fissa: è quello che tiene centrata la
+              // composizione anche se le metriche del font Caveat cambiano di
+              // qualche pixel tra le piattaforme. OverflowBox lascia alla
+              // Column la sua altezza naturale, centrata dentro il blocco,
+              // senza mai andare in overflow se sfora.
+              child: SizedBox(
+                height: headerH,
+                child: OverflowBox(
+                  minHeight: 0,
+                  maxHeight: double.infinity,
+                  alignment: Alignment.center,
+                  child: Opacity(
+                    opacity: _clamp01(headerT),
+                    child: Transform.scale(
+                      scale: 0.85 + 0.15 * math.min(headerT, 1.0),
+                      // Logo (con ombra sfocata) e wordmark non cambiano più
+                      // dopo l'ingresso, ma senza boundary venivano
+                      // ridisegnati a ogni frame perché lo Stack padre
+                      // ridisegna tutti i figli quando una carta si muove.
+                      child: const RepaintBoundary(child: _IntroHeader()),
+                    ),
                   ),
                 ),
               ),
@@ -910,7 +958,13 @@ class _SceneE extends StatelessWidget {
               child: Transform.scale(
                 alignment: Alignment.topCenter,
                 scale: 0.9 + 0.1 * albumT,
-                child: AlbumFrame(w: albumW, h: albumH, opacity: albumT),
+                // La cornice (rilegatura a spirale + griglia tratteggiata) è
+                // il disegno più costoso della scena e resta identica una
+                // volta entrata: il boundary la fa rasterizzare una volta sola
+                // invece che a ogni frame.
+                child: RepaintBoundary(
+                  child: AlbumFrame(w: albumW, h: albumH, opacity: albumT),
+                ),
               ),
             ),
 
@@ -1030,13 +1084,18 @@ class _SceneE extends StatelessWidget {
                   transform: Matrix4.identity()
                     ..rotateZ(rot * math.pi / 180)
                     ..scaleByDouble(scale * flipScaleX, scale, 1.0, 1.0),
-                  child: WireCard(
-                    w: 64,
-                    h: 92,
-                    faceUp: showFace,
-                    seed: i + 1,
-                    label: showFace ? _monsterNames[monster.idx] : null,
-                    theme: _cardThemes[i % 3],
+                  // Il contenuto della carta (mostro a tratti + layout del
+                  // testo della label) cambia solo al flip: il boundary evita
+                  // di ridisegnarlo a ogni frame mentre la carta si muove.
+                  child: RepaintBoundary(
+                    child: WireCard(
+                      w: 64,
+                      h: 92,
+                      faceUp: showFace,
+                      seed: i + 1,
+                      label: showFace ? _monsterNames[monster.idx] : null,
+                      theme: _cardThemes[i % 3],
+                    ),
                   ),
                 ),
               ),
@@ -1073,6 +1132,57 @@ class _SceneE extends StatelessWidget {
           }),
         ],
       ),
+    );
+  }
+}
+
+/// Header della scena: logo dell'app + wordmark. Estratto in un widget a sé
+/// perché il suo contenuto è costante — l'unica cosa che cambia durante
+/// l'ingresso sono opacità e scala, applicate dal chiamante.
+class _IntroHeader extends StatelessWidget {
+  const _IntroHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Image.asset(
+            'assets/icon/dm_logo_no_white.png',
+            fit: BoxFit.cover,
+            cacheWidth: kLogoDecodeCacheWidth,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Deck Master',
+          style: TextStyle(
+            fontFamily: 'Caveat',
+            fontSize: 38,
+            color: _gold,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 3),
+        const Text(
+          '— MY COLLECTION —',
+          style: TextStyle(fontSize: 8, color: _goldSoft, letterSpacing: 2.2),
+        ),
+      ],
     );
   }
 }

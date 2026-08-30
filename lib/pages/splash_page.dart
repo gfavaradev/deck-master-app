@@ -11,6 +11,7 @@ import 'login_page.dart';
 import 'onboarding_page.dart';
 import '../services/app_preferences.dart';
 import '../services/data_repository.dart';
+import '../services/startup_gate.dart';
 import '../theme/app_colors.dart';
 import '../widgets/booster_intro_animation.dart';
 
@@ -106,11 +107,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     }
 
     if (user != null) {
-      // Sync parte subito in parallelo con il greeting — non blocca la UI
-      // ma aspettiamo che finisca prima di navigare (max 2s extra dopo il greeting)
-      final syncFuture = _repo.syncOnLogin()
-          .timeout(const Duration(seconds: 20))
-          .catchError((_) {});
       _checkAppVersion().then((v) { if (mounted) _updatedVersion = v; });
 
       // Solo SharedPreferences — velocissimo (~10ms)
@@ -139,11 +135,22 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       });
       _greetingController.forward();
 
-      // Aspetta il greeting (1.8s) e poi il sync (già limitato a 20s sopra) —
-      // così un account esistente vede subito le proprie collezioni sbloccate
-      // in home invece di un breve stato vuoto in attesa del pull successivo.
+      // Il sync parte solo ORA, non in parallelo all'intro: gira sull'isolate
+      // principale (getAllCards da SQLite, streaming dei prezzi CardTrader in
+      // batch) e sovrapposto all'animazione faceva perdere frame proprio nelle
+      // fasi con più movimento. La schermata di saluto invece è statica dopo
+      // la dissolvenza, quindi lì lo stesso lavoro non si vede.
+      final syncFuture = _repo.syncOnLogin()
+          .timeout(const Duration(seconds: 20))
+          .catchError((_) {});
+
+      // Aspetta il greeting (1.8s) e poi il sync — così un account esistente
+      // vede subito le proprie collezioni in home invece di un breve stato
+      // vuoto. Il cap è più basso del timeout del sync: se è più lento di così
+      // prosegue in background invece di allungare ancora lo splash, dato che
+      // ora parte 7s più tardi di prima.
       await Future.delayed(const Duration(milliseconds: 1800));
-      await syncFuture;
+      await syncFuture.timeout(const Duration(seconds: 6), onTimeout: () {});
       _navigateToMain(showTutorial: _isFirstLogin);
     } else {
       await _introFinished;
@@ -231,15 +238,16 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
-      body: SafeArea(
-        top: false,
-        bottom: true,
-        child: GestureDetector(
-          onTap: _phase == _Phase.greeting ? _navigateToMain : null,
-          behavior: HitTestBehavior.opaque,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
+      // Niente SafeArea attorno alla scena: il padding di sistema in basso
+      // accorciava l'area di disegno, e siccome l'intro è centrata in quella
+      // box la si vedeva spostata verso l'alto rispetto allo schermo. Il
+      // greeting si prende la sua SafeArea da sé.
+      body: GestureDetector(
+        onTap: _phase == _Phase.greeting ? _navigateToMain : null,
+        behavior: HitTestBehavior.opaque,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -258,7 +266,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
           ],
         ),
       ),
-      ),
     );
   }
 
@@ -267,6 +274,8 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       key: const ValueKey('loading'),
       onCompleted: () {
         if (!_introDone.isCompleted) _introDone.complete();
+        // Sblocca gli init pesanti tenuti fuori dai frame dell'animazione.
+        StartupGate.open();
       },
     );
   }
@@ -278,71 +287,73 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         ? l10n.splashFirstLoginSubtitle
         : returningMessages[DateTime.now().millisecond % returningMessages.length];
 
-    return Center(
+    return SafeArea(
       key: const ValueKey('greeting'),
-      child: FadeTransition(
-        opacity: _greetingFade,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 36),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.bgMedium,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.gold.withValues(alpha: 0.5),
-                      blurRadius: 40,
-                      spreadRadius: 6,
-                    ),
-                  ],
+      child: Center(
+        child: FadeTransition(
+          opacity: _greetingFade,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 36),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.bgMedium,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.gold.withValues(alpha: 0.5),
+                        blurRadius: 40,
+                        spreadRadius: 6,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.style, size: 54, color: AppColors.gold),
                 ),
-                child: const Icon(Icons.style, size: 54, color: AppColors.gold),
-              ),
-              const SizedBox(height: 36),
-              Text(
-                _isFirstLogin ? l10n.splashWelcomeFirst : l10n.splashWelcomeBack,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w300,
-                  letterSpacing: 1,
-                ),
-              ),
-              const SizedBox(height: 6),
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [AppColors.gold, Color(0xFFFFE88A)],
-                ).createShader(bounds),
-                child: Text(
-                  _greetingName,
+                const SizedBox(height: 36),
+                Text(
+                  _isFirstLogin ? l10n.splashWelcomeFirst : l10n.splashWelcomeBack,
                   style: const TextStyle(
-                    fontFamily: 'Caveat',
-                    color: Colors.white,
-                    fontSize: 58,
-                    fontWeight: FontWeight.bold,
+                    color: AppColors.textSecondary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w300,
                     letterSpacing: 1,
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              Container(height: 1, width: 80, color: AppColors.gold.withValues(alpha: 0.4)),
-              const SizedBox(height: 24),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 16, height: 1.6),
-              ),
-              const SizedBox(height: 64),
-              Text(
-                l10n.splashTapToContinue,
-                style: const TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 0.5),
-              ),
-            ],
+                const SizedBox(height: 6),
+                ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [AppColors.gold, Color(0xFFFFE88A)],
+                  ).createShader(bounds),
+                  child: Text(
+                    _greetingName,
+                    style: const TextStyle(
+                      fontFamily: 'Caveat',
+                      color: Colors.white,
+                      fontSize: 58,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Container(height: 1, width: 80, color: AppColors.gold.withValues(alpha: 0.4)),
+                const SizedBox(height: 24),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 16, height: 1.6),
+                ),
+                const SizedBox(height: 64),
+                Text(
+                  l10n.splashTapToContinue,
+                  style: const TextStyle(color: AppColors.textHint, fontSize: 12, letterSpacing: 0.5),
+                ),
+              ],
+            ),
           ),
         ),
       ),
