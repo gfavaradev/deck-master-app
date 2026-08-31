@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/catalog_download_service.dart';
 import '../services/data_repository.dart';
 import '../services/language_service.dart';
 import '../services/sync_service.dart';
@@ -60,15 +61,28 @@ class _CatalogPageState extends State<CatalogPage> {
 
   Timer? _debounce;
   String _lastQuery = '';
-  DateTime? _lastProgressTime;
   StreamSubscription<String>? _syncSub;
   StreamSubscription<String>? _langSub;
+  StreamSubscription<CatalogDownloadState>? _dlSub;
+  StreamSubscription<CatalogDownloadOutcome>? _dlOutcomeSub;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     _init();
+    // Un download può essere già in corso da prima che questa pagina esistesse
+    // (avviato dalla home, o lasciato indietro uscendo dalla collezione): si
+    // parte dallo stato corrente e poi si seguono gli aggiornamenti. Il
+    // riallineamento va dopo il primo frame, non qui: `_onDownloadState`
+    // risolve `AppLocalizations` dal context, e in `initState` non si possono
+    // ancora leggere gli InheritedWidget.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onDownloadState(CatalogDownloadService().state);
+    });
+    _dlSub = CatalogDownloadService().onStateChanged.listen(_onDownloadState);
+    _dlOutcomeSub =
+        CatalogDownloadService().onFinished.listen(_onDownloadFinished);
     _syncSub = SyncService().onRemoteChange.listen((_) {
       if (mounted) _loadAlbumsAndOwned();
     });
@@ -96,6 +110,9 @@ class _CatalogPageState extends State<CatalogPage> {
 
   @override
   void dispose() {
+    // Solo le sottoscrizioni: il download vive nel servizio e prosegue.
+    _dlSub?.cancel();
+    _dlOutcomeSub?.cancel();
     _syncSub?.cancel();
     _langSub?.cancel();
     _debounce?.cancel();
@@ -246,102 +263,83 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 
   /// Download del catalogo (solo per primo download da empty state).
+  ///
+  /// Il ciclo vive in [CatalogDownloadService], non qui: questa pagina viene
+  /// smontata appena si esce dalla collezione, e prima con lei spariva ogni
+  /// traccia del download — che intanto continuava a girare, invisibile.
   Future<void> _downloadUpdate() async {
-    setState(() {
-      _isDownloadingUpdate = true;
-      _downloadProgress = null;
-      _downloadMessage = _phaseMessage('connecting');
-    });
-    // Phase advances forward only: connecting → downloading → saving
-    String currentPhase = 'connecting';
-    _lastProgressTime = null;
-    try {
-      await _dbHelper.downloadCollectionCatalog(
-        widget.collectionKey,
-        onProgress: (current, total) {
-          if (!mounted) return;
-          final now = DateTime.now();
-          final phaseChanged = currentPhase == 'connecting';
-          final throttled = !phaseChanged &&
-              _lastProgressTime != null &&
-              now.difference(_lastProgressTime!).inMilliseconds < 100;
-          if (throttled) return;
-          _lastProgressTime = now;
-          final progress = total > 0 ? current / total : null;
-          if (phaseChanged) currentPhase = 'downloading';
-          setState(() {
-            _downloadProgress = progress;
-            if (phaseChanged) _downloadMessage = _phaseMessage('downloading');
-          });
-        },
-        onSaveProgress: (progress) {
-          if (!mounted) return;
-          final now = DateTime.now();
-          final phaseChanged = currentPhase != 'saving' && progress >= 0.85;
-          final throttled = !phaseChanged &&
-              _lastProgressTime != null &&
-              now.difference(_lastProgressTime!).inMilliseconds < 100;
-          if (throttled) return;
-          _lastProgressTime = now;
-          if (phaseChanged) currentPhase = 'saving';
-          setState(() {
-            _downloadProgress = progress;
-            if (phaseChanged) _downloadMessage = _phaseMessage('saving');
-          });
-        },
-      );
-      if (mounted) {
-        // Transizione atomica: passa direttamente a "loading" per evitare
-        // il flash di "nessuna carta trovata" tra download e caricamento lista
-        setState(() {
-          _isDownloadingUpdate = false;
-          _isCatalogMissing = false;
-          _downloadProgress = null;
-          _isLoading = true;
-          _catalogCards = [];
-        });
-        final l10n = AppLocalizations.of(context)!;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.catalogDownloaded)),
-        );
-        // Carica in parallelo: carte + album/owned
-        await Future.wait([_loadPage(), _loadAlbumsAndOwned()]);
-        if (mounted) setState(() => _isLoading = false);
-      }
-    } on CatalogDownloadBusyException {
-      // Un altro catalogo è già in download — non cambiare lo stato, mostra solo avviso
-      if (mounted) {
-        setState(() {
-          _isDownloadingUpdate = false;
-          _downloadProgress = null;
-          // _isCatalogMissing rimane true → il bottone download rimane visibile
-        });
-        final l10n = AppLocalizations.of(context)!;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.catalogDownloadBusy),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isDownloadingUpdate = false;
-          _downloadProgress = null;
-          // _isCatalogMissing rimane true → il bottone download rimane visibile
-        });
-        final l10n = AppLocalizations.of(context)!;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.catalogDownloadError(e.toString())),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
+    if (CatalogDownloadService().state.isRunning) {
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.catalogDownloadBusy),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 4),
+      ));
+      return;
     }
+    final l10n = AppLocalizations.of(context)!;
+    await CatalogDownloadService().start(
+      updates: [
+        {
+          'collectionKey': widget.collectionKey,
+          'collectionName': widget.collectionName,
+        }
+      ],
+      labels: CatalogDownloadLabels(
+        notificationTitle: l10n.downloadTitle,
+        starting: l10n.downloadStarting,
+        operationName: l10n.downloadCatalog,
+        perCatalog: l10n.downloadCollectionProgress,
+        perCatalogPct: l10n.downloadCollectionProgressPct,
+        singlePct: l10n.downloadProgressPct,
+      ),
+    );
+  }
+
+  /// Riflette sullo stato locale un avanzamento che riguarda questa collezione.
+  void _onDownloadState(CatalogDownloadState state) {
+    if (!mounted) return;
+    final mine = state.isRunning && state.currentKey == widget.collectionKey;
+    setState(() {
+      _isDownloadingUpdate = mine;
+      _downloadProgress = mine ? state.progress : null;
+      if (mine) {
+        _downloadMessage = _phaseMessage(switch (state.phase) {
+          CatalogDownloadPhase.connecting => 'connecting',
+          CatalogDownloadPhase.downloading => 'downloading',
+          CatalogDownloadPhase.saving => 'saving',
+        });
+      }
+    });
+  }
+
+  /// A download finito ricarica la lista, così l'empty state lascia il posto
+  /// alle carte senza dover riaprire la pagina.
+  Future<void> _onDownloadFinished(CatalogDownloadOutcome outcome) async {
+    if (!mounted) return;
+    final failure = outcome.failures[widget.collectionName];
+    if (failure != null) {
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.catalogDownloadError(failure)),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 5),
+      ));
+      return;
+    }
+    if (outcome.successCount == 0) return;
+    setState(() {
+      _isDownloadingUpdate = false;
+      _isCatalogMissing = false;
+      _downloadProgress = null;
+      _isLoading = true;
+      _catalogCards = [];
+    });
+    final l10n = AppLocalizations.of(context)!;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.catalogDownloaded)));
+    await Future.wait([_loadPage(), _loadAlbumsAndOwned()]);
+    if (mounted) setState(() => _isLoading = false);
   }
 
   /// Load albums and owned quantity map (lightweight — no full CardModel load).

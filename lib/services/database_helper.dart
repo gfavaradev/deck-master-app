@@ -63,6 +63,13 @@ class DatabaseHelper {
     // avoids an fsync on every batch commit during catalog downloads.
     await db.rawQuery('PRAGMA journal_mode=WAL');
     await db.rawQuery('PRAGMA synchronous=NORMAL');
+    // Il download dei cataloghi gira in un isolate separato (foreground
+    // service), che apre una propria connessione nativa allo stesso file: WAL
+    // copre le letture concorrenti, ma due scrittori si contendono il lock e
+    // senza attesa il secondo fallirebbe subito con SQLITE_BUSY. Trenta
+    // secondi coprono abbondantemente la transazione più lunga (un batch di
+    // insert del catalogo).
+    await db.rawQuery('PRAGMA busy_timeout=30000');
 
     // Ensure essential indices exist (for development/existing dbs)
     await db.execute('CREATE INDEX IF NOT EXISTS idx_catalog_card_sets_cardId ON catalog_card_sets (cardId)');
@@ -3306,10 +3313,32 @@ class DatabaseHelper {
       final db = await database;
       const langs = ['it', 'fr', 'de', 'pt', 'sp'];
       for (final lang in langs) {
-        final rows = await db.rawQuery(
+        // Prima il nome carta tradotto, poi il codice set localizzato.
+        //
+        // Guardare solo `set_code_$lang` faceva sparire quasi tutte le lingue:
+        // l'array `card_sets` di YGOProDeck contiene codici praticamente solo
+        // inglesi anche quando lo si interroga con `language=it|fr|de|pt`
+        // (misurato: ~198 EN e 0 IT su 214 set nella risposta italiana), e il
+        // rebuild del worker separa le lingue proprio dal prefisso di quel
+        // codice. Risultato: restavano EN e PT — quest'ultima solo grazie a una
+        // manciata di codici `-PT` sparsi nei dati.
+        //
+        // Le traduzioni però ci sono davvero, su un'altra dimensione: le
+        // chiamate per lingua restituiscono nome e descrizione tradotti, che il
+        // worker scrive in `name_$lang`. È lo stesso criterio già usato da
+        // Pokémon, Magic e dai cataloghi generici — Yu-Gi-Oh era l'unico a
+        // chiedere la cosa sbagliata.
+        final cardRows = await db.rawQuery(
+          "SELECT 1 FROM yugioh_cards WHERE name_$lang IS NOT NULL AND name_$lang != '' LIMIT 1",
+        );
+        if (cardRows.isNotEmpty) {
+          result.add(lang.toUpperCase());
+          continue;
+        }
+        final printRows = await db.rawQuery(
           "SELECT 1 FROM yugioh_prints WHERE set_code_$lang IS NOT NULL AND set_code_$lang != '' LIMIT 1",
         );
-        if (rows.isNotEmpty) result.add(lang.toUpperCase());
+        if (printRows.isNotEmpty) result.add(lang.toUpperCase());
       }
     } else if (collectionKey == 'pokemon') {
       final db = await database;

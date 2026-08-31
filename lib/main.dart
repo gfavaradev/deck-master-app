@@ -7,6 +7,7 @@ import 'l10n/app_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'pages/splash_page.dart';
 import 'theme/app_colors.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -47,6 +48,12 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
     systemNavigationBarContrastEnforced: false,
   ));
+
+  // Porta di comunicazione con l'isolate del foreground service che scarica i
+  // cataloghi. Va aperta prima di runApp: se il servizio è ancora vivo da una
+  // sessione precedente (app chiusa a download in corso), i suoi messaggi di
+  // avanzamento arrivano già dal primo frame.
+  FlutterForegroundTask.initCommunicationPort();
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,

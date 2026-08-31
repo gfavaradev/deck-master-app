@@ -1,9 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Foreground service per download in background -->
+    <!-- Foreground service per il download dei cataloghi.
+         I permessi da soli non bastano: senza l'elemento <service> più in
+         basso non esiste nessun servizio, e il download muore appena Android
+         congela il processo (schermo bloccato, app in background o chiusa). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- Tiene sveglia la CPU mentre il servizio scarica. WakelockPlus non
+         basta: su Android imposta FLAG_KEEP_SCREEN_ON sulla finestra, quindi
+         vale solo finché l'activity è visibile. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Notifiche (richiesto da Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Fotocamera per scanner barcode e riconoscimento carte -->
@@ -83,6 +90,15 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Nome fisso richiesto dal plugin: non rinominare.
+             foregroundServiceType="dataSync" richiede la dichiarazione d'uso
+             in Play Console e, da Android 14, ha un tetto di ~6h al giorno. -->
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false"/>
+
     </application>
 
     <queries>

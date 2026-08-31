@@ -307,6 +307,72 @@ void main() {
     });
   });
 
+  group('lingue disponibili nel catalogo', () {
+    setUp(() async {
+      await db.delete('yugioh_prints');
+      await db.delete('yugioh_cards');
+    });
+
+    test('una lingua con il nome carta tradotto è disponibile', () async {
+      // L'array card_sets di YGOProDeck porta codici quasi solo inglesi, anche
+      // interrogandolo con language=it: guardare solo set_code_it faceva
+      // sparire italiano, francese e tedesco pur avendone le traduzioni.
+      await db.insert('yugioh_cards', {
+        'id': 1,
+        'type': 'Effect Monster',
+        'name': 'Flying "C"',
+        'name_it': '"C" Volante',
+      });
+      await db.insert('yugioh_prints', {
+        'card_id': 1,
+        'set_code': 'LOB-EN001',
+        'set_id': 'LOB',
+      });
+
+      final langs = await helper.getAvailableCatalogLanguages('yugioh');
+
+      expect(langs, contains('IT'));
+    });
+
+    test('una lingua senza traduzioni resta indisponibile', () async {
+      // Lo spagnolo non ha traduzioni: YGOProDeck accetta solo fr/de/it/pt
+      // come parametro `language`, quindi name_sp non viene mai popolato.
+      await db.insert('yugioh_cards', {
+        'id': 1,
+        'type': 'Effect Monster',
+        'name': 'Flying "C"',
+        'name_it': '"C" Volante',
+      });
+
+      final langs = await helper.getAvailableCatalogLanguages('yugioh');
+
+      expect(langs, isNot(contains('SP')));
+      expect(langs, isNot(contains('FR')));
+    });
+
+    test('il codice set localizzato basta da solo', () async {
+      // Il vecchio criterio resta valido come seconda strada: se una carta ha
+      // davvero una stampa localizzata, quella lingua è disponibile anche
+      // senza nome tradotto.
+      await db.insert('yugioh_cards',
+          {'id': 1, 'type': 'Spell', 'name': 'Monster Reborn'});
+      await db.insert('yugioh_prints', {
+        'card_id': 1,
+        'set_code': 'LOB-EN118',
+        'set_id': 'LOB',
+        'set_code_pt': 'LOB-PT118',
+      });
+
+      final langs = await helper.getAvailableCatalogLanguages('yugioh');
+
+      expect(langs, contains('PT'));
+    });
+
+    test("l'inglese c'è sempre", () async {
+      expect(await helper.getAvailableCatalogLanguages('yugioh'), contains('EN'));
+    });
+  });
+
   group('potatura dopo un ridownload', () {
     // I redownload* cancellavano tutto PRIMA di scaricare, riga di
     // catalog_metadata compresa: un'app uccisa a metà download lasciava

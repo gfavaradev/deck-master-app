@@ -16,9 +16,8 @@ import 'settings_page.dart';
 import 'login_page.dart';
 import 'profile_page.dart';
 import '../services/auth_service.dart';
-import '../services/background_download_service.dart';
+import '../services/catalog_download_service.dart';
 import '../services/data_repository.dart';
-import '../services/database_helper.dart';
 import '../services/notification_service.dart';
 import '../services/review_service.dart';
 import '../services/sync_service.dart';
@@ -72,15 +71,17 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
   // Catalog update state
   bool _hasPendingCatalogUpdate = false;
-  bool _isCatalogDownloading = false;
-  double? _catalogDownloadProgress;
   List<Map<String, dynamic>> _pendingUpdates = [];
-  String? _currentDownloadingName;
-  String? _currentDownloadingKey;
-  int _currentDownloadingIndex = 0;
-  _DownloadPhase _downloadPhase = _DownloadPhase.connecting;
-  DateTime? _lastProgressTime;
   OverlayEntry? _popoverEntry;
+
+  /// Il download non è più di proprietà di questa pagina: lo possiede
+  /// [CatalogDownloadService], che vive quanto l'app. Qui si tiene solo
+  /// l'ultimo stato ricevuto, e all'`initState` si riparte da quello corrente —
+  /// così tornare in home o cambiare collezione non fa più "sparire" un
+  /// download che in realtà stava continuando a girare.
+  CatalogDownloadState _dl = CatalogDownloadService().state;
+  StreamSubscription<CatalogDownloadState>? _dlSub;
+  StreamSubscription<CatalogDownloadOutcome>? _dlOutcomeSub;
 
   @override
   void initState() {
@@ -96,6 +97,15 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _remoteSub = SyncService().onRemoteChange.listen((event) {
       if (event == 'catalog_update_pending' && mounted) _loadPersistedPendingUpdates();
     });
+    // Ci si riaggancia a un download già in corso invece di ignorarlo: questa
+    // pagina viene ricostruita a ogni uscita/rientro in una collezione.
+    _dlSub = CatalogDownloadService().onStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() => _dl = state);
+      _popoverEntry?.markNeedsBuild();
+    });
+    _dlOutcomeSub =
+        CatalogDownloadService().onFinished.listen(_onDownloadFinished);
     // Defer XP sync and real-time listener to reduce peak memory during startup.
     Future.delayed(const Duration(seconds: 3), () {
       if (!mounted) return;
@@ -161,6 +171,10 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _popoverEntry = null;
     _levelUpSub?.cancel();
     _remoteSub?.cancel();
+    // Si annulla la sottoscrizione, non il download: quello va avanti nel
+    // servizio e la prossima pagina montata lo ritrova.
+    _dlSub?.cancel();
+    _dlOutcomeSub?.cancel();
     SyncService().stopListening();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -336,246 +350,87 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  /// Etichette della notifica, già localizzate: il servizio non ha un
+  /// `BuildContext` e nella fase con foreground service girerà in un isolate
+  /// separato, dove non ce n'è proprio uno.
+  CatalogDownloadLabels _downloadLabels(AppLocalizations l10n, String operation) =>
+      CatalogDownloadLabels(
+        notificationTitle: l10n.downloadTitle,
+        starting: l10n.downloadStarting,
+        operationName: operation,
+        perCatalog: l10n.downloadCollectionProgress,
+        perCatalogPct: l10n.downloadCollectionProgressPct,
+        singlePct: l10n.downloadProgressPct,
+      );
+
   Future<void> _startCatalogDownload() async {
     final updates = List<Map<String, dynamic>>.from(_pendingUpdates);
     if (updates.isEmpty) return;
-    _lastProgressTime = null;
-    setState(() {
-      _isCatalogDownloading = true;
-      _hasPendingCatalogUpdate = false;
-      _catalogDownloadProgress = null;
-    });
-
     final l10n = AppLocalizations.of(context)!;
-    BackgroundDownloadService.startingLabel = l10n.downloadStarting;
-    BackgroundDownloadService.notificationTitle = l10n.downloadTitle;
-    final total = updates.length;
-    int successCount = 0;
-    try {
-      // Avvia il Foreground Service Android (tiene vivo il processo in background)
-      await BackgroundDownloadService.startDownload(l10n.downloadCatalog);
-      for (int i = 0; i < updates.length; i++) {
-        final info = updates[i];
-        final key = info['collectionKey'] as String;
-        final name = info['collectionName'] as String? ?? key;
-        if (mounted) {
-          setState(() {
-            _currentDownloadingName = name;
-            _currentDownloadingKey = key;
-            _currentDownloadingIndex = i + 1;
-            _downloadPhase = _DownloadPhase.connecting;
-          });
-          _popoverEntry?.markNeedsBuild();
-        }
-        BackgroundDownloadService.updateStatus(
-          total > 1 ? l10n.downloadCollectionProgress(i + 1, total, name) : name,
-        );
-        try {
-          await _repo.downloadCollectionCatalog(
-            key,
-            updateInfo: info,
-            onProgress: (current, colTotal) {
-              final pct = colTotal > 0 ? ((current / colTotal) * 100).toInt() : 0;
-              BackgroundDownloadService.updateStatus(
-                total > 1 ? l10n.downloadCollectionProgressPct(i + 1, total, name, pct) : l10n.downloadProgressPct(name, pct),
-              );
-              if (!mounted) return;
-              final now = DateTime.now();
-              final phaseChanged = _downloadPhase == _DownloadPhase.connecting;
-              final throttled = !phaseChanged &&
-                  _lastProgressTime != null &&
-                  now.difference(_lastProgressTime!).inMilliseconds < 100;
-              if (throttled) return;
-              _lastProgressTime = now;
-              setState(() {
-                _catalogDownloadProgress = colTotal > 0
-                    ? (i + current / colTotal) / total
-                    : i / total;
-                if (phaseChanged) _downloadPhase = _DownloadPhase.downloading;
-              });
-              _popoverEntry?.markNeedsBuild();
-            },
-            onSaveProgress: (progress) {
-              if (!mounted) return;
-              final now = DateTime.now();
-              final phaseChanged = _downloadPhase != _DownloadPhase.saving && progress >= 0.85;
-              final throttled = !phaseChanged &&
-                  _lastProgressTime != null &&
-                  now.difference(_lastProgressTime!).inMilliseconds < 100;
-              if (throttled) return;
-              _lastProgressTime = now;
-              setState(() {
-                _catalogDownloadProgress = (i + progress) / total;
-                if (phaseChanged) _downloadPhase = _DownloadPhase.saving;
-              });
-              _popoverEntry?.markNeedsBuild();
-            },
-          );
-          successCount++;
-        } catch (e) { // ignore: empty_catches
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context)!.msgErrorUpdateCollection(info['collectionName'] ?? key, e.toString()))),
-            );
-          }
-        }
-      }
-    } finally {
-      // Ferma sempre il Foreground Service, anche in caso di errore
-      await BackgroundDownloadService.stopDownload();
-      if (successCount > 0) await _repo.clearPendingCatalogUpdates();
-      if (mounted) {
-        setState(() {
-          _isCatalogDownloading = false;
-          _hasPendingCatalogUpdate = false;
-          _catalogDownloadProgress = null;
-          _currentDownloadingName = null;
-          _currentDownloadingKey = null;
-          _currentDownloadingIndex = 0;
-          _downloadPhase = _DownloadPhase.connecting;
-          _pendingUpdates = [];
-        });
-        if (successCount > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.msgCatalogUpdatedSuccess),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      }
-    }
+    setState(() => _hasPendingCatalogUpdate = false);
+    await CatalogDownloadService().start(
+      updates: updates,
+      labels: _downloadLabels(l10n, l10n.downloadCatalog),
+    );
   }
 
   void _startRestoreDownload(String collectionKey) {
-    if (_isCatalogDownloading) return;
+    if (_dl.isRunning) return;
     final keys = collectionKey == 'all'
         ? (_pendingUpdates.isNotEmpty
             ? _pendingUpdates.map((u) => u['collectionKey'] as String).toList()
             : ['yugioh', 'pokemon', 'onepiece'])
         : [collectionKey];
 
-    _lastProgressTime = null;
-    setState(() {
-      _isCatalogDownloading = true;
-      _catalogDownloadProgress = null;
-      _currentDownloadingName = null;
-      _currentDownloadingIndex = 0;
-    });
-
     final l10n = AppLocalizations.of(context)!;
-    BackgroundDownloadService.startingLabel = l10n.downloadStarting;
-    BackgroundDownloadService.notificationTitle = l10n.downloadTitle;
-    () async {
-      final total = keys.length;
-      int successCount = 0;
-      Object? lastError;
-      try {
-        await BackgroundDownloadService.startDownload(l10n.downloadRestoreCatalog);
-        for (int i = 0; i < keys.length; i++) {
-          final key = keys[i];
-          final name = switch (key) {
-            'yugioh'   => 'Yu-Gi-Oh!',
-            'pokemon'  => 'Pokémon',
-            'onepiece' => 'One Piece',
-            _          => key,
-          };
-          if (mounted) {
-            setState(() {
-              _currentDownloadingName = name;
-              _currentDownloadingKey = key;
-              _currentDownloadingIndex = i + 1;
-              _downloadPhase = _DownloadPhase.connecting;
-            });
-            _popoverEntry?.markNeedsBuild();
-          }
-          BackgroundDownloadService.updateStatus(total > 1 ? l10n.downloadRestoreProgress(i + 1, total, name) : name);
+    CatalogDownloadService().start(
+      updates: [
+        for (final key in keys)
+          {'collectionKey': key, 'collectionName': _collectionNames[key] ?? key},
+      ],
+      labels: _downloadLabels(l10n, l10n.downloadRestoreCatalog),
+      isRestore: true,
+    );
+  }
 
-          void onProg(int cur, int tot) {
-            if (!mounted) return;
-            final now = DateTime.now();
-            final phaseChanged = _downloadPhase == _DownloadPhase.connecting;
-            final throttled = !phaseChanged &&
-                _lastProgressTime != null &&
-                now.difference(_lastProgressTime!).inMilliseconds < 100;
-            if (throttled) return;
-            _lastProgressTime = now;
-            setState(() {
-              _catalogDownloadProgress = (i + (tot > 0 ? cur / tot : 0)) / total;
-              if (phaseChanged) _downloadPhase = _DownloadPhase.downloading;
-            });
-            _popoverEntry?.markNeedsBuild();
-          }
-          void onSave(double p) {
-            if (!mounted) return;
-            final now = DateTime.now();
-            final phaseChanged = _downloadPhase != _DownloadPhase.saving && p >= 0.85;
-            final throttled = !phaseChanged &&
-                _lastProgressTime != null &&
-                now.difference(_lastProgressTime!).inMilliseconds < 100;
-            if (throttled) return;
-            _lastProgressTime = now;
-            setState(() {
-              _catalogDownloadProgress = (i + p) / total;
-              if (phaseChanged) _downloadPhase = _DownloadPhase.saving;
-            });
-            _popoverEntry?.markNeedsBuild();
-          }
+  /// Applica alla UI un esito arrivato dal servizio: snackbar di riepilogo e
+  /// pulizia della lista di aggiornamenti in sospeso.
+  void _onDownloadFinished(CatalogDownloadOutcome outcome) {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    final messenger = ScaffoldMessenger.of(context);
 
-          try {
-            await switch (key) {
-              'yugioh'   => _repo.redownloadYugiohCatalog(onProgress: onProg, onSaveProgress: onSave),
-              'pokemon'  => _repo.redownloadPokemonCatalog(onProgress: onProg, onSaveProgress: onSave),
-              'onepiece' => _repo.redownloadOnepieceCatalog(onProgress: onProg, onSaveProgress: onSave),
-              'magic'    => _repo.redownloadMagicCatalog(onProgress: onProg, onSaveProgress: onSave),
-              _          => DatabaseHelper.genericTablePrefix(key) != null
-                            ? _repo.redownloadGenericCatalog(key, onProgress: onProg, onSaveProgress: onSave)
-                            : Future<void>.value(),
-            };
-            successCount++;
-          } catch (e) {
-            lastError = e;
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(AppLocalizations.of(context)!.msgErrorRestoreCollection(name, e.toString())),
-                  backgroundColor: Colors.red,
-                  duration: const Duration(seconds: 6),
-                ),
-              );
-            }
-          }
-        }
-      } catch (e) {
-        lastError = e;
-      } finally {
-        await BackgroundDownloadService.stopDownload();
-        if (mounted) {
-          setState(() {
-            _isCatalogDownloading = false;
-            _catalogDownloadProgress = null;
-            _currentDownloadingName = null;
-            _currentDownloadingKey = null;
-            _currentDownloadingIndex = 0;
-            _downloadPhase = _DownloadPhase.connecting;
-            if (successCount > 0) _pendingUpdates = [];
-          });
-          if (successCount > 0) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context)!.msgCatalogRestoredSuccess), backgroundColor: Colors.green),
-            );
-          } else if (lastError != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppLocalizations.of(context)!.msgCatalogRestoreFailed(lastError.toString())),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 8),
-              ),
-            );
-          }
-        }
-      }
-    }();
+    if (outcome.successCount > 0) {
+      setState(() {
+        _pendingUpdates = [];
+        _hasPendingCatalogUpdate = false;
+      });
+    }
+
+    for (final entry in outcome.failures.entries) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(outcome.isRestore
+            ? l10n.msgErrorRestoreCollection(entry.key, entry.value)
+            : l10n.msgErrorUpdateCollection(entry.key, entry.value)),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 6),
+      ));
+    }
+
+    if (outcome.successCount > 0) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(outcome.isRestore
+            ? l10n.msgCatalogRestoredSuccess
+            : l10n.msgCatalogUpdatedSuccess),
+        backgroundColor: Colors.green,
+      ));
+    } else if (outcome.isRestore && outcome.hasFailures) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(l10n.msgCatalogRestoreFailed(outcome.failures.values.first)),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 8),
+      ));
+    }
   }
 
   void _toggleDownloadPopover() {
@@ -589,12 +444,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     final topPadding = MediaQuery.of(context).padding.top;
 
     _popoverEntry = OverlayEntry(builder: (_) {
-      final progress      = _catalogDownloadProgress;
-      final name          = _currentDownloadingName;
-      final idx           = _currentDownloadingIndex;
-      final total         = _pendingUpdates.isNotEmpty ? _pendingUpdates.length : idx;
-      final collectionKey = _currentDownloadingKey;
-      final phase         = _downloadPhase;
+      final progress      = _dl.progress;
+      final name          = _dl.currentName;
+      final idx           = _dl.currentIndex;
+      final total         = _dl.total > 0
+          ? _dl.total
+          : (_pendingUpdates.isNotEmpty ? _pendingUpdates.length : idx);
+      final collectionKey = _dl.currentKey;
+      final phase         = _dl.phase;
 
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -791,7 +648,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                 ),
             ],
           ),
-          if (_isCatalogDownloading)
+          if (_dl.isRunning)
             GestureDetector(
               onTap: _toggleDownloadPopover,
               child: Padding(
@@ -803,14 +660,14 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
                     alignment: Alignment.center,
                     children: [
                       CircularProgressIndicator(
-                        value: _catalogDownloadProgress,
+                        value: _dl.progress,
                         strokeWidth: 3,
                         color: Colors.white,
                         backgroundColor: Colors.white24,
                       ),
                       Text(
-                        _catalogDownloadProgress != null
-                            ? '${(_catalogDownloadProgress! * 100).toInt()}%'
+                        _dl.progress != null
+                            ? '${(_dl.progress! * 100).toInt()}%'
                             : '···',
                         style: const TextStyle(
                           color: Colors.white,
@@ -1013,8 +870,6 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
 // ─── Download theming ─────────────────────────────────────────────────────────
 
-enum _DownloadPhase { connecting, downloading, saving }
-
 class _CollectionTheme {
   final Color accent;
   final IconData icon;
@@ -1072,7 +927,7 @@ class _DownloadPopoverCard extends StatelessWidget {
   final int index;
   final int total;
   final String? collectionKey;
-  final _DownloadPhase phase;
+  final CatalogDownloadPhase phase;
 
   const _DownloadPopoverCard({
     required this.progress,
@@ -1094,14 +949,14 @@ class _DownloadPopoverCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final phaseMessage = theme == null
         ? switch (phase) {
-            _DownloadPhase.connecting  => l10n.downloadPhaseConnecting,
-            _DownloadPhase.downloading => l10n.downloadPhaseDownloading,
-            _DownloadPhase.saving      => l10n.downloadPhaseSaving,
+            CatalogDownloadPhase.connecting  => l10n.downloadPhaseConnecting,
+            CatalogDownloadPhase.downloading => l10n.downloadPhaseDownloading,
+            CatalogDownloadPhase.saving      => l10n.downloadPhaseSaving,
           }
         : switch (phase) {
-            _DownloadPhase.connecting  => theme.connecting(l10n),
-            _DownloadPhase.downloading => theme.downloading(l10n),
-            _DownloadPhase.saving      => theme.saving(l10n),
+            CatalogDownloadPhase.connecting  => theme.connecting(l10n),
+            CatalogDownloadPhase.downloading => theme.downloading(l10n),
+            CatalogDownloadPhase.saving      => theme.saving(l10n),
           };
 
     final multiCollection = index > 0 && total > 1;
