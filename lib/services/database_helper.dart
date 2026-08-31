@@ -52,7 +52,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 39,
+      version: 40,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -481,6 +481,9 @@ class DatabaseHelper {
       for (final prefix in _genericCatalogPrefixes) {
         await _addColumnIfMissing(db, '${prefix}_cards', 'card_number', 'TEXT');
       }
+    }
+    if (oldVersion < 40) {
+      await _createPriceMatchKeys(db);
     }
   }
 
@@ -1397,6 +1400,9 @@ class DatabaseHelper {
 
     // Dedicated expansion and rarity tables (v18)
     await _createExpansionRarityTables(db);
+
+    // Colonne e indici di match per i prezzi CardTrader (v40)
+    await _createPriceMatchKeys(db);
   }
 
   Future<void> _createExpansionRarityTables(DatabaseExecutor db) async {
@@ -2850,6 +2856,112 @@ class DatabaseHelper {
   }
 
   /// Cancella tutto il catalogo Yu-Gi-Oh (carte, print, prezzi)
+  /// Rimuove dal catalogo [catalog] le carte che un ridownload completo non ha
+  /// toccato, cioè quelle sparite dal remoto.
+  ///
+  /// Sostituisce il `clear` che i `redownload*` facevano **prima** di scaricare.
+  /// Quella sequenza aveva una finestra di perdita dati larga quanto l'intero
+  /// download: catalogo e riga di `catalog_metadata` venivano cancellati
+  /// subito, e se il download si interrompeva a metà — app uccisa, rete persa —
+  /// l'utente restava senza catalogo e all'avvio dopo si ritrovava un "primo
+  /// download" da rifare da capo. Scaricando prima (le insert sono tutte
+  /// INSERT OR REPLACE, quindi il catalogo resta consultabile per tutto il
+  /// tempo) e potando dopo, un'interruzione non toglie niente a nessuno.
+  ///
+  /// [since] è il timestamp ISO8601 preso *prima* di far partire il download:
+  /// `updated_at` viene riscritto a ogni insert, quindi tutto ciò che è rimasto
+  /// indietro non è stato ripubblicato dal remoto.
+  ///
+  /// Non fa nulla se nessuna carta risulta aggiornata da [since] in poi: un
+  /// download andato a vuoto (remoto irraggiungibile, chunk vuoti) non deve
+  /// poter svuotare un catalogo che funziona.
+  Future<int> pruneCatalogCardsNotUpdatedSince(
+    String catalog,
+    String since,
+  ) async {
+    final genericPrefix = genericTablePrefix(catalog);
+    final cardsTable = switch (catalog) {
+      'yugioh' => 'yugioh_cards',
+      'pokemon' => 'pokemon_cards',
+      'onepiece' => 'onepiece_cards',
+      'magic' => 'magic_cards',
+      _ => genericPrefix == null ? null : '${genericPrefix}_cards',
+    };
+    if (cardsTable == null) return 0;
+
+    final db = await database;
+
+    final freshRows = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM $cardsTable WHERE updated_at >= ?',
+      [since],
+    );
+    final fresh = (freshRows.first['c'] as int?) ?? 0;
+    if (fresh == 0) return 0;
+
+    const staleWhere = 'updated_at IS NULL OR updated_at < ?';
+    var deleted = 0;
+
+    await db.transaction((txn) async {
+      final stale = 'SELECT id FROM $cardsTable WHERE $staleWhere';
+
+      switch (catalog) {
+        case 'yugioh':
+          // yugioh_prices punta alle stampe, non alle carte: va sfoltito per
+          // primo o resterebbero righe orfane (i vincoli FK non sono attivi).
+          await txn.rawDelete(
+            'DELETE FROM yugioh_prices WHERE print_id IN '
+            '(SELECT id FROM yugioh_prints WHERE card_id IN ($stale))',
+            [since],
+          );
+          await txn.rawDelete(
+            'DELETE FROM yugioh_prints WHERE card_id IN ($stale)',
+            [since],
+          );
+        case 'pokemon':
+          await txn.rawDelete(
+            'DELETE FROM pokemon_prices WHERE print_id IN '
+            '(SELECT id FROM pokemon_prints WHERE card_id IN ($stale))',
+            [since],
+          );
+          await txn.rawDelete(
+            'DELETE FROM pokemon_prints WHERE card_id IN ($stale)',
+            [since],
+          );
+        case 'onepiece':
+          await txn.rawDelete(
+            'DELETE FROM onepiece_prints WHERE card_id IN ($stale)',
+            [since],
+          );
+        default:
+          // Cataloghi generici v36: la FK verso {prefix}_cards dichiara
+          // ON DELETE CASCADE, ma senza `PRAGMA foreign_keys=ON` non scatta —
+          // le stampe vanno tolte a mano. (`clearGenericCatalog` non lo fa e
+          // lascia stampe orfane: qui invece si pulisce.)
+          if (genericPrefix != null) {
+            await txn.rawDelete(
+              'DELETE FROM ${genericPrefix}_prints WHERE card_id IN ($stale)',
+              [since],
+            );
+          }
+      }
+
+      deleted = await txn.rawDelete(
+        'DELETE FROM $cardsTable WHERE $staleWhere',
+        [since],
+      );
+    });
+
+    return deleted;
+  }
+
+  /// Svuota completamente il catalogo Yu-Gi-Oh locale.
+  ///
+  /// NON usarlo prima di un ridownload: cancella anche la riga di
+  /// `catalog_metadata`, quindi un download interrotto lascia l'utente senza
+  /// catalogo e con un "primo download" da rifare. Per rimpiazzare il catalogo
+  /// usa il ridownload, che scarica e poi chiama
+  /// [pruneCatalogCardsNotUpdatedSince]. Questo resta per la pulizia esplicita
+  /// (spazio occupato, catalogo corrotto), dove svuotare è proprio l'intento.
   Future<void> clearYugiohCatalog() async {
     Database db = await database;
     await db.transaction((txn) async {
@@ -4178,6 +4290,55 @@ class DatabaseHelper {
     return await db.query('pending_sync', orderBy: 'created_at ASC');
   }
 
+  /// Accoda uno sblocco collezione non ancora confermato da Firestore.
+  ///
+  /// `pending_sync` non aveva una riga per gli sblocchi: il push era
+  /// best-effort e, se falliva (offline, App Check, regole), lo sblocco
+  /// restava solo locale — finché `pullFromCloud` non lo revocava, perché
+  /// riallinea lo stato dei lucchetti a quello che dice il remoto. Per
+  /// l'utente significava perdere una collezione appena sbloccata guardando
+  /// una rewarded per intero.
+  ///
+  /// La chiave della collezione sta in `data`: `local_id` non serve, gli
+  /// sblocchi sono identificati da una stringa e non da un id di riga.
+  Future<void> addPendingCollectionUnlock(String collectionKey) async {
+    Database db = await database;
+    await db.delete(
+      'pending_sync',
+      where: "table_name = 'collections' AND change_type = 'unlock' AND data = ?",
+      whereArgs: [collectionKey],
+    );
+    await db.insert('pending_sync', {
+      'table_name': 'collections',
+      'local_id': 0,
+      'change_type': 'unlock',
+      'data': collectionKey,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Collezioni sbloccate localmente ma non ancora confermate dal remoto.
+  Future<Set<String>> getPendingCollectionUnlocks() async {
+    Database db = await database;
+    final rows = await db.query(
+      'pending_sync',
+      columns: ['data'],
+      where:
+          "table_name = 'collections' AND change_type = 'unlock' AND data IS NOT NULL",
+    );
+    return rows.map((r) => r['data'] as String).toSet();
+  }
+
+  /// Rimuove dalla coda lo sblocco di [collectionKey], una volta confermato.
+  Future<void> clearPendingCollectionUnlock(String collectionKey) async {
+    Database db = await database;
+    await db.delete(
+      'pending_sync',
+      where: "table_name = 'collections' AND change_type = 'unlock' AND data = ?",
+      whereArgs: [collectionKey],
+    );
+  }
+
   Future<int> getPendingSyncCount() async {
     Database db = await database;
     final result = await db.rawQuery('SELECT COUNT(*) as count FROM pending_sync');
@@ -5132,9 +5293,178 @@ class DatabaseHelper {
   ///   Pass 3 — collector_number come chiave alternativa quando il nome fallisce.
   ///
   /// Returns the total number of print rows updated.
-  Future<int> syncCatalogPricesFromCardtrader(String catalog) async {
+  // ── Chiavi di match dei prezzi CardTrader ────────────────────────────────
+  //
+  // Le passate di [syncCatalogPricesFromCardtrader] confrontavano colonne
+  // avvolte in LOWER/SUBSTR/INSTR/REPLACE su entrambi i lati. Con la funzione
+  // applicata alla colonna indicizzata nessun indice è utilizzabile, quindi
+  // ogni riga di stampa scandiva l'intero bucket di espansione di
+  // `cardtrader_prices` (250k righe sul solo Yu-Gi-Oh) applicando cinque
+  // REPLACE per candidato — trenta volte di fila. Il risultato era un download
+  // fermo al 100% e, siccome sqflite serializza tutte le query su una sola
+  // connessione, l'intera app bloccata dietro quella coda.
+  //
+  // Qui la normalizzazione si calcola una volta sola e si persiste, così i
+  // confronti tornano colonna = colonna e gli indici sotto entrano in gioco.
+
+  /// True se [table] esiste nel database aperto.
+  Future<bool> _tableExists(DatabaseExecutor db, String table) async {
+    final rows = await db.rawQuery(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+      [table],
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// Aggiunge le colonne di match e i relativi indici. Idempotente.
+  ///
+  /// Ogni tabella viene verificata prima di toccarla: `_addColumnIfMissing` su
+  /// una tabella assente lancia "no such table", e in `onUpgrade` un'eccezione
+  /// fa fallire `openDatabase` — cioè l'app non parte più. Questa migrazione
+  /// gira su ogni installazione già in giro, comprese quelle che vengono da
+  /// versioni in cui alcune di queste tabelle non esistevano.
+  Future<void> _createPriceMatchKeys(DatabaseExecutor db) async {
+    Future<bool> addTo(String table, List<String> columns) async {
+      if (!await _tableExists(db, table)) return false;
+      for (final c in columns) {
+        await _addColumnIfMissing(db, table, c, 'TEXT');
+      }
+      return true;
+    }
+
+    final hasPrices = await addTo(
+      'cardtrader_prices',
+      ['name_norm', 'name_base_norm', 'cn_lc'],
+    );
+
+    await addTo('yugioh_prints', ['set_id_lc', 'cn_primary', 'cn_secondary']);
+    await addTo('yugioh_cards', ['name_norm']);
+    await addTo('pokemon_prints', ['set_code_lc']);
+    await addTo('pokemon_cards', ['set_id_lc', 'name_norm']);
+    await addTo('onepiece_prints', ['exp_code_lc']);
+    await addTo('onepiece_cards', ['name_norm']);
+
+    if (!hasPrices) return;
+
+    // `language` va in coda: le passate per lingua la filtrano per uguaglianza
+    // (quindi resta utilizzabile come quarta colonna dell'indice) e la passata
+    // dei metadati, che la lingua non la filtra affatto, usa lo stesso indice
+    // fermandosi alle prime tre.
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ct_prices_name_norm '
+      'ON cardtrader_prices(catalog, expansion_code, name_norm, language)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ct_prices_name_base '
+      'ON cardtrader_prices(catalog, expansion_code, name_base_norm, language)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ct_prices_cn_lc '
+      'ON cardtrader_prices(catalog, expansion_code, cn_lc, language)',
+    );
+  }
+
+  /// Riempie le colonne di match rimaste vuote per [catalog].
+  ///
+  /// Le colonne derivate sono sempre non-NULL una volta calcolate (si usa `''`
+  /// come "non applicabile"), quindi `IS NULL` è il flag di "ancora da fare":
+  /// costa una scansione per tabella al primo giro e quasi nulla dopo.
+  /// `upsertCardtraderPrices` inserisce con `ConflictAlgorithm.replace`, che
+  /// riazzera le derivate delle righe riscritte — ed è esattamente quello che
+  /// serve, perché il refresh le ricalcoli al sync successivo.
+  Future<void> _refreshPriceMatchKeys(Database db, String catalog) async {
+    await db.rawUpdate(
+      '''
+      UPDATE cardtrader_prices
+      SET name_norm      = ${_normName('card_name_en')},
+          name_base_norm = ${_ctNameBase('card_name_en')},
+          cn_lc          = LOWER(collector_number)
+      WHERE catalog = ? AND name_norm IS NULL
+      ''',
+      [catalog],
+    );
+
+    switch (catalog) {
+      case 'yugioh':
+        // cn_primary   = suffisso dopo il trattino di set_code ("LOB-EN001" → "en001")
+        // cn_secondary = stesso suffisso senza prefisso lingua ("001"), solo quando
+        //                il primo supera i 3 caratteri: è la seconda forma con cui
+        //                CardTrader indicizza lo stesso blueprint.
+        await db.rawUpdate('''
+          UPDATE yugioh_prints
+          SET set_id_lc    = COALESCE(LOWER(set_id), ''),
+              cn_primary   = CASE WHEN INSTR(set_code, '-') > 0
+                                  THEN LOWER(SUBSTR(set_code, INSTR(set_code, '-') + 1))
+                                  ELSE '' END,
+              cn_secondary = CASE WHEN INSTR(set_code, '-') > 0
+                                   AND LENGTH(SUBSTR(set_code, INSTR(set_code, '-') + 1)) > 3
+                                  THEN LOWER(SUBSTR(set_code, INSTR(set_code, '-') + 3))
+                                  ELSE '' END
+          WHERE set_id_lc IS NULL
+        ''');
+        await db.rawUpdate(
+          "UPDATE yugioh_cards SET name_norm = ${_normName('name')} "
+          'WHERE name_norm IS NULL',
+        );
+
+      case 'pokemon':
+        await db.rawUpdate(
+          'UPDATE pokemon_prints SET set_code_lc = LOWER(set_code) '
+          'WHERE set_code_lc IS NULL',
+        );
+        await db.rawUpdate(
+          'UPDATE pokemon_cards '
+          "SET name_norm = ${_normName('name')}, "
+          "    set_id_lc = COALESCE(LOWER(set_id), '') "
+          'WHERE name_norm IS NULL',
+        );
+
+      case 'onepiece':
+        await db.rawUpdate('''
+          UPDATE onepiece_prints
+          SET exp_code_lc = COALESCE(LOWER(COALESCE(
+                NULLIF(set_id, ''),
+                CASE WHEN card_set_id LIKE '%-%'
+                     THEN SUBSTR(card_set_id, 1, INSTR(card_set_id, '-') - 1)
+                     ELSE card_set_id END)), '')
+          WHERE exp_code_lc IS NULL
+        ''');
+        await db.rawUpdate(
+          "UPDATE onepiece_cards SET name_norm = ${_normName('name')} "
+          'WHERE name_norm IS NULL',
+        );
+    }
+  }
+
+  /// Aggancia i prezzi CardTrader in cache alle tabelle di stampa del catalogo.
+  /// Ritorna il numero di righe aggiornate.
+  ///
+  /// [onProgress] riceve 0.0→1.0 sull'avanzamento delle passate: senza, la UI
+  /// del download restava ferma al 100% per tutta la durata di questo lavoro,
+  /// che è la parte più lunga dell'intera operazione.
+  Future<int> syncCatalogPricesFromCardtrader(
+    String catalog, {
+    void Function(double progress)? onProgress,
+  }) async {
     final db = await database;
     int total = 0;
+
+    // Passate per lingua × catalogo, più la passata dei metadati e il refresh
+    // delle chiavi: serve solo a dare una frazione onesta a onProgress.
+    final int stepsTotal = switch (catalog) {
+      'yugioh' => 1 + 6 * 3 + 1,
+      'pokemon' => 1 + 6 * 2 + 1,
+      'onepiece' => 1 + 5 * 2 + 1,
+      _ => 1,
+    };
+    var stepsDone = 0;
+    void tick() {
+      stepsDone++;
+      onProgress?.call((stepsDone / stepsTotal).clamp(0.0, 1.0));
+    }
+
+    await _refreshPriceMatchKeys(db, catalog);
+    tick();
 
     switch (catalog) {
       case 'yugioh':
@@ -5148,76 +5478,42 @@ class DatabaseHelper {
         };
         for (final entry in ygoLangCols.entries) {
           final lang = entry.key;
-          final col  = entry.value;
+          final col = entry.value;
 
-          // ── Pass 0: collector_number match (PRIMARY — rarity-aware) ─────────
-          // set_code suffix (e.g. "LOB-EN001" → "EN001") uniquely identifies
-          // a blueprint including its rarity. Run before name-based passes so
-          // multi-rarity cards get the correct blueprint price per print.
+          // ── Passata 0: match per collector number (PRIMARIA, distingue le rarità) ──
+          // Il suffisso di set_code ("LOB-EN001" → "en001") identifica il
+          // blueprint rarità compresa, quindi va prima dei match per nome.
+          // `cp.cn_lc <> ''` tiene fuori il bucket dei prezzi senza collector
+          // number, che cn_secondary vuoto farebbe altrimenti agganciare.
           total += await db.rawUpdate('''
             UPDATE yugioh_prints
             SET $col = (
               SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
               FROM cardtrader_prices cp
               WHERE cp.catalog = 'yugioh'
-                AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                AND (
-                  LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1))
-                  OR (LENGTH(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1)) > 3
-                      AND LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 3)))
-                )
+                AND cp.expansion_code = yugioh_prints.set_id_lc
+                AND cp.cn_lc IN (yugioh_prints.cn_primary, yugioh_prints.cn_secondary)
+                AND cp.cn_lc <> ''
                 AND cp.language = ?
                 AND cp.min_price_any_cents IS NOT NULL
               ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
               LIMIT 1
             )
-            WHERE yugioh_prints.set_id IS NOT NULL
-              AND INSTR(yugioh_prints.set_code, '-') > 0
+            WHERE yugioh_prints.set_id_lc <> ''
+              AND yugioh_prints.cn_primary <> ''
               AND EXISTS (
                 SELECT 1 FROM cardtrader_prices cp
                 WHERE cp.catalog = 'yugioh'
-                  AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                  AND (
-                    LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1))
-                    OR (LENGTH(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1)) > 3
-                        AND LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 3)))
-                  )
+                  AND cp.expansion_code = yugioh_prints.set_id_lc
+                  AND cp.cn_lc IN (yugioh_prints.cn_primary, yugioh_prints.cn_secondary)
+                  AND cp.cn_lc <> ''
                   AND cp.language = ?
                   AND cp.min_price_any_cents IS NOT NULL
               )
           ''', [lang, lang]);
+          tick();
 
-          // ── Pass 1: normalized name match (fallback when CN not matched) ───
-          total += await db.rawUpdate('''
-            UPDATE yugioh_prints
-            SET $col = (
-              SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
-              FROM cardtrader_prices cp
-              JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
-              WHERE cp.catalog = 'yugioh'
-                AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                AND ${_normName('cp.card_name_en')} = ${_normName('yc.name')}
-                AND cp.language = ?
-                AND cp.min_price_any_cents IS NOT NULL
-              ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
-              LIMIT 1
-            )
-            WHERE yugioh_prints.set_id IS NOT NULL
-              AND $col IS NULL
-              AND EXISTS (
-                SELECT 1 FROM cardtrader_prices cp
-                JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
-                WHERE cp.catalog = 'yugioh'
-                  AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                  AND ${_normName('cp.card_name_en')} = ${_normName('yc.name')}
-                  AND cp.language = ?
-                  AND cp.min_price_any_cents IS NOT NULL
-              )
-          ''', [lang, lang]);
-
-          // ── Pass 2: CT name with " (...)" suffix stripped ─────────────────
-          // Handles blueprints like "Polymerization (Speed Duel)" or
-          // "Dark Magician (Duel Links)" that differ only by the qualifier.
+          // ── Passata 1: match per nome normalizzato ────────────────────────
           total += await db.rawUpdate('''
             UPDATE yugioh_prints
             SET $col = (
@@ -5225,75 +5521,75 @@ class DatabaseHelper {
               FROM cardtrader_prices cp
               JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
               WHERE cp.catalog = 'yugioh'
-                AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                AND ${_ctNameBase('cp.card_name_en')} = ${_normName('yc.name')}
+                AND cp.expansion_code = yugioh_prints.set_id_lc
+                AND cp.name_norm = yc.name_norm
                 AND cp.language = ?
                 AND cp.min_price_any_cents IS NOT NULL
               ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
               LIMIT 1
             )
-            WHERE yugioh_prints.set_id IS NOT NULL
+            WHERE yugioh_prints.set_id_lc <> ''
               AND $col IS NULL
               AND EXISTS (
                 SELECT 1 FROM cardtrader_prices cp
                 JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
                 WHERE cp.catalog = 'yugioh'
-                  AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                  AND ${_ctNameBase('cp.card_name_en')} = ${_normName('yc.name')}
+                  AND cp.expansion_code = yugioh_prints.set_id_lc
+                  AND cp.name_norm = yc.name_norm
                   AND cp.language = ?
                   AND cp.min_price_any_cents IS NOT NULL
               )
           ''', [lang, lang]);
+          tick();
 
-          // ── Pass 3: collector_number fallback ─────────────────────────────
-          // When the name match fails completely, use the suffix of set_code
-          // (e.g. "LOB-EN001" → "EN001") as collector_number key.
-          // Also tries digit-only form ("001") for CTs that strip the lang prefix.
+          // ── Passata 2: nome CT senza il qualificatore " (...)" ────────────
+          // Copre blueprint tipo "Polymerization (Speed Duel)" o
+          // "Dark Magician (Duel Links)", che differiscono solo per il suffisso.
           total += await db.rawUpdate('''
             UPDATE yugioh_prints
             SET $col = (
               SELECT CAST(cp.min_price_any_cents AS REAL) / 100.0
               FROM cardtrader_prices cp
+              JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
               WHERE cp.catalog = 'yugioh'
-                AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                AND (
-                  LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1))
-                  OR (LENGTH(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1)) > 3
-                      AND LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 3)))
-                )
+                AND cp.expansion_code = yugioh_prints.set_id_lc
+                AND cp.name_base_norm = yc.name_norm
                 AND cp.language = ?
                 AND cp.min_price_any_cents IS NOT NULL
               ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
               LIMIT 1
             )
-            WHERE yugioh_prints.set_id IS NOT NULL
+            WHERE yugioh_prints.set_id_lc <> ''
               AND $col IS NULL
-              AND INSTR(yugioh_prints.set_code, '-') > 0
               AND EXISTS (
                 SELECT 1 FROM cardtrader_prices cp
+                JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
                 WHERE cp.catalog = 'yugioh'
-                  AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-                  AND (
-                    LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1))
-                    OR (LENGTH(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 1)) > 3
-                        AND LOWER(cp.collector_number) = LOWER(SUBSTR(yugioh_prints.set_code, INSTR(yugioh_prints.set_code, '-') + 3)))
-                  )
+                  AND cp.expansion_code = yugioh_prints.set_id_lc
+                  AND cp.name_base_norm = yc.name_norm
                   AND cp.language = ?
                   AND cp.min_price_any_cents IS NOT NULL
               )
           ''', [lang, lang]);
+          tick();
+
+          // NB: qui c'era una quarta passata su collector number identica alla
+          // passata 0 tranne che per il guardiano `$col IS NULL`. Era codice
+          // morto: le righe che arrivavano fin lì con la colonna ancora vuota
+          // sono esattamente quelle su cui la passata 0 non aveva trovato
+          // corrispondenza, quindi il suo EXISTS era falso per costruzione.
         }
 
-        // Aggiorna metadati sync CT per ogni stampa: data e stato annunci.
-        await db.rawUpdate('''
+        // Metadati sync CT per stampa: data e conteggio annunci.
+        total += await db.rawUpdate('''
           UPDATE yugioh_prints
           SET ct_synced_at = (
             SELECT MAX(cp.synced_at)
             FROM cardtrader_prices cp
             JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
             WHERE cp.catalog = 'yugioh'
-              AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-              AND ${_normName('cp.card_name_en')} = ${_normName('yc.name')}
+              AND cp.expansion_code = yugioh_prints.set_id_lc
+              AND cp.name_norm = yc.name_norm
               AND cp.min_price_any_cents IS NOT NULL
           ),
           ct_listing_count = COALESCE((
@@ -5301,14 +5597,15 @@ class DatabaseHelper {
             FROM cardtrader_prices cp
             JOIN yugioh_cards yc ON yc.id = yugioh_prints.card_id
             WHERE cp.catalog = 'yugioh'
-              AND cp.expansion_code = LOWER(yugioh_prints.set_id)
-              AND ${_normName('cp.card_name_en')} = ${_normName('yc.name')}
+              AND cp.expansion_code = yugioh_prints.set_id_lc
+              AND cp.name_norm = yc.name_norm
               AND cp.min_price_any_cents IS NOT NULL
             ORDER BY (cp.listing_count > 0) DESC, cp.min_price_any_cents ASC
             LIMIT 1
           ), 0)
-          WHERE yugioh_prints.set_id IS NOT NULL
+          WHERE yugioh_prints.set_id_lc <> ''
         ''');
+        tick();
 
       case 'pokemon':
         const pokeLangCols = <String, String>{
@@ -5321,9 +5618,9 @@ class DatabaseHelper {
         };
         for (final entry in pokeLangCols.entries) {
           final lang = entry.key;
-          final col  = entry.value;
+          final col = entry.value;
 
-          // ── Pass 1: normalized name match ─────────────────────────────────
+          // ── Passata 1: match per nome normalizzato ────────────────────────
           total += await db.rawUpdate('''
             UPDATE pokemon_prints
             SET $col = (
@@ -5331,8 +5628,8 @@ class DatabaseHelper {
               FROM cardtrader_prices cp
               JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
               WHERE cp.catalog = 'pokemon'
-                AND cp.expansion_code = LOWER(pc.set_id)
-                AND ${_normName('cp.card_name_en')} = ${_normName('pc.name')}
+                AND cp.expansion_code = pc.set_id_lc
+                AND cp.name_norm = pc.name_norm
                 AND cp.language = ?
                 AND cp.min_price_any_cents IS NOT NULL
               ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
@@ -5342,16 +5639,17 @@ class DatabaseHelper {
               SELECT 1 FROM cardtrader_prices cp
               JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
               WHERE cp.catalog = 'pokemon'
-                AND cp.expansion_code = LOWER(pc.set_id)
-                AND ${_normName('cp.card_name_en')} = ${_normName('pc.name')}
+                AND cp.expansion_code = pc.set_id_lc
+                AND cp.name_norm = pc.name_norm
                 AND cp.language = ?
                 AND cp.min_price_any_cents IS NOT NULL
             )
           ''', [lang, lang]);
+          tick();
 
-          // ── Pass 2: collector_number fallback ─────────────────────────────
-          // pokemon_prints.set_code = the collector number (e.g. "001", "SWSH001").
-          // CT stores the same value in collector_number — strong uniqueness signal.
+          // ── Passata 2: fallback su collector number ───────────────────────
+          // pokemon_prints.set_code È il collector number ("001", "SWSH001"),
+          // lo stesso valore che CT tiene in collector_number.
           total += await db.rawUpdate('''
             UPDATE pokemon_prints
             SET $col = (
@@ -5359,36 +5657,38 @@ class DatabaseHelper {
               FROM cardtrader_prices cp
               JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
               WHERE cp.catalog = 'pokemon'
-                AND cp.expansion_code = LOWER(pc.set_id)
-                AND LOWER(cp.collector_number) = LOWER(pokemon_prints.set_code)
+                AND cp.expansion_code = pc.set_id_lc
+                AND cp.cn_lc = pokemon_prints.set_code_lc
                 AND cp.language = ?
                 AND cp.min_price_any_cents IS NOT NULL
               ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
               LIMIT 1
             )
             WHERE $col IS NULL
+              AND pokemon_prints.set_code_lc <> ''
               AND EXISTS (
                 SELECT 1 FROM cardtrader_prices cp
                 JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
                 WHERE cp.catalog = 'pokemon'
-                  AND cp.expansion_code = LOWER(pc.set_id)
-                  AND LOWER(cp.collector_number) = LOWER(pokemon_prints.set_code)
+                  AND cp.expansion_code = pc.set_id_lc
+                  AND cp.cn_lc = pokemon_prints.set_code_lc
                   AND cp.language = ?
                   AND cp.min_price_any_cents IS NOT NULL
               )
           ''', [lang, lang]);
+          tick();
         }
 
-        // Aggiorna metadati sync CT per ogni stampa Pokémon.
-        await db.rawUpdate('''
+        // Metadati sync CT per stampa Pokémon.
+        total += await db.rawUpdate('''
           UPDATE pokemon_prints
           SET ct_synced_at = (
             SELECT MAX(cp.synced_at)
             FROM cardtrader_prices cp
             JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
             WHERE cp.catalog = 'pokemon'
-              AND cp.expansion_code = LOWER(pc.set_id)
-              AND ${_normName('cp.card_name_en')} = ${_normName('pc.name')}
+              AND cp.expansion_code = pc.set_id_lc
+              AND cp.name_norm = pc.name_norm
               AND cp.min_price_any_cents IS NOT NULL
           ),
           ct_listing_count = COALESCE((
@@ -5396,13 +5696,14 @@ class DatabaseHelper {
             FROM cardtrader_prices cp
             JOIN pokemon_cards pc ON pc.id = pokemon_prints.card_id
             WHERE cp.catalog = 'pokemon'
-              AND cp.expansion_code = LOWER(pc.set_id)
-              AND ${_normName('cp.card_name_en')} = ${_normName('pc.name')}
+              AND cp.expansion_code = pc.set_id_lc
+              AND cp.name_norm = pc.name_norm
               AND cp.min_price_any_cents IS NOT NULL
             ORDER BY (cp.listing_count > 0) DESC, cp.min_price_any_cents ASC
             LIMIT 1
           ), 0)
         ''');
+        tick();
 
       case 'onepiece':
         const opLangCols = <String, String>{
@@ -5413,18 +5714,11 @@ class DatabaseHelper {
           'zh': 'market_price_zh',
         };
 
-        // SQL fragment: expansion_code from onepiece_prints (set_id or card_set_id prefix)
-        const opExpCode = "LOWER(COALESCE("
-            "NULLIF(onepiece_prints.set_id,''),"
-            "CASE WHEN onepiece_prints.card_set_id LIKE '%-%'"
-            " THEN SUBSTR(onepiece_prints.card_set_id,1,INSTR(onepiece_prints.card_set_id,'-')-1)"
-            " ELSE onepiece_prints.card_set_id END))";
-
         for (final entry in opLangCols.entries) {
           final lang = entry.key;
-          final col  = entry.value;
+          final col = entry.value;
 
-          // ── Pass 1: normalized name match ─────────────────────────────────
+          // ── Passata 1: match per nome normalizzato ────────────────────────
           total += await db.rawUpdate('''
             UPDATE onepiece_prints
             SET $col = (
@@ -5432,26 +5726,27 @@ class DatabaseHelper {
               FROM cardtrader_prices cp
               JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
               WHERE cp.catalog = 'onepiece'
+                AND cp.expansion_code = onepiece_prints.exp_code_lc
+                AND cp.name_norm = oc.name_norm
                 AND cp.language = ?
-                AND cp.expansion_code = $opExpCode
-                AND ${_normName('cp.card_name_en')} = ${_normName('oc.name')}
                 AND cp.min_price_any_cents IS NOT NULL
               ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
               LIMIT 1
             )
-            WHERE onepiece_prints.card_set_id IS NOT NULL
+            WHERE onepiece_prints.exp_code_lc <> ''
               AND EXISTS (
                 SELECT 1 FROM cardtrader_prices cp
                 JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
                 WHERE cp.catalog = 'onepiece'
+                  AND cp.expansion_code = onepiece_prints.exp_code_lc
+                  AND cp.name_norm = oc.name_norm
                   AND cp.language = ?
-                  AND cp.expansion_code = $opExpCode
-                  AND ${_normName('cp.card_name_en')} = ${_normName('oc.name')}
                   AND cp.min_price_any_cents IS NOT NULL
               )
           ''', [lang, lang]);
+          tick();
 
-          // ── Pass 2: CT name with " (...)" suffix stripped ─────────────────
+          // ── Passata 2: nome CT senza il qualificatore " (...)" ────────────
           total += await db.rawUpdate('''
             UPDATE onepiece_prints
             SET $col = (
@@ -5459,37 +5754,38 @@ class DatabaseHelper {
               FROM cardtrader_prices cp
               JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
               WHERE cp.catalog = 'onepiece'
+                AND cp.expansion_code = onepiece_prints.exp_code_lc
+                AND cp.name_base_norm = oc.name_norm
                 AND cp.language = ?
-                AND cp.expansion_code = $opExpCode
-                AND ${_ctNameBase('cp.card_name_en')} = ${_normName('oc.name')}
                 AND cp.min_price_any_cents IS NOT NULL
               ORDER BY (cp.min_price_nm_cents IS NULL), cp.min_price_any_cents ASC
               LIMIT 1
             )
-            WHERE onepiece_prints.card_set_id IS NOT NULL
+            WHERE onepiece_prints.exp_code_lc <> ''
               AND $col IS NULL
               AND EXISTS (
                 SELECT 1 FROM cardtrader_prices cp
                 JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
                 WHERE cp.catalog = 'onepiece'
+                  AND cp.expansion_code = onepiece_prints.exp_code_lc
+                  AND cp.name_base_norm = oc.name_norm
                   AND cp.language = ?
-                  AND cp.expansion_code = $opExpCode
-                  AND ${_ctNameBase('cp.card_name_en')} = ${_normName('oc.name')}
                   AND cp.min_price_any_cents IS NOT NULL
               )
           ''', [lang, lang]);
+          tick();
         }
 
-        // Aggiorna metadati sync CT per ogni stampa One Piece.
-        await db.rawUpdate('''
+        // Metadati sync CT per stampa One Piece.
+        total += await db.rawUpdate('''
           UPDATE onepiece_prints
           SET ct_synced_at = (
             SELECT MAX(cp.synced_at)
             FROM cardtrader_prices cp
             JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
             WHERE cp.catalog = 'onepiece'
-              AND cp.expansion_code = $opExpCode
-              AND ${_normName('cp.card_name_en')} = ${_normName('oc.name')}
+              AND cp.expansion_code = onepiece_prints.exp_code_lc
+              AND cp.name_norm = oc.name_norm
               AND cp.min_price_any_cents IS NOT NULL
           ),
           ct_listing_count = COALESCE((
@@ -5497,16 +5793,18 @@ class DatabaseHelper {
             FROM cardtrader_prices cp
             JOIN onepiece_cards oc ON oc.id = onepiece_prints.card_id
             WHERE cp.catalog = 'onepiece'
-              AND cp.expansion_code = $opExpCode
-              AND ${_normName('cp.card_name_en')} = ${_normName('oc.name')}
+              AND cp.expansion_code = onepiece_prints.exp_code_lc
+              AND cp.name_norm = oc.name_norm
               AND cp.min_price_any_cents IS NOT NULL
             ORDER BY (cp.listing_count > 0) DESC, cp.min_price_any_cents ASC
             LIMIT 1
           ), 0)
-          WHERE onepiece_prints.card_set_id IS NOT NULL
+          WHERE onepiece_prints.exp_code_lc <> ''
         ''');
+        tick();
     }
 
+    onProgress?.call(1.0);
     return total;
   }
 

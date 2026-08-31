@@ -172,11 +172,21 @@ class SyncService {
       final remoteCards       = results[2] as List<Map<String, dynamic>>;
       final remoteDecks       = results[3] as List<Map<String, dynamic>>;
 
-      // Collections — aggiorna solo se il server ha risposto con dati reali
+      // Collections — aggiorna solo se il server ha risposto con dati reali.
+      //
+      // Gli sblocchi ancora in coda vanno riapplicati dopo il reset: il remoto
+      // non li conosce, e prenderlo alla lettera revocherebbe una collezione
+      // appena sbloccata (rewarded guardata per intero, push fallito perché
+      // offline o rifiutato da App Check). Restano in coda finché
+      // flushPendingQueue non li conferma.
       if (remoteCollections.isNotEmpty) {
+        final pendingUnlocks = await _dbHelper.getPendingCollectionUnlocks();
         await _dbHelper.resetCollectionsLockState();
         for (final col in remoteCollections) {
           if (col.isUnlocked) await _dbHelper.unlockCollection(col.key);
+        }
+        for (final key in pendingUnlocks) {
+          await _dbHelper.unlockCollection(key);
         }
       }
 
@@ -651,16 +661,26 @@ class SyncService {
     }
   }
 
+  /// Propaga a Firestore lo sblocco di una collezione.
+  ///
+  /// Ogni via di fallimento accoda in `pending_sync`. Prima il fallimento
+  /// veniva solo loggato: lo sblocco restava locale e il primo
+  /// [pullFromCloud] lo cancellava, riallineando i lucchetti al remoto che
+  /// non ne sapeva nulla.
   Future<void> pushCollectionUnlock(String collectionKey) async {
-    if (!await canSync()) return;
     final userId = _userId;
-    if (userId == null) return;
+    if (userId == null || !await canSync()) {
+      await _dbHelper.addPendingCollectionUnlock(collectionKey);
+      return;
+    }
 
     try {
       await _firestoreService.setCollectionUnlocked(userId, collectionKey, true)
           .timeout(const Duration(seconds: 10));
+      await _dbHelper.clearPendingCollectionUnlock(collectionKey);
     } catch (e) {
       AppLogger.error('pushCollectionUnlock failed', tag: 'SyncService', error: e);
+      await _dbHelper.addPendingCollectionUnlock(collectionKey);
     }
   }
 
@@ -750,6 +770,15 @@ class SyncService {
             break;
           case 'decks':
             await pushDeckChange(localId, changeType);
+            break;
+          case 'collections':
+            // Per gli sblocchi `data` contiene la chiave della collezione,
+            // non un firestoreId: sono identificati da una stringa.
+            if (changeType == 'unlock' && storedFirestoreId != null) {
+              await _firestoreService
+                  .setCollectionUnlocked(userId, storedFirestoreId, true)
+                  .timeout(const Duration(seconds: 10));
+            }
             break;
         }
 

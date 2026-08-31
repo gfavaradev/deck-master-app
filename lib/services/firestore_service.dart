@@ -26,6 +26,19 @@ class FirestoreService {
   /// `integration_test/crashes/firestore_oom_test.dart`).
   static const int kQueryLimit = 500;
 
+  /// Tetto di attesa su una lettura Firestore singola.
+  ///
+  /// La persistence nativa è disabilitata (`main.dart`: SQLite fa da cache),
+  /// e senza persistence una lettura offline o rifiutata da App Check **non
+  /// ritorna e non lancia**: il client resta a ritentare all'infinito. Nessun
+  /// errore da intercettare, quindi ogni pagina in attesa restava sullo
+  /// spinner per sempre. Ogni lettura che la UI aspetta ha un tetto.
+  static const Duration readTimeout = Duration(seconds: 15);
+
+  /// Come [readTimeout], ma per le letture a lotti (pagine da 500 documenti,
+  /// batch di chunk di catalogo): più dati sul filo, più tempo concesso.
+  static const Duration batchReadTimeout = Duration(seconds: 30);
+
   // ============================================================
   // Catalog Methods (Generic for all catalogs)
   // ============================================================
@@ -37,7 +50,8 @@ class FirestoreService {
       final doc = await _firestore
           .collection(FirestorePaths.catalog(catalogName))
           .doc(FirestoreConstants.catalogMetadata)
-          .get();
+          .get()
+          .timeout(readTimeout);
       return doc.exists ? doc.data() : null;
     } catch (e) { // ignore: empty_catches
       AppLogger.error(
@@ -153,7 +167,7 @@ class FirestoreService {
                 .doc(FirestoreConstants.getChunkId(i))
                 .get(),
         ];
-        final docs = await Future.wait(futures);
+        final docs = await Future.wait(futures).timeout(batchReadTimeout);
         for (final doc in docs) {
           if (doc.exists && doc.data() != null) {
             final List<dynamic> cards = doc.data()!['cards'] ?? [];
@@ -201,7 +215,7 @@ class FirestoreService {
             .doc(FirestoreConstants.catalogChunks)
             .collection(FirestoreConstants.catalogItems)
             .doc(chunkId)
-            .get()));
+            .get())).timeout(batchReadTimeout);
         for (final doc in docs) {
           if (doc.exists && doc.data() != null) {
             final List<dynamic> cards = doc.data()!['cards'] ?? [];
@@ -273,7 +287,10 @@ class FirestoreService {
 
   Future<List<CollectionModel>> getCollections(String userId) async {
     try {
-      final snapshot = await _firestore.collection(FirestorePaths.userCollections(userId)).get();
+      final snapshot = await _firestore
+          .collection(FirestorePaths.userCollections(userId))
+          .get()
+          .timeout(readTimeout);
       return snapshot.docs.map((doc) {
         final data = doc.data();
         return CollectionModel(
@@ -337,7 +354,8 @@ class FirestoreService {
     final snapshot = await _firestore
         .collection(FirestorePaths.userAlbums(userId))
         .limit(kQueryLimit)
-        .get();
+        .get()
+        .timeout(batchReadTimeout);
 
     return snapshot.docs.map(_albumDocToMap).toList();
   }
@@ -429,7 +447,8 @@ class FirestoreService {
     final snapshot = await _firestore
         .collection(FirestorePaths.userCards(userId))
         .limit(kQueryLimit)
-        .get();
+        .get()
+        .timeout(batchReadTimeout);
 
     return snapshot.docs.map(_cardDocToMap).toList();
   }
@@ -459,7 +478,8 @@ class FirestoreService {
       Query<Map<String, dynamic>> page =
           collection.orderBy(FieldPath.documentId);
       if (cursor != null) page = page.startAfterDocument(cursor);
-      final snapshot = await page.limit(kQueryLimit).get();
+      final snapshot =
+          await page.limit(kQueryLimit).get().timeout(batchReadTimeout);
       if (snapshot.docs.isEmpty) break;
       results.addAll(snapshot.docs.map(mapper));
       if (snapshot.docs.length < kQueryLimit) break;
@@ -530,7 +550,8 @@ class FirestoreService {
   Future<List<Map<String, dynamic>>> getWishlistItems(String userId) async {
     final snapshot = await _firestore
         .collection(FirestorePaths.userWishlist(userId))
-        .get();
+        .get()
+        .timeout(readTimeout);
     return snapshot.docs.map((doc) {
       final d = doc.data();
       return {
@@ -574,7 +595,8 @@ class FirestoreService {
   Future<List<Map<String, dynamic>>> getDecks(String userId) async {
     final snapshot = await _firestore
         .collection(FirestorePaths.userDecks(userId))
-        .get();
+        .get()
+        .timeout(readTimeout);
 
     return snapshot.docs.map((doc) {
       final data = doc.data();
@@ -599,7 +621,10 @@ class FirestoreService {
 
   Future<DateTime?> getLastSync(String userId) async {
     try {
-      final doc = await _firestore.doc(FirestorePaths.user(userId)).get();
+      final doc = await _firestore
+          .doc(FirestorePaths.user(userId))
+          .get()
+          .timeout(readTimeout);
       final ts = doc.data()?['lastSyncAt'];
       if (ts is Timestamp) return ts.toDate();
     } catch (_) {}
@@ -829,7 +854,8 @@ class FirestoreService {
         .where('collections', arrayContainsAny: tags)
         .orderBy('publishedAt', descending: true)
         .limit(50)
-        .get();
+        .get()
+        .timeout(readTimeout);
     return snap.docs.map((d) => <String, dynamic>{...d.data(), 'id': d.id}).toList();
   }
 }

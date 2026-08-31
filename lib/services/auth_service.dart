@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:deck_master/services/user_service.dart';
 import 'package:deck_master/services/database_helper.dart';
 import 'package:deck_master/services/firestore_service.dart';
+import 'package:deck_master/services/subscription_service.dart';
 import 'package:deck_master/services/sync_service.dart';
 import 'package:deck_master/utils/app_logger.dart';
 
@@ -214,6 +215,11 @@ class AuthService {
 
   Future<void> signOut() async {
     SyncService().stopListening();
+
+    // Va letto prima di `_auth.signOut()`: dopo, currentUser è già null e la
+    // cache dello stato Pro resterebbe in giro per l'account successivo.
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) await SubscriptionService.clearProCache(uid);
 
     // GoogleSignIn package is only used on mobile — skip on web
     if (!kIsWeb) {

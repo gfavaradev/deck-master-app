@@ -164,8 +164,18 @@ class CardtraderService {
 
   /// Aggiorna i prezzi del catalogo dai prezzi CT in cache locale.
   /// Returns the number of catalog print rows updated.
-  Future<int> applyLocalPricesToCollection(String catalog) async {
-    return await _db.syncCatalogPricesFromCardtrader(catalog);
+  ///
+  /// [onProgress] riceve 0.0→1.0 sull'avanzamento delle passate di match: è il
+  /// passo più lungo di un download di catalogo e senza di esso la UI resta
+  /// ferma al 100% finché non finisce.
+  Future<int> applyLocalPricesToCollection(
+    String catalog, {
+    void Function(double progress)? onProgress,
+  }) async {
+    return await _db.syncCatalogPricesFromCardtrader(
+      catalog,
+      onProgress: onProgress,
+    );
   }
 
   /// Returns daily price snapshots for a card, ordered by date ascending.

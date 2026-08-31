@@ -101,14 +101,30 @@ class BillingService {
 
   // ── Ciclo di vita ──────────────────────────────────────────────────────────
 
+  /// Init in corso o completata, condivisa fra tutti i chiamanti.
+  ///
+  /// Serve perché [loadProducts] possa attenderla: l'init parte da `main()`
+  /// dietro lo `StartupGate`, e il paywall aperto prima che finisse trovava
+  /// `_available == false`, usciva con lista vuota e mostrava il listino di
+  /// riserva in euro al posto dei prezzi veri del negozio. Una init fallita
+  /// non viene memorizzata: il tentativo successivo riparte da capo.
+  Future<void>? _initFuture;
+
   /// Aggancia lo stream degli acquisti e l'auth Firebase.
   ///
   /// Va chiamata **una volta all'avvio**, non all'apertura del paywall: Play
   /// consegna su questo stream anche gli acquisti conclusi mentre l'app era
-  /// chiusa, e un listener attaccato tardi li perde.
-  Future<void> initialize() async {
-    if (!isSupportedPlatform) return;
+  /// chiusa, e un listener attaccato tardi li perde. Idempotente: chiamate
+  /// successive condividono lo stesso `Future`.
+  Future<void> initialize() {
+    if (!isSupportedPlatform) return Future.value();
+    return _initFuture ??= _initialize().catchError((Object e) {
+      _initFuture = null;
+      debugPrint('[billing] inizializzazione fallita: $e');
+    });
+  }
 
+  Future<void> _initialize() async {
     try {
       _available = await _iap.isAvailable();
     } catch (e) {
@@ -137,6 +153,7 @@ class BillingService {
     _authSubscription?.cancel();
     _purchaseSubscription = null;
     _authSubscription = null;
+    _initFuture = null;
   }
 
   // ── Prodotti ───────────────────────────────────────────────────────────────
@@ -146,7 +163,11 @@ class BillingService {
   /// Può contenere più voci con lo stesso [ProductDetails.id] quando un
   /// abbonamento ha più base plan: la scelta la fa [productFor].
   Future<List<ProductDetails>> loadProducts() async {
-    if (!isSupportedPlatform || !_available) return const [];
+    if (!isSupportedPlatform) return const [];
+    // Non basta leggere `_available`: se l'init non è ancora finita è false
+    // per default, e uscire qui vorrebbe dire mostrare prezzi inventati.
+    await initialize();
+    if (!_available) return const [];
     try {
       final response = await _iap.queryProductDetails(kProProductIds);
       if (response.error != null) {
@@ -184,7 +205,9 @@ class BillingService {
   /// Il `Future` si risolve quando Play e il backend hanno risposto, non
   /// quando il foglio di pagamento si apre.
   Future<BillingOutcome> purchase(ProductDetails product) async {
-    if (!isSupportedPlatform || !_available) return BillingOutcome.unavailable;
+    if (!isSupportedPlatform) return BillingOutcome.unavailable;
+    await initialize();
+    if (!_available) return BillingOutcome.unavailable;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return BillingOutcome.error;
@@ -230,7 +253,9 @@ class BillingService {
   /// rimandarli al backend per la verifica: la fonte è Play, non un backup
   /// locale. Ritorna `true` se almeno un abbonamento risulta attivo.
   Future<bool> restore() async {
-    if (!isSupportedPlatform || !_available) return false;
+    if (!isSupportedPlatform) return false;
+    await initialize();
+    if (!_available) return false;
 
     final inFlight = _restore;
     if (inFlight != null && !inFlight.isCompleted) return inFlight.future;

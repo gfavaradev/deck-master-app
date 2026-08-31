@@ -61,8 +61,28 @@ class DataRepository {
   final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
 
-  Future<void> _applyPricesAndCheckAlerts(String catalog) async {
-    try { await CardtraderService().applyLocalPricesToCollection(catalog); } catch (_) {}
+  /// Frazione della barra di download riservata all'aggancio dei prezzi.
+  ///
+  /// È il passo più lungo dell'intera operazione e prima non riportava nulla:
+  /// la barra arrivava al 100% e lì restava per tutta la sua durata, con l'app
+  /// che sembrava piantata. Ora il download dei chunk occupa il primo 85% e
+  /// questo passo il restante 15%.
+  static const double _pricingProgressShare = 0.15;
+  static const double _downloadProgressShare = 1.0 - _pricingProgressShare;
+
+  Future<void> _applyPricesAndCheckAlerts(
+    String catalog, {
+    void Function(double progress)? onProgress,
+  }) async {
+    try {
+      await CardtraderService().applyLocalPricesToCollection(
+        catalog,
+        onProgress: onProgress == null
+            ? null
+            : (p) => onProgress(_downloadProgressShare + p * _pricingProgressShare),
+      );
+    } catch (_) {}
+    onProgress?.call(1.0);
     PriceAlertService.checkAlerts();
   }
 
@@ -402,7 +422,7 @@ class DataRepository {
         final normalized = await compute(_normalizeYugiohBatch, cards);
         await _dbHelper.insertYugiohCards(normalized);
         totalDownloaded += cards.length;
-        onSaveProgress?.call(chunksDone / chunksTotal);
+        onSaveProgress?.call(chunksDone / chunksTotal * _downloadProgressShare);
       },
     );
 
@@ -421,7 +441,7 @@ class DataRepository {
       }
     }
 
-    await _applyPricesAndCheckAlerts('yugioh');
+    await _applyPricesAndCheckAlerts('yugioh', onProgress: onSaveProgress);
   }
 
   /// Applies an incremental catalog update: fetches only the modified chunks,
@@ -473,16 +493,26 @@ class DataRepository {
       }
     }
 
-    await _applyPricesAndCheckAlerts('yugioh');
+    await _applyPricesAndCheckAlerts('yugioh', onProgress: onSaveProgress);
   }
 
+  /// Riscarica il catalogo da zero.
+  ///
+  /// Scarica **prima** e pota **dopo**: le insert sono INSERT OR REPLACE, così
+  /// il catalogo resta consultabile per tutta la durata e un'interruzione non
+  /// lascia l'utente senza niente. La sequenza precedente cancellava tutto in
+  /// apertura — comprese le righe di `catalog_metadata` — e una app uccisa a
+  /// metà download (cosa che succedeva spesso, finché l'aggancio dei prezzi
+  /// faceva sembrare il download bloccato al 100%) lasciava il catalogo vuoto e
+  /// da riscaricare da capo.
   Future<void> redownloadYugiohCatalog({
     void Function(int current, int total)? onProgress,
     void Function(double progress)? onSaveProgress,
   }) async {
     if (kIsWeb) return;
-    await _dbHelper.clearYugiohCatalog();
+    final since = DateTime.now().toIso8601String();
     await downloadYugiohCatalog(onProgress: onProgress, onSaveProgress: onSaveProgress);
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince('yugioh', since);
     await _dbHelper.rebuildExpansionsAndRarities('yugioh');
   }
 
@@ -1757,7 +1787,7 @@ class DataRepository {
         await Future.delayed(Duration.zero); // yield UI frame before heavy work
         await _dbHelper.insertOnepieceCards(cards);
         totalDownloaded += cards.length;
-        onSaveProgress?.call(chunksDone / chunksTotal);
+        onSaveProgress?.call(chunksDone / chunksTotal * _downloadProgressShare);
       },
     );
 
@@ -1773,7 +1803,7 @@ class DataRepository {
       );
     }
 
-    await _applyPricesAndCheckAlerts('onepiece');
+    await _applyPricesAndCheckAlerts('onepiece', onProgress: onSaveProgress);
   }
 
   Future<void> _applyOnepieceIncrementalUpdate({
@@ -1805,7 +1835,7 @@ class DataRepository {
       );
     }
 
-    await _applyPricesAndCheckAlerts('onepiece');
+    await _applyPricesAndCheckAlerts('onepiece', onProgress: onSaveProgress);
   }
 
   Future<void> redownloadOnepieceCatalog({
@@ -1813,8 +1843,9 @@ class DataRepository {
     void Function(double progress)? onSaveProgress,
   }) async {
     if (kIsWeb) return;
-    await _dbHelper.clearOnepieceCatalog();
+    final since = DateTime.now().toIso8601String();
     await downloadOnepieceCatalog(onProgress: onProgress, onSaveProgress: onSaveProgress);
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince('onepiece', since);
     await _dbHelper.rebuildExpansionsAndRarities('onepiece');
   }
 
@@ -2012,7 +2043,7 @@ class DataRepository {
           lastUpdated: (remoteMetadata['lastUpdated'] as dynamic)?.toString() ?? DateTime.now().toIso8601String(),
         );
       }
-      await _applyPricesAndCheckAlerts('pokemon');
+      await _applyPricesAndCheckAlerts('pokemon', onProgress: onSaveProgress);
       return;
     }
 
@@ -2028,7 +2059,7 @@ class DataRepository {
         final normalized = await compute(_normalizePokemonBatch, cards);
         await _dbHelper.insertPokemonCards(normalized);
         totalDownloaded += cards.length;
-        onSaveProgress?.call(chunksDone / chunksTotal);
+        onSaveProgress?.call(chunksDone / chunksTotal * _downloadProgressShare);
       },
     );
 
@@ -2044,7 +2075,7 @@ class DataRepository {
       );
     }
 
-    await _applyPricesAndCheckAlerts('pokemon');
+    await _applyPricesAndCheckAlerts('pokemon', onProgress: onSaveProgress);
   }
 
   Future<void> redownloadPokemonCatalog({
@@ -2052,8 +2083,9 @@ class DataRepository {
     void Function(double progress)? onSaveProgress,
   }) async {
     if (kIsWeb) return;
-    await _dbHelper.clearPokemonCatalog();
+    final since = DateTime.now().toIso8601String();
     await downloadPokemonCatalog(onProgress: onProgress, onSaveProgress: onSaveProgress);
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince('pokemon', since);
     await _dbHelper.rebuildExpansionsAndRarities('pokemon');
   }
 
@@ -2153,7 +2185,7 @@ class DataRepository {
         final normalized = await compute(_normalizeMagicBatch, cards);
         await _dbHelper.insertMagicCards(normalized);
         totalDownloaded += cards.length;
-        onSaveProgress?.call(chunksDone / chunksTotal);
+        onSaveProgress?.call(chunksDone / chunksTotal * _downloadProgressShare);
       },
     );
 
@@ -2175,8 +2207,9 @@ class DataRepository {
     void Function(double progress)? onSaveProgress,
   }) async {
     if (kIsWeb) return;
-    await _dbHelper.clearMagicCatalog();
+    final since = DateTime.now().toIso8601String();
     await downloadMagicCatalog(onProgress: onProgress, onSaveProgress: onSaveProgress);
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince('magic', since);
   }
 
   // ============================================================
@@ -2239,7 +2272,7 @@ class DataRepository {
         await Future.delayed(Duration.zero);
         await _dbHelper.insertGenericCatalogCards(tablePrefix, cards);
         totalDownloaded += cards.length;
-        onSaveProgress?.call(chunksDone / chunksTotal);
+        onSaveProgress?.call(chunksDone / chunksTotal * _downloadProgressShare);
       },
     );
 
@@ -2263,12 +2296,13 @@ class DataRepository {
     void Function(double progress)? onSaveProgress,
   }) async {
     if (kIsWeb) return;
-    await _dbHelper.clearGenericCatalog(catalogKey);
+    final since = DateTime.now().toIso8601String();
     await downloadGenericCatalog(
       catalogKey,
       onProgress: onProgress,
       onSaveProgress: onSaveProgress,
     );
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince(catalogKey, since);
   }
 
   Future<List<Map<String, dynamic>>> getPokemonCatalogCards({

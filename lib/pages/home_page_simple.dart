@@ -42,7 +42,7 @@ class _HomePageSimpleState extends State<HomePageSimple> {
 
   // ── Rewarded ad & Pro ────────────────────────────────────────────────────
   bool _isPro = false;
-  RewardedAd? _rewardedAd;
+  RewardedInterstitialAd? _rewardedAd;
   // Notifier invece di un bool: il dialog ci si aggancia da sé con un
   // ValueListenableBuilder. Prima la pagina teneva il `setState` dello
   // StatefulBuilder del dialog (`_dialogSetState`) e lo richiamava a mano, ma

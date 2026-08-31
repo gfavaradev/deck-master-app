@@ -32,11 +32,20 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   // I prezzi mostrati vengono dal negozio (ProductDetails.price), già
   // localizzati nella valuta del paese dell'utente, e le percentuali di
   // risparmio sono calcolate sui prezzi reali. Le costanti qui sotto sono solo
-  // un listino di riserva in euro, usato finché le offerte non sono
-  // disponibili: piattaforma senza billing (Windows/Web), dispositivo offline,
-  // o prodotti non ancora propagati da Play.
+  // un listino di riserva, usato dove un negozio non c'è affatto: Windows e
+  // Web, dove il paywall è in sola lettura. Su una piattaforma con billing non
+  // vengono mai mostrate — vedi [_pricesFor].
   //
-  // Vanno tenute allineate a Play Console e App Store Connect.
+  // ATTENZIONE: sono gli importi di Play Console, cioè **al netto
+  // dell'imposta**. Quello che l'utente paga davvero è ~×1,20 (verificato con
+  // un dump di ProductDetails il 30/08/2026: il rapporto è uniforme su tutti e
+  // tre i piani, quindi è fiscale e non un difetto di matching delle offerte).
+  // Chi apre il paywall da Windows vede quindi una cifra più bassa di quella
+  // che gli verrebbe addebitata su Android: se un giorno da qui si potrà
+  // comprare, questi numeri vanno portati al lordo prima.
+  //
+  // Le percentuali di risparmio non ne risentono: sono un rapporto fra piani,
+  // invariante rispetto a un fattore comune.
   static const double _fallbackMonthly    = 4.99;
   static const double _fallbackSemiannual = 22.99;
   static const double _fallbackAnnual     = 34.99;
@@ -82,11 +91,26 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
   ProductDetails? _productFor(_Plan plan) =>
       BillingService().productFor(_productIdOf(plan));
 
+  /// Segnaposto usato finché il negozio non ha risposto.
+  static const _PlanPrices _pricesPlaceholder = _PlanPrices(
+    price: '—',
+    perMonth: '—',
+  );
+
   /// Prezzi da mostrare per [plan]: dal negozio quando disponibili, altrimenti
   /// dal listino di riserva in euro.
+  ///
+  /// Su una piattaforma con billing il listino di riserva non si usa mai: se
+  /// il negozio non ha (ancora) risposto si mostra un segnaposto. Mostrare una
+  /// cifra scritta nel codice accanto a un pulsante "Abbonati" significa
+  /// annunciare un prezzo che non è detto sia quello che Play addebiterà — ed
+  /// è esattamente il disallineamento con Play Console che si vedeva.
   _PlanPrices _pricesFor(_Plan plan) {
     final months = _monthsOf(plan);
     final product = _productFor(plan);
+    if (product == null && BillingService.isSupportedPlatform) {
+      return _pricesPlaceholder;
+    }
     final monthlyPrice = _productFor(_Plan.monthly)?.rawPrice ?? _fallbackMonthly;
     final price = product?.rawPrice ?? _fallbackPriceOf(plan);
 
@@ -398,7 +422,8 @@ class _ProPageState extends State<ProPage> with SingleTickerProviderStateMixin {
     // Finché Play non ha risposto i prezzi a schermo sono quelli di riserva:
     // lasciar premere significherebbe far comprare un piano a un prezzo che
     // non è detto sia quello mostrato.
-    final canBuy = _productsLoaded && !_isPurchasing;
+    final canBuy =
+        _productsLoaded && !_isPurchasing && _productFor(_selectedPlan) != null;
 
     return Column(
       children: [

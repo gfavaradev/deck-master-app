@@ -21,11 +21,21 @@ class AdService {
   static const _androidBannerTestId  = 'ca-app-pub-3940256099942544/6300978111';
   static const _iosBannerTestId      = 'ca-app-pub-3940256099942544/2934735716';
 
-  // ── Rewarded IDs ──────────────────────────────────────────────────────────
+  // ── Rewarded interstitial IDs ─────────────────────────────────────────────
+  //
+  // L'unità di produzione è un **interstitial con premio**, non un rewarded
+  // classico: nell'SDK sono due classi diverse (`RewardedInterstitialAd` vs
+  // `RewardedAd`) con due canali di caricamento distinti. Caricare l'una con
+  // l'altra fa fallire ogni richiesta con "Ad unit doesn't match format" —
+  // era la causa dello sblocco collezioni che non funzionava mai.
+  //
+  // Se un giorno l'unità venisse ricreata come Rewarded classico, qui va
+  // cambiata la classe, non solo l'id.
   static const _androidRewardedProdId  = 'ca-app-pub-8286949651686497/1949048086';
   static const _iosRewardedProdId      = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
-  static const _androidRewardedTestId  = 'ca-app-pub-3940256099942544/5224354917';
-  static const _iosRewardedTestId      = 'ca-app-pub-3940256099942544/1712485313';
+  // Id di test ufficiali Google per il formato interstitial con premio.
+  static const _androidRewardedTestId  = 'ca-app-pub-3940256099942544/5354046379';
+  static const _iosRewardedTestId      = 'ca-app-pub-3940256099942544/6978759866';
 
   static bool get _isIos => defaultTargetPlatform == TargetPlatform.iOS;
 
@@ -45,7 +55,7 @@ class AdService {
     return _isIos ? _iosBannerProdId : _androidBannerProdId;
   }
 
-  /// Ad unit ID rewarded: test in debug, produzione in release.
+  /// Ad unit ID dell'interstitial con premio: test in debug, prod in release.
   static String get rewardedAdUnitId {
     if (kDebugMode) return _isIos ? _iosRewardedTestId : _androidRewardedTestId;
     return _isIos ? _iosRewardedProdId : _androidRewardedProdId;
@@ -61,10 +71,12 @@ class AdService {
   @visibleForTesting
   static Future<void> Function() platformInitializer = _initializePlatform;
 
-  /// Load effettiva del rewarded. Stesso motivo di [platformInitializer].
+  /// Load effettiva dell'annuncio. Stesso motivo di [platformInitializer].
   @visibleForTesting
-  static void Function(String adUnitId, RewardedAdLoadCallback callback)
-      rewardedLoader = _loadRewardedPlatform;
+  static void Function(
+    String adUnitId,
+    RewardedInterstitialAdLoadCallback callback,
+  ) rewardedLoader = _loadRewardedPlatform;
 
   /// Riporta il servizio allo stato iniziale fra un test e l'altro.
   @visibleForTesting
@@ -112,7 +124,7 @@ class AdService {
 
   // ── Rewarded ──────────────────────────────────────────────────────────────
 
-  /// Carica un rewarded ad e lo restituisce via callback.
+  /// Carica un interstitial con premio e lo restituisce via callback.
   ///
   /// Attende [initialize] prima di partire, altrimenti il preload della home
   /// può scattare a SDK non ancora pronto e fallire sistematicamente.
@@ -120,13 +132,13 @@ class AdService {
   /// [onLoaded] → ad pronto.
   /// [onFailed] → errore di caricamento, già loggato qui con il codice AdMob.
   static Future<void> loadRewardedAd({
-    required void Function(RewardedAd ad) onLoaded,
+    required void Function(RewardedInterstitialAd ad) onLoaded,
     required void Function(LoadAdError error) onFailed,
   }) async {
     await initialize();
     rewardedLoader(
       rewardedAdUnitId,
-      RewardedAdLoadCallback(
+      RewardedInterstitialAdLoadCallback(
         onAdLoaded: onLoaded,
         onAdFailedToLoad: (error) {
           // Senza questo log l'unica traccia del fallimento era la snackbar
@@ -143,27 +155,33 @@ class AdService {
 
   static void _loadRewardedPlatform(
     String adUnitId,
-    RewardedAdLoadCallback callback,
+    RewardedInterstitialAdLoadCallback callback,
   ) {
-    RewardedAd.load(
+    RewardedInterstitialAd.load(
       adUnitId: adUnitId,
       request: const AdRequest(nonPersonalizedAds: true),
-      rewardedAdLoadCallback: callback,
+      rewardedInterstitialAdLoadCallback: callback,
     );
   }
 
-  /// Mostra un rewarded ad già caricato.
+  /// Mostra un interstitial con premio già caricato.
+  ///
+  /// Il formato può essere mostrato senza opt-in, ma la policy Google chiede
+  /// comunque una schermata introduttiva con possibilità di rifiutare: qui
+  /// arriva sempre dal dialog "Guarda il video / Annulla" della home, che la
+  /// soddisfa. Non chiamarlo mai a freddo su un cambio di schermata.
+  ///
   /// [onRewarded] → ricompensa guadagnata (chiamato prima della chiusura).
   /// [onDismissed] → ad chiusa (con o senza ricompensa).
   /// [onFailed]    → errore durante la visualizzazione.
   static void showRewardedAd(
-    RewardedAd ad, {
+    RewardedInterstitialAd ad, {
     required VoidCallback onRewarded,
     required VoidCallback onDismissed,
     required void Function(AdError error) onFailed,
   }) {
     bool rewarded = false;
-    ad.fullScreenContentCallback = FullScreenContentCallback(
+    ad.fullScreenContentCallback = FullScreenContentCallback<RewardedInterstitialAd>(
       onAdDismissedFullScreenContent: (a) {
         a.dispose();
         if (rewarded) onRewarded();
