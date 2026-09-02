@@ -200,20 +200,23 @@ jobs:
           releaseFiles: build/app/outputs/bundle/release/app-release.aab
           tracks: internal
           status: completed
-          # `changesNotSentForReview` NON va impostato qui, ma il valore giusto
-          # dipende dallo stato dell'app su Play e si inverte nel tempo. Sono
-          # due errori speculari, entrambi al commit dell'edit, entrambi visti
-          # su questo repo:
+          # Il valore giusto si inverte nel tempo e non dipende dal codice, ma
+          # dallo stato dell'app su Play: per questo si legge da una repo
+          # variable (`gh variable set PLAY_CHANGES_NOT_SENT_FOR_REVIEW -b
+          # false`), cosi' si cambia senza un commit. Default `true`.
+          # Sono due errori speculari, entrambi al commit dell'edit, entrambi
+          # visti su questo repo:
           #
-          #   - senza il flag, con una segnalazione di policy aperta:
-          #     "Changes cannot be sent for review automatically" (run 116, la
-          #     vc116 non arrivo' mai su Play);
-          #   - con il flag, a segnalazione risolta:
+          #   - con il flag a `false`, con una segnalazione di policy aperta o
+          #     una dichiarazione da compilare in Console:
+          #     "Changes cannot be sent for review automatically" (run 116 e,
+          #     di nuovo, run 33611088241 / 33652903061 del 02/09: l'AAB viene
+          #     caricato ma l'edit non viene committato, quindi la vc non
+          #     arriva su Play);
+          #   - con il flag a `true`, a Play che invia da solo:
           #     "Changes are sent for review automatically. The query parameter
           #     changesNotSentForReview must not be set" (run 33308280466).
           #
-          # Il flag era stato aggiunto per il primo caso ed e' passato il
-          # 27/08; risolta la segnalazione sui permessi foto (638ed46), Play e'
-          # tornato a inviare da solo e lo stesso flag ha rotto il commit.
-          # Se ricompare il primo errore, rimettere `changesNotSentForReview:
-          # true` e inviare poi la revisione a mano dalla Play Console.
+          # Con il flag a `true` la release resta da inviare in revisione a
+          # mano dalla Play Console.
+          changesNotSentForReview: ${{ vars.PLAY_CHANGES_NOT_SENT_FOR_REVIEW || 'true' }}
