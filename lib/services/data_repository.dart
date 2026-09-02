@@ -23,7 +23,7 @@ List<Map<String, dynamic>> _normalizeYugiohBatch(List<Map<String, dynamic>> card
     cards.map(DataRepository._normalizeCardForSQLite).toList();
 
 List<Map<String, dynamic>> _normalizePokemonBatch(List<Map<String, dynamic>> cards) =>
-    cards.map(DataRepository._normalizePokemonCardForSQLite).toList();
+    cards.map(DataRepository.normalizePokemonCardForSQLite).toList();
 
 List<Map<String, dynamic>> _normalizeMagicBatch(List<Map<String, dynamic>> cards) =>
     cards.map(DataRepository._normalizeMagicCardForSQLite).toList();
@@ -329,7 +329,10 @@ class DataRepository {
   /// Converts a Pokémon card from the Firestore `sets`-map format to the flat
   /// `prints` list expected by [DatabaseHelper.insertPokemonCards].
   /// Cards already in the old `prints` format are passed through unchanged.
-  static Map<String, dynamic> _normalizePokemonCardForSQLite(Map<String, dynamic> card) {
+  /// Da carta di catalogo Pokémon (`sets` per lingua) alla forma che
+  /// [DatabaseHelper.insertPokemonCards] si aspetta (`prints`).
+  @visibleForTesting
+  static Map<String, dynamic> normalizePokemonCardForSQLite(Map<String, dynamic> card) {
     if (card.containsKey('prints') || !card.containsKey('sets')) return card;
     final rawSets = card['sets'];
     if (rawSets is! Map) return card;
@@ -340,7 +343,15 @@ class DataRepository {
       return s.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     }
 
-    final enSets = getSets('en');
+    // L'inglese e' la lingua base, ma non e' garantita: una carta pubblicata
+    // solo in un'altra lingua sparirebbe invece di comparire con la sua.
+    var enSets = getSets('en');
+    if (enSets.isEmpty) {
+      for (final key in rawSets.keys) {
+        enSets = getSets(key.toString());
+        if (enSets.isNotEmpty) break;
+      }
+    }
     if (enSets.isEmpty) return card;
 
     // For Pokémon, all languages share the same set_code (api_id).
@@ -362,7 +373,10 @@ class DataRepository {
         'set_name': en['set_name'],
         'rarity':   en['rarity'],
         'set_price': en['set_price'],
-        'artwork':   en['image_url'],
+        // Il campo si chiama `artwork` nei chunk pubblicati dal worker
+        // (rebuild/pokemon.ts); leggere solo `image_url` lasciava ogni stampa
+        // Pokémon senza immagine.
+        'artwork':   en['artwork'] ?? en['image_url'],
         'set_code_it': code, 'set_name_it': it?['set_name'], 'rarity_it': it?['rarity'], 'set_price_it': it?['set_price'],
         'set_code_fr': code, 'set_name_fr': fr?['set_name'], 'rarity_fr': fr?['rarity'], 'set_price_fr': fr?['set_price'],
         'set_code_de': code, 'set_name_de': de?['set_name'], 'rarity_de': de?['rarity'], 'set_price_de': de?['set_price'],
@@ -372,16 +386,17 @@ class DataRepository {
     }).toList();
 
     String? resolvedImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
-    // CT download (uploadImages:false) stores no image URL → reconstruct pokemontcg.io fallback
-    // so SQLite has something even before migration uploads the Backblaze version.
+    // In mancanza di un'immagine a livello carta vale quella della stampa: e'
+    // li' che il worker la scrive.
     if (resolvedImageUrl == null || resolvedImageUrl.isEmpty) {
-      final apiId = card['api_id'] as String? ?? '';
-      final dash = apiId.lastIndexOf('-');
-      if (dash > 0) {
-        resolvedImageUrl = 'https://images.pokemontcg.io/'
-            '${apiId.substring(0, dash)}/${apiId.substring(dash + 1)}_hires.png';
-      }
+      resolvedImageUrl = prints
+          .map((p) => p['artwork'] as String?)
+          .firstWhere((u) => u != null && u.isNotEmpty, orElse: () => null);
     }
+    // Niente ricostruzione di URL pokemontcg.io: `api_id` e'
+    // "{espansione}-{blueprint CardTrader}", quindi quell'URL puntava a un
+    // numero di carta che su pokemontcg.io non esiste — un 404 per ogni carta,
+    // che l'app non distingue da un'immagine mancante.
     return Map<String, dynamic>.from(card)
       ..remove('sets')
       ..['prints'] = prints
@@ -2039,7 +2054,7 @@ class DataRepository {
       final deletedIds = deletedCards.whereType<num>().map((e) => e.toInt()).toList();
       if (deletedIds.isNotEmpty) await _dbHelper.deletePokemonCardsByIds(deletedIds);
       if (modifiedCards.isNotEmpty) {
-        final normalizedCards = modifiedCards.map(_normalizePokemonCardForSQLite).toList();
+        final normalizedCards = modifiedCards.map(normalizePokemonCardForSQLite).toList();
         await _dbHelper.insertPokemonCards(normalizedCards, onProgress: onSaveProgress);
       }
       if (remoteMetadata != null) {

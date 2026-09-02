@@ -5221,16 +5221,21 @@ class DatabaseHelper {
             );
           }
 
-          // Solo URL di storage hosted (Backblaze o legacy Cloudinary) sono valide
-          bool isHostedImageUrl(String? url) =>
-              url != null &&
-              (url.contains('backblazeb2.com') || url.contains('cloudinary.com'));
+          // Va bene qualunque URL assoluto, non solo Backblaze/Cloudinary.
+          // Con il solo filtro "hosted" una carta senza immagine già migrata
+          // restava senza immagine del tutto, e la migrazione di un catalogo
+          // intero richiede giorni: intanto l'URL della sorgente si carica
+          // benissimo. La preferenza per lo storage proprio resta, ma si
+          // esprime nell'ON CONFLICT qui sotto, che non lascia mai un URL B2
+          // sovrascrivere da uno esterno.
+          bool isUsableImageUrl(String? url) =>
+              url != null && (url.startsWith('https://') || url.startsWith('http://'));
           final cardImageUrl = card['imageUrl'] as String? ?? card['image_url'] as String?;
-          final cardArtwork = isHostedImageUrl(cardImageUrl) ? cardImageUrl : null;
+          final cardArtwork = isUsableImageUrl(cardImageUrl) ? cardImageUrl : null;
           for (final p in prints) {
             final print = Map<String, dynamic>.from(p as Map);
             final rawArtwork = print['artwork'] as String? ?? cardImageUrl;
-            final artwork = isHostedImageUrl(rawArtwork) ? rawArtwork : cardArtwork;
+            final artwork = isUsableImageUrl(rawArtwork) ? rawArtwork : cardArtwork;
             // ON CONFLICT: aggiorna tutti i campi eccetto artwork — se il nuovo
             // valore non è hosted, preserva quello già in SQLite.
             await txn.rawInsert('''
