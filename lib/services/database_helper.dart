@@ -5288,6 +5288,34 @@ class DatabaseHelper {
       processed += batch.length;
       onProgress?.call(processed / cards.length);
     }
+    await _dropStaleOnepiecePrints();
+  }
+
+  /// Toglie le stampe One Piece rimaste dal catalogo vecchio.
+  ///
+  /// `card_set_id` e' UNIQUE, quindi quando il rebuild del 03/09/2026 ha
+  /// sostituito il seriale surrogato ("OP01-244442") con quello vero
+  /// ("OP01-064") la stampa nuova e' entrata come riga NUOVA invece di
+  /// aggiornare quella esistente: senza questa pulizia la stessa carta
+  /// comparirebbe due volte in catalogo, una col numero vero e una con l'id del
+  /// blueprint.
+  ///
+  /// Le righe vecchie si riconoscono senza ambiguita': `blueprint_id` non
+  /// esisteva prima della v42, quindi e' NULL solo li'. Si cancellano solo per
+  /// le carte che hanno gia' ricevuto una stampa nuova — chi non e' ancora
+  /// stato aggiornato resta intatto, e un download interrotto non svuota il
+  /// catalogo.
+  Future<void> _dropStaleOnepiecePrints() async {
+    try {
+      final db = await database;
+      await db.rawDelete('''
+        DELETE FROM onepiece_prints
+        WHERE blueprint_id IS NULL
+          AND card_id IN (
+            SELECT card_id FROM onepiece_prints WHERE blueprint_id IS NOT NULL
+          )
+      ''');
+    } catch (_) {}
   }
 
   Future<List<Map<String, dynamic>>> getOnepieceCatalogCards({
