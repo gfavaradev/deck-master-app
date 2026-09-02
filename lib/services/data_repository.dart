@@ -1210,6 +1210,14 @@ class DataRepository {
             );
           }
       }
+      // Il catalogo appena scaricato può portare i seriali veri dove prima
+      // c'era l'id del blueprint CardTrader: le carte già in collezione hanno
+      // copiato quello sbagliato al momento dell'aggiunta e vanno allineate,
+      // altrimenti lo scaffale e la collezione mostrano numeri diversi per la
+      // stessa carta. Non fallisce mai il download: è una rifinitura.
+      try {
+        await _dbHelper.repairOwnedSerials(collectionKey);
+      } catch (_) {}
     } finally {
       _isDownloadingCatalog = false;
     }

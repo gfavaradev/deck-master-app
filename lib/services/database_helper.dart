@@ -860,6 +860,88 @@ class DatabaseHelper {
     return '';
   }
 
+  /// Riporta al seriale vero le carte in collezione che ne avevano copiato uno
+  /// finto, e restituisce quante righe ha corretto.
+  ///
+  /// Fino al 03/09/2026 i rebuild scrivevano l'id del blueprint CardTrader dove
+  /// l'app mostra il seriale, perché leggevano un endpoint che non espone il
+  /// collector number (vedi `deck-master-worker` 813dc65). Ricostruire il
+  /// catalogo corregge lo scaffale ma non ciò che l'utente ha già in
+  /// collezione: quelle carte hanno copiato il numero sbagliato al momento
+  /// dell'aggiunta.
+  ///
+  /// Si tocca il dato dell'utente solo perché la corrispondenza è **esatta e
+  /// deterministica** — il vecchio seriale ERA il blueprint (o
+  /// "{set}-{blueprint}"), quindi la riga da correggere si riconosce senza
+  /// ambiguità. Ogni seriale che non combacia resta dov'è.
+  Future<int> repairOwnedSerials(String catalog) async {
+    final db = await database;
+    // Yu-Gi-Oh e Magic non sono mai passati da CardTrader per il seriale:
+    // niente da riparare.
+    final String sql;
+    switch (catalog) {
+      case 'onepiece':
+        sql = '''
+          UPDATE cards SET serialNumber = (
+            SELECT op.card_set_id FROM onepiece_prints op
+            WHERE op.blueprint_id IS NOT NULL
+              AND op.set_id || '-' || op.blueprint_id = cards.serialNumber
+              AND op.card_set_id != cards.serialNumber
+            LIMIT 1)
+          WHERE collection = 'onepiece' AND EXISTS (
+            SELECT 1 FROM onepiece_prints op
+            WHERE op.blueprint_id IS NOT NULL
+              AND op.set_id || '-' || op.blueprint_id = cards.serialNumber
+              AND op.card_set_id != cards.serialNumber)
+        ''';
+      case 'pokemon':
+        // Il vecchio seriale era il blueprint nudo, che è anche il suffisso di
+        // `api_id`: si accetta la riga solo se i due coincidono.
+        sql = '''
+          UPDATE cards SET serialNumber = (
+            SELECT pp.set_code FROM pokemon_cards pc
+            JOIN pokemon_prints pp ON pp.card_id = pc.id
+            WHERE (pc.api_id = cards.catalogId OR CAST(pc.id AS TEXT) = cards.catalogId)
+              AND SUBSTR(pc.api_id, LENGTH(pc.api_id) - LENGTH(cards.serialNumber))
+                  = '-' || cards.serialNumber
+              AND pp.set_code != cards.serialNumber
+            LIMIT 1)
+          WHERE collection = 'pokemon' AND EXISTS (
+            SELECT 1 FROM pokemon_cards pc
+            JOIN pokemon_prints pp ON pp.card_id = pc.id
+            WHERE (pc.api_id = cards.catalogId OR CAST(pc.id AS TEXT) = cards.catalogId)
+              AND SUBSTR(pc.api_id, LENGTH(pc.api_id) - LENGTH(cards.serialNumber))
+                  = '-' || cards.serialNumber
+              AND pp.set_code != cards.serialNumber)
+        ''';
+      default:
+        final prefix = genericTablePrefix(catalog);
+        if (prefix == null) return 0;
+        // Nei cataloghi flat il seriale mostrato era `api_id` per mancanza di
+        // `card_number`: si sostituisce solo dove il numero vero ora esiste.
+        sql = '''
+          UPDATE cards SET serialNumber = (
+            SELECT gc.card_number FROM ${prefix}_cards gc
+            WHERE gc.api_id = cards.serialNumber
+              AND gc.card_number IS NOT NULL AND gc.card_number != ''
+            LIMIT 1)
+          WHERE collection = ? AND EXISTS (
+            SELECT 1 FROM ${prefix}_cards gc
+            WHERE gc.api_id = cards.serialNumber
+              AND gc.card_number IS NOT NULL AND gc.card_number != '')
+        ''';
+    }
+    try {
+      final args = catalog == 'onepiece' || catalog == 'pokemon'
+          ? <Object?>[]
+          : <Object?>[catalog];
+      return await db.rawUpdate(sql, args);
+    } catch (_) {
+      // Tabelle di catalogo assenti: catalogo mai scaricato, niente da fare.
+      return 0;
+    }
+  }
+
   /// Codici espansione di cui l'utente possiede almeno una carta in [catalog],
   /// normalizzati come le chiavi dei set su RTDB (`/p/{cat}/s/{set}`).
   ///
