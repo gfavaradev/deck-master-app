@@ -18,8 +18,17 @@
     <!-- required="false": la fotocamera è opzionale — l'app funziona anche senza -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
-    <!-- Niente READ_MEDIA_IMAGES/VIDEO: Play li rifiuta su target 33+ quando
-         bastano i picker di sistema, e qui bastano (ImageSource.camera + SAF). -->
+    <!-- Niente READ_MEDIA_IMAGES/VIDEO. Play li rifiuta su target 33+ quando
+         basta un picker di sistema, e qui basta: l'unica acquisizione di
+         immagini è ImageSource.camera nello scanner, che usa la fotocamera e
+         non legge la galleria.
+         I due `tools:node="remove"` non tolgono niente che dichiariamo noi —
+         non li dichiariamo — ma impediscono a una dipendenza futura di
+         reintrodurli via merge del manifest, che è il modo in cui questi
+         permessi rientrano senza che nessuno se ne accorga. Stessa tecnica già
+         usata sotto per RECORD_AUDIO. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove"/>
     <!-- Sotto Android 13; il cap a 32 lo tiene fuori da quella norma -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <!-- camera_android_camerax lo inietta, ma non registriamo video e il
