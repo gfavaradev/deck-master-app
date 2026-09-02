@@ -68,11 +68,23 @@ blueprint id CardTrader nell'identificatore di stampa.** Il join prezzo↔stampa
 
 | famiglia | cataloghi | forma carta | `printId` |
 |---|---|---|---|
-| **flat-CT** | digimon, lorcana, flesh-and-blood, vanguard, dragon-ball-super, star-wars, riftbound, gundam, union-arena | `{id, api_id, name, set_code, rarity}` — 1 carta = 1 stampa | `api_id` (= blueprint CT) |
-| **pokemon** | pokemon | `api_id: "pr1-273488"` | suffisso dopo l'ultimo `-` (= blueprint CT) |
-| **onepiece** | onepiece | `prints[].card_set_id: "UP-244190"` | suffisso dopo l'ultimo `-` (= blueprint CT) |
+| **flat-CT** | digimon, lorcana, flesh-and-blood, vanguard, dragon-ball-super, star-wars, riftbound, gundam, union-arena | `{id, api_id, blueprint_id, name, set_code, card_number, rarity}` — 1 carta = 1 stampa | `blueprint_id` (= `api_id`) |
+| **pokemon** | pokemon | `api_id: "pr1-273488"`, `blueprint_id: "273488"` | `blueprint_id` |
+| **onepiece** | onepiece | `prints[].card_set_id: "OP01-064"`, `prints[].blueprint_id: "244442"` | `blueprint_id` |
 | **magic** | magic | `api_id: <uuid scryfall>` — fonte Scryfall, non CT | `{api_id}-n` / `{api_id}-f` (foil = stampa distinta) |
 | **yugioh** | yugioh | `{id, sets:{lang:[{set_code:"JUSH-EN040", rarity_code}]}}` — fonte YGOProDeck, **nessun blueprint** | `{id}-{set_code}-{rarity_code}` normalizzato |
+
+> **Revisione del 03/09/2026.** Il blueprint viaggia in un campo esplicito
+> (`blueprint_id`) invece di essere dedotto dal suffisso dell'identificatore di stampa.
+> La deduzione reggeva solo perché il seriale ERA l'id del blueprint travestito
+> (`card_set_id: "OP01-244442"` su 2407 stampe su 2407, `set_code: "273488"` per
+> pokemon): un artefatto del fatto che i rebuild leggevano `/api/v2/blueprints`, che
+> non espone `collector_number`. Con i seriali veri (`OP01-064`) la deduzione darebbe
+> `064`, cioè il prezzo di un'altra carta. `api_id` **non cambia** — resta
+> `{espansione}-{id blueprint}` — perché è l'identità con cui sono agganciate le carte
+> già in collezione e i path Backblaze. La deduzione dal suffisso resta come ripiego
+> per i cataloghi non ancora ricostruiti, e in Dart accetta solo suffissi di almeno 5
+> cifre, che è la forma di un blueprint vero.
 
 Per 11 cataloghi su 13 il `printId` è dunque il blueprint CardTrader come stringa numerica,
 e il prezzo vi si aggancia per uguaglianza diretta con `blueprint_id`. Solo **yugioh**
@@ -175,7 +187,7 @@ Una carta in collezione (`cards`) ha `catalogId` e `serialNumber`, e da lì si a
 | catalogo | strada | query? |
 |---|---|---|
 | flat (9) | `getGenericCatalogCards` espone `api_id AS id` ⇒ `catalogId` **è** il blueprint | no, ma si consulta la tabella perché un id locale autoincrement è anch'esso numerico |
-| onepiece | `getOnepieceCatalogCards` espone `op.card_set_id AS setCode` ⇒ il seriale contiene il blueprint (`UP-244190`) | no |
+| onepiece | `onepiece_prints.blueprint_id` (v42), cercato per `card_set_id` = seriale posseduto | sì |
 | pokemon | `catalogId` è l'id locale ⇒ salto ad `api_id` (`pr1-273488`) | sì |
 | magic | uuid Scryfall, con suffisso di finitura | solo se arriva un id locale |
 | yugioh | unico composito: servono `set_code` e `rarity_code` **della lingua giusta**, e il seriale posseduto è quello localizzato (`JUSH-IT040`) | sì, su tutte le colonne per lingua |
@@ -188,7 +200,32 @@ combacia si ripiega su una stampa dello stesso seriale, mai su una di un altro s
 
 - App Check su RTDB.
 - Rimozione del vecchio percorso Firestore, quando i 13 cataloghi saranno popolati.
-- Far girare il sync sui 10 cataloghi ancora senza prezzi (finora solo lorcana).
+
+## Aggiornamento del 03/09/2026 — perché i prezzi non si vedevano
+
+Il percorso unificato era corretto ma poggiava su cataloghi sbagliati. La causa
+comune stava nel worker: i rebuild leggevano `/api/v2/blueprints`, che
+restituisce **al massimo 50 risultati per espansione** e **senza
+`fixed_properties`**. Da lì, insieme:
+
+- cataloghi incompleti (Lorcana 779 carte invece di 3610, One Piece op01 50
+  blueprint invece di 165);
+- nessun `collector_number` ⇒ i rebuild ripiegavano sull'id del blueprint e lo
+  scrivevano dove l'app mostra il seriale;
+- nessuna rarità sui nove cataloghi generici;
+- immagini col solo path relativo `/uploads/…`, né visibili né migrabili.
+
+Yu-Gi-Oh aveva una causa sua: il porting nel worker aveva sostituito la
+**derivazione** dei set code localizzati (`JUSH-EN040` → `JUSH-IT040`, come in
+`scripts/populate_firestore/index.js`) con un raggruppamento per lingua
+*rilevata* dal codice. Ma YGOProDeck non pubblica set code localizzati —
+verificato su 500 carte per lingua, traduce nome e testo e restituisce i codici
+EN — quindi tutto finiva in `en`, e con esso i prezzi, che il price-sync ricava
+proprio da `sets`.
+
+Lato app c'erano tre difetti indipendenti, elencati nel commit `3d6eb31`:
+percorsi prezzo disgiunti fra lista e scheda, CTE del valore limitata a tre
+cataloghi su tredici, e `image_url` mai scritto per i nove cataloghi generici.
 
 ## Vincoli tecnici
 
