@@ -6,6 +6,7 @@ import 'database_helper.dart';
 import 'firestore_service.dart';
 import 'auth_service.dart';
 import 'cardtrader_service.dart';
+import 'price_sync_service.dart';
 import '../models/album_model.dart';
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
@@ -420,6 +421,14 @@ class SyncService {
     }
 
     try {
+      // Percorso nuovo: un'unica lettura da ~200 byte su RTDB dice se qualcosa
+      // e' cambiato, e si scaricano solo i set effettivamente aggiornati dei
+      // cataloghi che l'utente ha in locale. Vedi REQUIREMENTS_prices_unified.md.
+      await PriceSyncService().syncPrices();
+
+      // Percorso storico su Firestore: ancora necessario finche' la UI legge i
+      // prezzi dalle tabelle di stampa popolate da applyLocalPricesToCollection.
+      // Va rimosso insieme al matching euristico, non prima.
       for (final catalog in _ctCatalogs) {
         await syncOne(catalog);
       }

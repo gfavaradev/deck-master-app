@@ -52,7 +52,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 40,
+      version: 41,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -492,6 +492,170 @@ class DatabaseHelper {
     if (oldVersion < 40) {
       await _createPriceMatchKeys(db);
     }
+    if (oldVersion < 41) {
+      await _createUnifiedPriceTables(db);
+    }
+  }
+
+  /// Prezzi unificati (v41) — vedi REQUIREMENTS_prices_unified.md.
+  ///
+  /// Una sola tabella per tutti i 13 cataloghi, con `print_id` come chiave: il
+  /// worker pubblica i prezzi gia' agganciati alla stampa, quindi qui non serve
+  /// piu' alcuna colonna di normalizzazione per il matching (`name_norm`,
+  /// `cn_lc`, …) ne' le passate per lingua di
+  /// [syncCatalogPricesFromCardtrader].
+  ///
+  /// `price_set_versions` ricorda la versione di ogni set gia' scaricato: e' il
+  /// gate che fa scaricare SOLO i set cambiati, invece dell'intero listino.
+  Future<void> _createUnifiedPriceTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS card_prices(
+        catalog    TEXT    NOT NULL,
+        print_id   TEXT    NOT NULL,
+        lang       TEXT    NOT NULL,
+        set_code   TEXT,
+        nm_cents   INTEGER,
+        any_cents  INTEGER,
+        listings   INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT,
+        PRIMARY KEY (catalog, print_id, lang)
+      )
+    ''');
+    // Il lookup per (catalogo, stampa) e' la query calda: la chiave primaria la
+    // copre. Questo indice serve invece a cancellare/aggiornare un set intero.
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_card_prices_set ON card_prices(catalog, set_code)',
+    );
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS price_set_versions(
+        catalog  TEXT    NOT NULL,
+        set_code TEXT    NOT NULL,
+        version  INTEGER NOT NULL,
+        PRIMARY KEY (catalog, set_code)
+      )
+    ''');
+  }
+
+  // ============================================================
+  // Prezzi unificati (v41) — REQUIREMENTS_prices_unified.md
+  // ============================================================
+
+  /// Scrive un blocco di prezzi arrivati da RTDB. Chiamata una volta per set:
+  /// il volume e' quello di un'espansione (poche migliaia di righe al massimo),
+  /// non dell'intero listino.
+  Future<void> upsertUnifiedPrices(List<Map<String, Object?>> rows) async {
+    if (rows.isEmpty) return;
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    final batch = db.batch();
+    for (final r in rows) {
+      batch.insert(
+        'card_prices',
+        {...r, 'updated_at': now},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Sostituisce i prezzi di un set: cancella i vecchi e inserisce i nuovi in
+  /// un'unica transazione, cosi' una stampa sparita dal listino non resta in
+  /// giro con un prezzo fossile.
+  Future<void> replaceSetPrices(
+    String catalog,
+    String setCode,
+    List<Map<String, Object?>> rows,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'card_prices',
+        where: 'catalog = ? AND set_code = ?',
+        whereArgs: [catalog, setCode],
+      );
+      if (rows.isEmpty) return;
+      final now = DateTime.now().toIso8601String();
+      final batch = txn.batch();
+      for (final r in rows) {
+        batch.insert(
+          'card_prices',
+          {...r, 'updated_at': now},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  /// Prezzo di una stampa. Lookup diretto sulla chiave primaria: nessun
+  /// matching, nessuna scansione (era il costo del vecchio percorso).
+  Future<Map<String, dynamic>?> getUnifiedPrice({
+    required String catalog,
+    required String printId,
+    required String lang,
+  }) async {
+    if (printId.isEmpty) return null;
+    final db = await database;
+    final rows = await db.query(
+      'card_prices',
+      where: 'catalog = ? AND print_id = ? AND lang = ?',
+      whereArgs: [catalog, printId, lang.toLowerCase()],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// Tutti i prezzi di una stampa, una riga per lingua.
+  Future<List<Map<String, dynamic>>> getUnifiedPricesForPrint({
+    required String catalog,
+    required String printId,
+  }) async {
+    if (printId.isEmpty) return const [];
+    final db = await database;
+    return db.query(
+      'card_prices',
+      where: 'catalog = ? AND print_id = ?',
+      whereArgs: [catalog, printId],
+      orderBy: 'lang ASC',
+    );
+  }
+
+  /// Versioni dei set gia' scaricati per [catalog]: e' il gate che evita di
+  /// riscaricare cio' che non e' cambiato.
+  Future<Map<String, int>> getPriceSetVersions(String catalog) async {
+    final db = await database;
+    final rows = await db.query(
+      'price_set_versions',
+      columns: ['set_code', 'version'],
+      where: 'catalog = ?',
+      whereArgs: [catalog],
+    );
+    return {
+      for (final r in rows) r['set_code'] as String: r['version'] as int,
+    };
+  }
+
+  Future<void> setPriceSetVersion(
+    String catalog,
+    String setCode,
+    int version,
+  ) async {
+    final db = await database;
+    await db.insert(
+      'price_set_versions',
+      {'catalog': catalog, 'set_code': setCode, 'version': version},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Quante righe prezzo sono in cache, per catalogo — diagnostica.
+  Future<int> countUnifiedPrices(String catalog) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) AS n FROM card_prices WHERE catalog = ?',
+      [catalog],
+    );
+    return (rows.first['n'] as int?) ?? 0;
   }
 
   /// Table prefixes for all v36 "generic" catalog tables (see [genericTablePrefix]).
@@ -1194,6 +1358,10 @@ class DatabaseHelper {
   }
 
   Future _onCreate(Database db, int version) async {
+    // Prezzi unificati: le stesse tabelle create dalla migrazione v41, perche'
+    // un'installazione nuova non passa da _onUpgrade.
+    await _createUnifiedPriceTables(db);
+
     await db.execute('''
       CREATE TABLE albums(
         id INTEGER PRIMARY KEY AUTOINCREMENT,

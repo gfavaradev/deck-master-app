@@ -1,0 +1,31 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "v": {
+      ".read": "auth != null"
+    },
+
+    "p": {
+      "$catalog": {
+        "idx": {
+          ".read": "auth != null"
+        },
+        "s": {
+          "$set": {
+            ".read": "auth != null"
+          }
+        }
+      }
+    },
+
+    "h": {
+      "$catalog": {
+        "$printId": {
+          ".read": "auth != null"
+        }
+      }
+    }
+  }
+}
