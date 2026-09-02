@@ -60,6 +60,7 @@ class _CardtraderAllPricesSectionState
       rarity: widget.rarity,
       collectorNumber: widget.serialNumber.serialCollectorNumber,
       catalogId: widget.catalogId,
+      serialNumber: widget.serialNumber,
     );
   }
 
@@ -443,6 +444,7 @@ class _CardtraderPriceBadgeState extends State<CardtraderPriceBadge> {
       rarity: widget.rarity,
       collectorNumber: sn.serialCollectorNumber,
       catalogId: widget.catalogId,
+      serialNumber: sn,
     );
   }
 

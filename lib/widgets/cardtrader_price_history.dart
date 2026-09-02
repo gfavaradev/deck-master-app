@@ -90,6 +90,7 @@ class _CardtraderPriceHistoryChartState
           rarity: c.rarity.isNotEmpty ? c.rarity : null,
           collectorNumber: _collNum(sn),
           catalogId: c.catalogId,
+          serialNumber: sn,
           from: from,
         )
         .then((rows) => rows

@@ -38,6 +38,7 @@ class _LivePriceTextState extends State<_LivePriceText> {
       rarity: c.rarity.isNotEmpty ? c.rarity : null,
       collectorNumber: c.serialNumber.serialCollectorNumber,
       catalogId: c.catalogId,
+      serialNumber: c.serialNumber,
     );
   }
 

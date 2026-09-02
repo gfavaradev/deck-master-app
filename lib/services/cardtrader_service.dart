@@ -1,5 +1,7 @@
 import '../utils/currency_formatter.dart';
 import 'database_helper.dart';
+import 'price_repository.dart';
+import 'print_id.dart';
 
 /// CardTrader API integration for real marketplace price data.
 ///
@@ -95,8 +97,11 @@ class CardtraderService {
   }
 
   final DatabaseHelper _db;
+  final PriceRepository _prices;
 
-  CardtraderService({DatabaseHelper? db}) : _db = db ?? DatabaseHelper();
+  CardtraderService({DatabaseHelper? db, PriceRepository? prices})
+      : _db = db ?? DatabaseHelper(),
+        _prices = prices ?? PriceRepository();
 
   // ─── Public price lookup ───────────────────────────────────────────────────
 
@@ -114,7 +119,22 @@ class CardtraderService {
     String? rarity,
     String? collectorNumber,
     String? catalogId,
+    String? serialNumber,
   }) async {
+    // Percorso nuovo: il prezzo e' gia' agganciato alla stampa dal worker,
+    // quindi basta risolvere il printId e leggere una riga per chiave primaria
+    // — nessun matching per nome, nessuna scansione. Se la stampa non e'
+    // risolvibile o il prezzo non c'e' ancora, si ricade sul percorso storico.
+    // Vedi REQUIREMENTS_prices_unified.md.
+    final unified = await _unifiedPrice(
+      catalog: catalog,
+      catalogId: catalogId,
+      serialNumber: serialNumber ?? collectorNumber,
+      rarity: rarity,
+      language: language,
+    );
+    if (unified != null) return unified;
+
     final row = await _db.getCardtraderPrice(
       catalog: catalog,
       expansionCode: expansionCode.toLowerCase(),
@@ -141,7 +161,27 @@ class CardtraderService {
     String? rarity,
     String? collectorNumber,
     String? catalogId,
+    String? serialNumber,
   }) async {
+    // Percorso nuovo: una riga per lingua, tutte sotto lo stesso printId.
+    final printId = await _db.resolvePrintId(
+      catalog: catalog,
+      catalogId: catalogId,
+      serialNumber: serialNumber ?? collectorNumber,
+      rarity: rarity,
+    );
+    if (printId.isNotEmpty) {
+      final unified = await _db.getUnifiedPricesForPrint(
+        catalog: catalog,
+        printId: printId,
+      );
+      if (unified.isNotEmpty) {
+        return unified
+            .map((r) => _fromUnifiedRow(r, catalog: catalog, cardName: cardName))
+            .toList();
+      }
+    }
+
     final rows = await _db.getPricesForCardAllLanguages(
       catalog: catalog,
       expansionCode: expansionCode.toLowerCase(),
@@ -160,6 +200,62 @@ class CardtraderService {
       serialNumber: collectorNumber,
     );
     return fallback.map(CardtraderPrice.fromMap).toList();
+  }
+
+  /// Cerca il prezzo nella tabella unificata `card_prices`, risolvendo prima il
+  /// printId. Restituisce null se la stampa non e' risolvibile o se il prezzo
+  /// non e' ancora stato scaricato: in quel caso il chiamante usa il percorso
+  /// storico, cosi' il passaggio non fa sparire prezzi gia' visibili.
+  Future<CardtraderPrice?> _unifiedPrice({
+    required String catalog,
+    required String? catalogId,
+    required String? serialNumber,
+    required String? rarity,
+    required String language,
+  }) async {
+    final printId = await _db.resolvePrintId(
+      catalog: catalog,
+      catalogId: catalogId,
+      serialNumber: serialNumber,
+      rarity: rarity,
+    );
+    if (printId.isEmpty) return null;
+    final row = await _db.getUnifiedPrice(
+      catalog: catalog,
+      printId: printId,
+      lang: language,
+    );
+    if (row == null) return null;
+    return _fromUnifiedRow(row, catalog: catalog, cardName: '');
+  }
+
+  /// Adatta una riga di `card_prices` al modello che la UI gia' conosce.
+  ///
+  /// `blueprintId` resta valorizzato solo per gli 11 cataloghi in cui il printId
+  /// E' il blueprint CardTrader: e' cio' che alimenta il link a cardtrader.com.
+  /// Per yugioh e magic il printId e' composito e il link non e' derivabile,
+  /// quindi vale 0 e il bottone si comporta come per una carta senza blueprint.
+  static CardtraderPrice _fromUnifiedRow(
+    Map<String, dynamic> row, {
+    required String catalog,
+    required String cardName,
+  }) {
+    final printId = row['print_id'] as String? ?? '';
+    return CardtraderPrice(
+      blueprintId: int.tryParse(printIdFromBlueprint(catalog, printId)) ?? 0,
+      catalog: catalog,
+      expansionCode: row['set_code'] as String? ?? '',
+      cardNameEn: cardName,
+      language: row['lang'] as String? ?? 'en',
+      firstEdition: false,
+      rarity: '',
+      collectorNumber: '',
+      minPriceNmCents: row['nm_cents'] as int?,
+      minPriceAnyCents: row['any_cents'] as int?,
+      listingCount: row['listings'] as int? ?? 0,
+      syncedAt: row['updated_at'] as String? ?? '',
+      printId: printId,
+    );
   }
 
   /// Aggiorna i prezzi del catalogo dai prezzi CT in cache locale.
@@ -188,6 +284,7 @@ class CardtraderService {
     String? rarity,
     String? collectorNumber,
     String? catalogId,
+    String? serialNumber,
     required DateTime from,
   }) async {
     final price = await getPriceForCard(
@@ -198,10 +295,30 @@ class CardtraderService {
       rarity: rarity,
       collectorNumber: collectorNumber,
       catalogId: catalogId,
+      serialNumber: serialNumber,
     );
     if (price == null) return [];
-    final fromStr =
-        '${from.year}-${from.month.toString().padLeft(2, '0')}-${from.day.toString().padLeft(2, '0')}';
+
+    // Storico condiviso su RTDB: vale per tutti gli utenti e copre anche il
+    // periodo precedente all'installazione, mentre `price_history` in SQLite
+    // parte dal primo sync su QUESTO dispositivo e riparte da zero a ogni
+    // reinstallazione.
+    if (price.printId.isNotEmpty) {
+      final points = await _prices.fetchHistory(catalog, price.printId);
+      final filtered = points.where((p) => !p.date.isBefore(from));
+      if (filtered.isNotEmpty) {
+        return [
+          for (final p in filtered)
+            {
+              'recorded_date': _isoDate(p.date),
+              'price_cents': p.cents,
+              'listing_count': 0,
+            },
+        ];
+      }
+    }
+
+    final fromStr = _isoDate(from);
     return _db.getPriceHistory(
       blueprintId: price.blueprintId,
       language: price.language,
@@ -210,6 +327,9 @@ class CardtraderService {
       from: fromStr,
     );
   }
+
+  static String _isoDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }
 
 // ─── Model ─────────────────────────────────────────────────────────────────
@@ -238,6 +358,10 @@ class CardtraderPrice {
   final int listingCount;
   final String syncedAt;
 
+  /// Chiave di stampa del percorso unificato (vedi `print_id.dart`). Vuota per
+  /// le righe che arrivano ancora dal percorso storico.
+  final String printId;
+
   const CardtraderPrice({
     required this.blueprintId,
     required this.catalog,
@@ -251,6 +375,7 @@ class CardtraderPrice {
     this.minPriceAnyCents,
     required this.listingCount,
     required this.syncedAt,
+    this.printId = '',
   });
 
   /// Best price in cents: NM if available, otherwise any condition.

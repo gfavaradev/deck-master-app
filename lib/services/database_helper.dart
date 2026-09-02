@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/card_model.dart';
 import '../models/collection_model.dart';
 import '../models/album_model.dart';
+import 'print_id.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -646,6 +647,219 @@ class DatabaseHelper {
       {'catalog': catalog, 'set_code': setCode, 'version': version},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  /// Risolve il `print_id` di una carta a partire da cio' che la collezione
+  /// utente conserva (`catalogId`, `serialNumber`, `rarity`).
+  ///
+  /// E' il ponte fra il mondo "carta posseduta" e i prezzi pubblicati dal
+  /// worker. Per la maggior parte dei cataloghi non serve nemmeno una query:
+  ///
+  ///  - **flat (9 cataloghi)**: `getGenericCatalogCards` espone `api_id AS id`,
+  ///    quindi `catalogId` E' gia' il blueprint CardTrader;
+  ///  - **onepiece**: `getOnepieceCatalogCards` espone `op.card_set_id AS setCode`,
+  ///    quindi `serialNumber` contiene il blueprint ("UP-244190" → 244190);
+  ///  - **pokemon / magic**: `catalogId` e' l'id locale, serve un salto a `api_id`;
+  ///  - **yugioh**: unico caso composito — servono `set_code` e `rarity_code`
+  ///    della lingua giusta, e il seriale posseduto e' quello localizzato
+  ///    (JUSH-IT040), quindi si cerca su tutte le colonne per lingua.
+  ///
+  /// Restituisce stringa vuota se non risolvibile: il chiamante ricade sul
+  /// percorso storico invece di mostrare un prezzo sbagliato.
+  Future<String> resolvePrintId({
+    required String catalog,
+    String? catalogId,
+    String? serialNumber,
+    String? rarity,
+  }) async {
+    final id = catalogId?.trim() ?? '';
+    final serial = serialNumber?.trim() ?? '';
+
+    switch (familyOf(catalog)) {
+      case PrintFamily.flat:
+        // `catalogId` E' quasi sempre gia' l'api_id (getGenericCatalogCards
+        // espone `api_id AS id`), ma un id locale autoincrement e' anch'esso
+        // numerico: senza consultare la tabella, "7" verrebbe scambiato per il
+        // blueprint 7. La query risolve entrambi i casi in un colpo, ed e' su
+        // colonne indicizzate (api_id UNIQUE, id PK).
+        final viaTable = await _apiIdBlueprint(
+          '${genericTablePrefix(catalog) ?? catalog}_cards',
+          id,
+        );
+        if (viaTable.isNotEmpty) return viaTable;
+        // Catalogo non scaricato o carta non in tabella: si prende il valore
+        // cosi' com'e'. Se non e' un blueprint valido il lookup non trovera'
+        // nulla, che e' preferibile al prezzo di un'altra stampa.
+        final direct = blueprintFromCompositeId(id);
+        return RegExp(r'^\d+$').hasMatch(direct) ? direct : '';
+
+      case PrintFamily.onepiece:
+        final fromSerial = blueprintFromCompositeId(serial);
+        if (RegExp(r'^\d+$').hasMatch(fromSerial)) return fromSerial;
+        return _onepieceBlueprintFromCard(id, serial);
+
+      case PrintFamily.pokemon:
+        return _apiIdBlueprint('pokemon_cards', id);
+
+      case PrintFamily.magic:
+        // Gli uuid Scryfall passano di qui senza query; un id locale no.
+        if (id.contains('-') && !RegExp(r'^\d+$').hasMatch(id)) {
+          return magicPrintId(id, foil: false);
+        }
+        final apiId = await _lookupApiId('magic_cards', id);
+        return apiId.isEmpty ? '' : magicPrintId(apiId, foil: false);
+
+      case PrintFamily.yugioh:
+        return _yugiohPrintIdFor(id, serial, rarity);
+    }
+  }
+
+  /// `api_id` → blueprint, per le tabelle che hanno la colonna.
+  Future<String> _apiIdBlueprint(String table, String catalogId) async {
+    final apiId = await _lookupApiId(table, catalogId);
+    if (apiId.isEmpty) return '';
+    final bp = blueprintFromCompositeId(apiId);
+    return RegExp(r'^\d+$').hasMatch(bp) ? bp : '';
+  }
+
+  /// Cerca `api_id` per id locale oppure per api_id stesso: quale dei due
+  /// finisca in `cards.catalogId` dipende dal catalogo, e provarli entrambi
+  /// costa una query sola.
+  Future<String> _lookupApiId(String table, String catalogId) async {
+    if (catalogId.isEmpty) return '';
+    try {
+      final db = await database;
+      final rows = await db.rawQuery(
+        'SELECT api_id FROM $table WHERE api_id = ? OR CAST(id AS TEXT) = ? '
+        // A parita' di candidati vince il match esatto su api_id: senza ORDER BY
+        // l'esito dipenderebbe dall'ordine di scansione.
+        'ORDER BY CASE WHEN api_id = ? THEN 0 ELSE 1 END LIMIT 1',
+        [catalogId, catalogId, catalogId],
+      );
+      return rows.isEmpty ? '' : (rows.first['api_id'] as String? ?? '');
+    } catch (_) {
+      // Tabella assente: catalogo mai scaricato.
+      return '';
+    }
+  }
+
+  Future<String> _onepieceBlueprintFromCard(String catalogId, String serial) async {
+    if (catalogId.isEmpty) return '';
+    try {
+      final db = await database;
+      final rows = await db.rawQuery(
+        'SELECT card_set_id FROM onepiece_prints WHERE card_id = ? LIMIT 20',
+        [catalogId],
+      );
+      for (final r in rows) {
+        final csid = r['card_set_id'] as String? ?? '';
+        if (serial.isNotEmpty && csid != serial) continue;
+        final bp = blueprintFromCompositeId(csid);
+        if (RegExp(r'^\d+$').hasMatch(bp)) return bp;
+      }
+      if (rows.isNotEmpty && serial.isEmpty) {
+        final bp = blueprintFromCompositeId(rows.first['card_set_id']);
+        if (RegExp(r'^\d+$').hasMatch(bp)) return bp;
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  /// Lingue con colonne dedicate in `yugioh_prints` (l'inglese sta nelle
+  /// colonne senza suffisso). 'sp' e' lo spagnolo del catalogo, che CardTrader
+  /// e quindi il worker chiamano 'es'.
+  static const _yugiohLangSuffixes = ['', '_it', '_fr', '_de', '_pt', '_sp'];
+
+  Future<String> _yugiohPrintIdFor(
+    String catalogId,
+    String serial,
+    String? rarity,
+  ) async {
+    if (catalogId.isEmpty || serial.isEmpty) return '';
+    final cols = <String>['card_id'];
+    for (final suffix in _yugiohLangSuffixes) {
+      cols.add('set_code$suffix');
+      cols.add('rarity_code$suffix');
+      cols.add('rarity$suffix');
+    }
+    try {
+      final db = await database;
+      final rows = await db.rawQuery(
+        'SELECT ${cols.join(', ')} FROM yugioh_prints WHERE card_id = ? LIMIT 60',
+        [catalogId],
+      );
+      if (rows.isEmpty) return '';
+
+      final wantedRarity = (rarity?.trim() ?? '').toLowerCase();
+      final serialLc = serial.toLowerCase();
+      Map<String, dynamic>? fallback;
+      String fallbackSuffix = '';
+
+      for (final row in rows) {
+        for (final suffix in _yugiohLangSuffixes) {
+          final code = (row['set_code$suffix'] as String? ?? '').toLowerCase();
+          if (code.isEmpty || code != serialLc) continue;
+          // Stesso set_code su piu' righe = stampe di rarita' diversa, con
+          // prezzi molto distanti: si disambigua con la rarita' posseduta.
+          final rowRarity =
+              (row['rarity$suffix'] as String? ?? '').toLowerCase();
+          if (wantedRarity.isNotEmpty && rowRarity != wantedRarity) {
+            fallback ??= row;
+            if (fallback == row) fallbackSuffix = suffix;
+            continue;
+          }
+          return yugiohPrintId(
+            row['card_id'],
+            row['set_code$suffix'],
+            row['rarity_code$suffix'],
+          );
+        }
+      }
+      if (fallback != null) {
+        return yugiohPrintId(
+          fallback['card_id'],
+          fallback['set_code$fallbackSuffix'],
+          fallback['rarity_code$fallbackSuffix'],
+        );
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  /// Le carte in collezione di [catalog], con i soli campi che servono a
+  /// risolverne la stampa. Il volume e' quello della collezione dell'utente
+  /// (centinaia di righe), non del catalogo.
+  Future<List<Map<String, dynamic>>> getCollectionCardsForPricing(
+    String catalog,
+  ) async {
+    final db = await database;
+    return db.rawQuery(
+      'SELECT id, catalogId, serialNumber, rarity, quantity, cardtrader_value '
+      'FROM cards WHERE collection = ?',
+      [catalog],
+    );
+  }
+
+  /// Aggiorna `cardtrader_value` in blocco. [values] mappa l'id riga di `cards`
+  /// al valore in euro.
+  Future<int> updateCardtraderValues(Map<int, double?> values) async {
+    if (values.isEmpty) return 0;
+    final db = await database;
+    var updated = 0;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      values.forEach((id, value) {
+        batch.update(
+          'cards',
+          {'cardtrader_value': value},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        updated++;
+      });
+      await batch.commit(noResult: true);
+    });
+    return updated;
   }
 
   /// Quante righe prezzo sono in cache, per catalogo — diagnostica.

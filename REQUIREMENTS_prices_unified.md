@@ -124,10 +124,22 @@ Il client sa già calcolare queste chiavi dai suoi dati: `yugioh_prints.set_code
       listings, updated_at)` + `price_set_versions` (migrazione v41).
 - [x] Un solo listener/lettura su `/v`; nessuna read per catalogo non usato
       (`PriceSyncService._activeCatalogs`).
-- [ ] **La UI legge i prezzi da `card_prices` per `printId`** — vedi "Lavoro residuo".
-- [ ] `price_history` locale alimentato da `/h/{cat}/{printId}`.
+- [x] **La UI legge i prezzi da `card_prices` per `printId`**: il cambio è dentro
+      `CardtraderService`, quindi nessuna pagina è stata riscritta — cambiano solo le
+      firme, che ora ricevono anche `serialNumber`. Se la stampa non è risolvibile o il
+      prezzo non è ancora sceso, si ricade sul percorso storico: il passaggio non fa
+      sparire prezzi già visibili.
+- [x] `DatabaseHelper.resolvePrintId`: il ponte fra carta posseduta e prezzo pubblicato,
+      con una strada per famiglia (17 test su forme reali).
+- [x] Storico letto da `/h/{cat}/{printId}`: **condiviso fra tutti gli utenti** e completo
+      anche prima dell'installazione, mentre `price_history` in SQLite parte dal primo sync
+      su quel dispositivo e riparte da zero a ogni reinstallazione.
+- [x] Valore della collezione ricalcolato iterando **le carte dell'utente**
+      (`PriceSyncService.updateCollectionValues`) invece delle 44.000 righe di stampa del
+      catalogo.
 - [ ] Rimozione del vecchio percorso (`streamCardtraderPriceRows`,
-      `syncCatalogPricesFromCardtrader`, `_createPriceMatchKeys`).
+      `syncCatalogPricesFromCardtrader`, `_createPriceMatchKeys`) — resta come fallback
+      deliberato finché i 13 cataloghi non sono popolati su RTDB.
 
 ### Infrastruttura
 - [x] Istanza RTDB creata in **europe-west1**:
@@ -150,32 +162,33 @@ Il percorso worker → RTDB è **completo e provato end-to-end su Lorcana**:
 | secondo sync (subito dopo) | **0 set cambiati, 0 punti storico**, nessuna riscrittura |
 | terzo sync | versione **invariata** a `v2`: nessun client viene svegliato per niente |
 
-Test: 35 nel worker (`npm test`), 26 nuovi nell'app (`print_id_test.dart`,
-`price_repository_test.dart`), suite completa a 317 verdi, `flutter analyze` pulito.
-I vettori di conformità del `printId` girano identici nei due linguaggi.
+Test: 35 nel worker (`npm test`), 43 nuovi nell'app (`print_id_test.dart`,
+`price_repository_test.dart`, `resolve_print_id_test.dart`), suite completa a **334 verdi**,
+`flutter analyze` pulito. I vettori di conformità del `printId` girano identici nei due
+linguaggi.
 
-### Lavoro residuo: agganciare la UI
+### Come si risolve la stampa di una carta posseduta
 
-Manca l'ultimo passo — far leggere alle pagine `card_prices` invece delle colonne di prezzo
-nelle tabelle `*_prints`. Non è stato fatto perché richiede una decisione informata su un
-punto che va verificato sui dati reali, catalogo per catalogo:
+Una carta in collezione (`cards`) ha `catalogId` e `serialNumber`, e da lì si arriva al
+`printId` con una strada diversa per famiglia — verificate sulle query di catalogo reali:
 
-Una carta in collezione (`cards`) ha `catalogId` (id carta) e `serialNumber` (set code
-localizzato, es. `JUSH-EN040`), ma **non** i campi che completano il `printId`:
+| catalogo | strada | query? |
+|---|---|---|
+| flat (9) | `getGenericCatalogCards` espone `api_id AS id` ⇒ `catalogId` **è** il blueprint | no, ma si consulta la tabella perché un id locale autoincrement è anch'esso numerico |
+| onepiece | `getOnepieceCatalogCards` espone `op.card_set_id AS setCode` ⇒ il seriale contiene il blueprint (`UP-244190`) | no |
+| pokemon | `catalogId` è l'id locale ⇒ salto ad `api_id` (`pr1-273488`) | sì |
+| magic | uuid Scryfall, con suffisso di finitura | solo se arriva un id locale |
+| yugioh | unico composito: servono `set_code` e `rarity_code` **della lingua giusta**, e il seriale posseduto è quello localizzato (`JUSH-IT040`) | sì, su tutte le colonne per lingua |
 
-- **yugioh**: manca `rarity_code`. Serve una JOIN con `yugioh_prints` su
-  `(card_id, set_code)`; esistono stampe multiple con lo stesso `set_code` e rarità diverse
-  (prezzi molto diversi), quindi va disambiguata con `cards.rarity`.
-- **onepiece**: `serialNumber` è il seriale visibile (`OP01-001`), mentre il `printId` deriva
-  da `card_set_id` (`UP-244190`). Serve una JOIN con `onepiece_prints`.
-- **flat / pokemon**: serve `api_id`, che sta in `{prefix}_cards` / `pokemon_cards`.
+Il caso Yu-Gi-Oh merita attenzione: la stessa carta nello stesso set esiste con rarità
+diverse e prezzi molto distanti, quindi `cards.rarity` serve a discriminare. Se non
+combacia si ripiega su una stampa dello stesso seriale, mai su una di un altro seriale.
 
-Il calcolo del valore della collezione va poi riscritto per iterare **le carte dell'utente**
-(centinaia) invece di aggiornare in blocco le tabelle di stampa del catalogo (44.000 righe
-per il solo Yu-Gi-Oh): è il vero guadagno di `printId`, e fa sparire
-`syncCatalogPricesFromCardtrader` con le sue passate per lingua e le colonne `name_norm`/`cn_lc`.
+### Cosa resta
 
-Finché questo passo non è fatto, il vecchio percorso Firestore resta attivo e nulla regredisce.
+- App Check su RTDB.
+- Rimozione del vecchio percorso Firestore, quando i 13 cataloghi saranno popolati.
+- Far girare il sync sui 10 cataloghi ancora senza prezzi (finora solo lorcana).
 
 ## Vincoli tecnici
 

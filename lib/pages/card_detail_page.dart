@@ -1059,6 +1059,7 @@ class _CardtraderLinkButtonState extends State<_CardtraderLinkButton> {
       rarity: widget.card.rarity.isNotEmpty ? widget.card.rarity : null,
       collectorNumber: sn.serialCollectorNumber,
       catalogId: widget.card.catalogId,
+      serialNumber: sn,
     );
     if (!mounted || prices.isEmpty) return;
     // Prefer the language of the owned card, fallback to first available blueprint

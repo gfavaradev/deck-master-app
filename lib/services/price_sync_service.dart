@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/app_constants.dart';
 import '../utils/app_logger.dart';
+import 'cardtrader_service.dart';
 import 'database_helper.dart';
 import 'price_repository.dart';
 
@@ -60,7 +61,9 @@ class PriceSyncService {
       if (local != null && local >= remote) continue;
 
       try {
-        updatedSets += await _syncCatalog(catalog);
+        final sets = await _syncCatalog(catalog);
+        updatedSets += sets;
+        if (sets > 0) await updateCollectionValues(catalog);
         // Il timestamp si scrive SOLO a sincronizzazione riuscita: se il
         // download muore a metà, il prossimo avvio riprende invece di dare per
         // aggiornato ciò che non lo è.
@@ -108,5 +111,55 @@ class PriceSyncService {
       tag: 'PriceSyncService',
     );
     return done;
+  }
+
+  /// Ricalcola `cardtrader_value` per le carte in collezione di [catalog].
+  ///
+  /// Itera **le carte dell'utente** (centinaia) risolvendone la stampa, invece
+  /// di aggiornare in blocco le tabelle di stampa del catalogo — 44.000 righe
+  /// per il solo Yu-Gi-Oh, con passate per lingua e colonne di normalizzazione
+  /// (`name_norm`, `cn_lc`) che esistevano solo per rendere sopportabile quel
+  /// matching. Con il printId il costo diventa proporzionale a quanto uno
+  /// possiede, che e' la proprieta' che rende il sistema estendibile a 13
+  /// cataloghi.
+  Future<int> updateCollectionValues(String catalog) async {
+    final cards = await _db.getCollectionCardsForPricing(catalog);
+    if (cards.isEmpty) return 0;
+
+    final values = <int, double?>{};
+    for (final card in cards) {
+      final serial = card['serialNumber'] as String? ?? '';
+      final printId = await _db.resolvePrintId(
+        catalog: catalog,
+        catalogId: card['catalogId'] as String?,
+        serialNumber: serial,
+        rarity: card['rarity'] as String?,
+      );
+      if (printId.isEmpty) continue;
+
+      final row = await _db.getUnifiedPrice(
+        catalog: catalog,
+        printId: printId,
+        lang: CardtraderService.languageFromSerial(serial, catalog),
+      );
+      final cents = (row?['nm_cents'] as int?) ?? (row?['any_cents'] as int?);
+      if (cents == null) continue;
+
+      final id = card['id'] as int?;
+      if (id == null) continue;
+      final newValue = cents / 100;
+      // Scrive solo se il valore cambia davvero: un UPDATE per ogni carta a
+      // ogni sync sporcherebbe il WAL senza motivo.
+      final current = (card['cardtrader_value'] as num?)?.toDouble();
+      if (current != null && (current - newValue).abs() < 0.005) continue;
+      values[id] = newValue;
+    }
+    if (values.isEmpty) return 0;
+    final updated = await _db.updateCardtraderValues(values);
+    AppLogger.info(
+      'valori collezione $catalog: $updated carte aggiornate su ${cards.length}',
+      tag: 'PriceSyncService',
+    );
+    return updated;
   }
 }
