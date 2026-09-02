@@ -123,6 +123,51 @@ void main() {
     });
   });
 
+  group('onepiece — dal rebuild 03/09/2026 il seriale è vero', () {
+    // Il catalogo pubblicato fino al 03/09/2026 metteva l'id del blueprint nel
+    // seriale ("OP01-244442": 2407 stampe su 2407), e il printId lo estraeva da
+    // lì. Col seriale vero ("OP01-064") quella deduzione darebbe "064", cioè il
+    // prezzo di nessuna carta: il blueprint arriva esplicito in una colonna sua.
+    test('seriale vero: il blueprint viene dalla colonna, non dal seriale', () async {
+      await db.insert('onepiece_cards', {
+        'id': 77,
+        'name': 'Alvida',
+        'created_at': '2026-09-03',
+        'updated_at': '2026-09-03',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert('onepiece_prints', {
+        'card_id': 77,
+        'card_set_id': 'OP01-064',
+        'blueprint_id': '244442',
+        'set_id': 'OP01',
+        'created_at': '2026-09-03',
+        'updated_at': '2026-09-03',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      expect(
+        await helper.resolvePrintId(
+          catalog: 'onepiece',
+          catalogId: '77',
+          serialNumber: 'OP01-064',
+        ),
+        '244442',
+      );
+    });
+
+    test('mai il numero di collezione scambiato per un blueprint', () async {
+      // Nessuna stampa in tabella: meglio nessun prezzo che il prezzo del
+      // blueprint 64, che è una carta di tutt'altro gioco.
+      expect(
+        await helper.resolvePrintId(
+          catalog: 'onepiece',
+          catalogId: '999',
+          serialNumber: 'OP05-118',
+        ),
+        '',
+      );
+    });
+  });
+
   group('pokemon — api_id "pr1-273488"', () {
     test('si risale al blueprint sia da id locale sia da api_id', () async {
       await db.insert('pokemon_cards', {
@@ -325,6 +370,71 @@ void main() {
       await helper.setPriceSetVersion('digimon', 'bt5', 3);
       final versions = await helper.getPriceSetVersions('digimon');
       expect(versions, {'btv1': 12, 'bt5': 3});
+    });
+  });
+
+  group('set posseduti — il sync scarica solo quelli', () {
+    // Senza questo filtro `_syncCatalog` scaricava TUTTI i set del catalogo:
+    // 490 letture RTDB per Yu-Gi-Oh a ogni bump di versione, contro le poche
+    // che servono a chi possiede tre buste.
+    setUp(() async {
+      await db.delete('cards');
+    });
+
+    Future<void> addCard(String collection, String catalogId, String serial) =>
+        db.insert('cards', {
+          'name': 'x',
+          'serialNumber': serial,
+          'collection': collection,
+          'catalogId': catalogId,
+          'quantity': 1,
+          'value': 0.0,
+          'rarity': '',
+          'added_at': '2026-09-03',
+        });
+
+    test('yugioh e onepiece: il codice sta nel seriale', () async {
+      await addCard('yugioh', '80181649', 'JUSH-IT040');
+      await addCard('yugioh', '10202894', 'LOB-EN105');
+      await addCard('yugioh', '10202894', 'LOB-EN106');
+      await addCard('onepiece', '77', 'OP01-064');
+
+      expect(await helper.getOwnedSetCodes('yugioh'), {'jush', 'lob'});
+      expect(await helper.getOwnedSetCodes('onepiece'), {'op01'});
+    });
+
+    test('pokemon: il codice sta nel prefisso di api_id', () async {
+      await db.insert('pokemon_cards', {
+        'id': 90,
+        'api_id': 'pr1-273488',
+        'name': 'Zapdos',
+        'created_at': '2026-09-03',
+        'updated_at': '2026-09-03',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await addCard('pokemon', 'pr1-273488', '15/62');
+
+      expect(await helper.getOwnedSetCodes('pokemon'), {'pr1'});
+    });
+
+    test('flat: il codice sta sulla carta di catalogo', () async {
+      await db.insert('lorcana_cards', {
+        'id': 5,
+        'api_id': '258453',
+        'name': 'Mickey Mouse',
+        'set_code': 'ch1',
+        'created_at': '2026-09-03',
+        'updated_at': '2026-09-03',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await addCard('lorcana', '258453', '208/204');
+
+      expect(await helper.getOwnedSetCodes('lorcana'), {'ch1'});
+    });
+
+    test('collezione vuota ⇒ insieme vuoto, cioè "scarica tutto"', () async {
+      // Vuoto non vuol dire "nessun set": vuol dire che il criterio non sa
+      // rispondere, e chi chiama deve scaricare tutto invece di niente.
+      expect(await helper.getOwnedSetCodes('vanguard'), isEmpty);
+      expect(await helper.getOwnedSetCodes('yugioh'), isEmpty);
     });
   });
 }

@@ -145,8 +145,42 @@ class CardtraderService {
       collectorNumber: collectorNumber,
       catalogId: catalogId,
     );
-    if (row == null) return null;
-    return CardtraderPrice.fromMap(row);
+    if (row != null) return CardtraderPrice.fromMap(row);
+
+    // Terzo percorso: i prezzi incorporati nelle tabelle di stampa del
+    // catalogo. Lo aveva solo [getAllPricesForCard], ed e' il motivo per cui la
+    // stessa carta mostrava "N/D" in lista e un valore di mercato in scheda:
+    // due funzioni con un numero diverso di ripieghi, quindi due insiemi
+    // disgiunti di cataloghi con il prezzo. Un solo percorso, un solo esito.
+    final embedded = await _db.getCatalogPricesForCard(
+      catalog: catalog,
+      cardName: cardName,
+      catalogId: catalogId,
+      serialNumber: collectorNumber ?? serialNumber,
+    );
+    if (embedded.isEmpty) return null;
+    return CardtraderPrice.fromMap(_preferLanguage(embedded, language));
+  }
+
+  /// La riga nella lingua richiesta; in mancanza l'inglese, poi la prima.
+  ///
+  /// Le righe di `card_prices` chiamano la colonna `lang`, quelle del percorso
+  /// storico `language`: si accettano entrambe perche' questa scelta serve a
+  /// tutti e tre i percorsi prezzo.
+  static Map<String, dynamic> _preferLanguage(
+    List<Map<String, dynamic>> rows,
+    String language,
+  ) {
+    String langOf(Map<String, dynamic> r) =>
+        ((r['lang'] ?? r['language']) as String? ?? '').toLowerCase();
+    final wanted = language.toLowerCase();
+    for (final r in rows) {
+      if (langOf(r) == wanted) return r;
+    }
+    for (final r in rows) {
+      if (langOf(r) == 'en') return r;
+    }
+    return rows.first;
   }
 
   /// Returns all cached CardTrader prices for a card across every language.
@@ -225,8 +259,23 @@ class CardtraderService {
       printId: printId,
       lang: language,
     );
-    if (row == null) return null;
-    return _fromUnifiedRow(row, catalog: catalog, cardName: '');
+    if (row != null) return _fromUnifiedRow(row, catalog: catalog, cardName: '');
+
+    // Nessun prezzo in QUELLA lingua: si ripiega su un'altra stampa dello
+    // stesso printId invece di dire "N/D". Serve da quando il worker etichetta
+    // i prezzi con la lingua vera dell'inserzione: prima finivano tutti in
+    // "en", e una carta italiana trovava per caso il prezzo giusto. La lingua
+    // effettiva resta nel modello, che la scheda carta mostra.
+    final all = await _db.getUnifiedPricesForPrint(
+      catalog: catalog,
+      printId: printId,
+    );
+    if (all.isEmpty) return null;
+    return _fromUnifiedRow(
+      _preferLanguage(all, language),
+      catalog: catalog,
+      cardName: '',
+    );
   }
 
   /// Adatta una riga di `card_prices` al modello che la UI gia' conosce.

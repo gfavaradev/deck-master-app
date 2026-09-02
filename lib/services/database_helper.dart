@@ -53,7 +53,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: 41,
+      version: 42,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -496,6 +496,18 @@ class DatabaseHelper {
     if (oldVersion < 41) {
       await _createUnifiedPriceTables(db);
     }
+    if (oldVersion < 42) {
+      // v42 — il blueprint CardTrader di una stampa One Piece diventa un campo
+      // suo. Fino al rebuild del 03/09/2026 stava dentro `card_set_id`
+      // ("OP01-244442"), che l'app mostra come seriale: adesso lì c'e' il
+      // numero di collezione vero ("OP01-064") e il blueprint va conservato a
+      // parte, altrimenti la stampa resta senza prezzo. Vedi [resolvePrintId].
+      await _addColumnIfMissing(db, 'onepiece_prints', 'blueprint_id', 'TEXT');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_onepiece_prints_blueprint_id '
+        'ON onepiece_prints(blueprint_id)',
+      );
+    }
   }
 
   /// Prezzi unificati (v41) — vedi REQUIREMENTS_prices_unified.md.
@@ -694,9 +706,18 @@ class DatabaseHelper {
         return RegExp(r'^\d+$').hasMatch(direct) ? direct : '';
 
       case PrintFamily.onepiece:
+        // Prima la tabella, POI il seriale. Dal rebuild del 03/09/2026
+        // `card_set_id` e' il numero di collezione vero ("OP01-064"), non piu'
+        // l'id del blueprint travestito ("OP01-244442"): dedurre il blueprint
+        // dal seriale darebbe "064", cioe' il prezzo di un'altra carta. Il
+        // seriale resta un ripiego per i cataloghi non ancora ricostruiti.
+        final viaPrint = await _onepieceBlueprintFromCard(id, serial);
+        if (viaPrint.isNotEmpty) return viaPrint;
         final fromSerial = blueprintFromCompositeId(serial);
-        if (RegExp(r'^\d+$').hasMatch(fromSerial)) return fromSerial;
-        return _onepieceBlueprintFromCard(id, serial);
+        // Un blueprint CardTrader ha 5-6 cifre; "064" e' un numero di
+        // collezione, e prenderlo per un blueprint significa mostrare il prezzo
+        // di una carta a caso.
+        return RegExp(r'^\d{5,}$').hasMatch(fromSerial) ? fromSerial : '';
 
       case PrintFamily.pokemon:
         return _apiIdBlueprint('pokemon_cards', id);
@@ -743,23 +764,36 @@ class DatabaseHelper {
     }
   }
 
+  /// Blueprint di una stampa One Piece: dalla colonna `blueprint_id` se c'e',
+  /// altrimenti dal `card_set_id` dei cataloghi vecchi, dove il blueprint era
+  /// il suffisso del seriale.
+  ///
+  /// La ricerca parte dal seriale, che identifica la stampa anche quando
+  /// `catalogId` non e' quello locale: le carte gia' in collezione hanno il
+  /// seriale con cui furono aggiunte.
   Future<String> _onepieceBlueprintFromCard(String catalogId, String serial) async {
-    if (catalogId.isEmpty) return '';
+    if (catalogId.isEmpty && serial.isEmpty) return '';
     try {
       final db = await database;
-      final rows = await db.rawQuery(
-        'SELECT card_set_id FROM onepiece_prints WHERE card_id = ? LIMIT 20',
-        [catalogId],
-      );
-      for (final r in rows) {
-        final csid = r['card_set_id'] as String? ?? '';
-        if (serial.isNotEmpty && csid != serial) continue;
-        final bp = blueprintFromCompositeId(csid);
-        if (RegExp(r'^\d+$').hasMatch(bp)) return bp;
-      }
-      if (rows.isNotEmpty && serial.isEmpty) {
-        final bp = blueprintFromCompositeId(rows.first['card_set_id']);
-        if (RegExp(r'^\d+$').hasMatch(bp)) return bp;
+      final rows = serial.isNotEmpty
+          ? await db.rawQuery(
+              'SELECT card_set_id, blueprint_id FROM onepiece_prints '
+              'WHERE card_set_id = ? OR card_id = ? LIMIT 20',
+              [serial, catalogId],
+            )
+          : await db.rawQuery(
+              'SELECT card_set_id, blueprint_id FROM onepiece_prints '
+              'WHERE card_id = ? LIMIT 20',
+              [catalogId],
+            );
+      // Se il seriale c'e', vince la riga che gli corrisponde: le altre sono
+      // stampe diverse della stessa carta, con un prezzo diverso.
+      final exact = rows.where((r) => r['card_set_id'] == serial);
+      for (final r in [...exact, ...rows]) {
+        final explicit = (r['blueprint_id'] as String? ?? '').trim();
+        if (RegExp(r'^\d+$').hasMatch(explicit)) return explicit;
+        final bp = blueprintFromCompositeId(r['card_set_id']);
+        if (RegExp(r'^\d{5,}$').hasMatch(bp)) return bp;
       }
     } catch (_) {}
     return '';
@@ -824,6 +858,59 @@ class DatabaseHelper {
       }
     } catch (_) {}
     return '';
+  }
+
+  /// Codici espansione di cui l'utente possiede almeno una carta in [catalog],
+  /// normalizzati come le chiavi dei set su RTDB (`/p/{cat}/s/{set}`).
+  ///
+  /// Serve a scaricare solo i set che servono davvero: su Yu-Gi-Oh sono una
+  /// manciata contro 490. Un insieme vuoto significa "non lo so": chi chiama
+  /// scarica tutto, che e' preferibile a lasciare la collezione senza prezzi.
+  ///
+  /// Da dove viene il codice espansione cambia per famiglia:
+  ///  - yugioh e onepiece ce l'hanno nel seriale ("JUSH-IT040", "OP01-064");
+  ///  - pokemon nel prefisso di `api_id` ("pr1-273488");
+  ///  - flat e magic in una colonna della carta di catalogo.
+  Future<Set<String>> getOwnedSetCodes(String catalog) async {
+    final db = await database;
+    // Prefisso del seriale fino al primo trattino, in minuscolo.
+    const serialPrefix =
+        "LOWER(SUBSTR(c.serialNumber, 1, INSTR(c.serialNumber, '-') - 1))";
+    final sql = switch (catalog) {
+      'yugioh' || 'onepiece' =>
+        'SELECT DISTINCT $serialPrefix AS code FROM cards c '
+            "WHERE c.collection = ? AND INSTR(c.serialNumber, '-') > 1",
+      'pokemon' =>
+        'SELECT DISTINCT LOWER(SUBSTR(pc.api_id, 1, '
+            "INSTR(pc.api_id, '-') - 1)) AS code "
+            'FROM cards c JOIN pokemon_cards pc '
+            '  ON pc.api_id = c.catalogId OR CAST(pc.id AS TEXT) = c.catalogId '
+            "WHERE c.collection = ? AND INSTR(pc.api_id, '-') > 1",
+      'magic' => 'SELECT DISTINCT LOWER(mc.set_code) AS code '
+          'FROM cards c JOIN magic_cards mc '
+          '  ON mc.api_id = c.catalogId OR CAST(mc.id AS TEXT) = c.catalogId '
+          "WHERE c.collection = ? AND mc.set_code IS NOT NULL AND mc.set_code != ''",
+      _ => () {
+          final prefix = genericTablePrefix(catalog);
+          if (prefix == null) return null;
+          return 'SELECT DISTINCT LOWER(gc.set_code) AS code '
+              'FROM cards c JOIN ${prefix}_cards gc '
+              '  ON gc.api_id = c.catalogId OR CAST(gc.id AS TEXT) = c.catalogId '
+              "WHERE c.collection = ? AND gc.set_code IS NOT NULL AND gc.set_code != ''";
+        }(),
+    };
+    if (sql == null) return const {};
+    try {
+      final rows = await db.rawQuery(sql, [catalog]);
+      return {
+        for (final r in rows)
+          if ((r['code'] as String? ?? '').isNotEmpty) r['code'] as String,
+      };
+    } catch (_) {
+      // Tabella di catalogo assente: non e' un errore, e' un catalogo mai
+      // scaricato. Si scarica tutto.
+      return const {};
+    }
   }
 
   /// Le carte in collezione di [catalog], con i soli campi che servono a
@@ -1094,6 +1181,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         card_id INTEGER NOT NULL,
         card_set_id TEXT NOT NULL,
+        blueprint_id TEXT,
         set_id TEXT,
         set_name TEXT,
         rarity TEXT,
@@ -1434,6 +1522,12 @@ class DatabaseHelper {
             'set_code':  c['set_code']?.toString(),
             'set_name':  c['set_name']?.toString(),
             'card_number': c['card_number']?.toString(),
+            // La colonna esisteva dalla v36 e `getGenericCatalogCards` la
+            // legge come `artwork`, ma nessuno ci scriveva: i nove cataloghi
+            // generici restavano senza immagini qualunque cosa pubblicasse il
+            // worker. Vale qualsiasi URL assoluto — quelli CardTrader si
+            // caricano direttamente, e la migrazione li sostituira' con B2.
+            'image_url': c['image_url']?.toString() ?? c['imageUrl']?.toString(),
             'name_it':   c['name_it']?.toString(),
             'effect_it': c['effect_it']?.toString(),
             'name_fr':   c['name_fr']?.toString(),
@@ -2923,65 +3017,77 @@ class DatabaseHelper {
     return result.first['count'] as int? ?? 0;
   }
 
-  // CTE che calcola il prezzo effettivo per ogni carta leggendo dai catalogo
-  // (set_price_{lang}) invece che da cards.cardtrader_value.
-  // Effective price prefers the live CardTrader-synced price over `c.value`:
-  // `value` is only a snapshot frozen at add-time (card_dialogs.dart pre-fills
-  // it with the catalog price at that moment and never refreshes it), so for
-  // long-held collections it drifts from the real price — using it as the
-  // primary source inflates/deflates totals. It's kept as a fallback for
-  // cards CardTrader has no matching price for.
+  /// CTE `card_values`: il prezzo effettivo di ogni carta in collezione, per
+  /// tutte le statistiche di valore (totale, per collezione, per rarità,
+  /// snapshot storico).
+  ///
+  /// Parte da **tutte** le carte. Fino al 03/09/2026 era l'unione di tre SELECT
+  /// (`WHERE collection = 'yugioh' | 'onepiece' | 'pokemon'`): le carte degli
+  /// altri dieci cataloghi non comparivano proprio nella CTE, quindi Digimon,
+  /// Lorcana, Flesh and Blood e compagnia valevano zero ovunque — mentre
+  /// l'intestazione della lista, che calcola per conto suo
+  /// ([_getEffectiveValue] in card_list_page), mostrava un prezzo per carta.
+  /// Da qui la stranezza per cui una collezione con i prezzi in lista aveva
+  /// totale zero.
+  ///
+  /// Ordine delle fonti, dal più affidabile:
+  ///  1. `cardtrader_value` — prezzo di mercato del percorso unificato,
+  ///     aggiornato a ogni sync prezzi. È l'unica fonte che esiste per tutti
+  ///     e tredici i cataloghi.
+  ///  2. il prezzo incorporato nelle tabelle di stampa, dove c'è (i tre
+  ///     cataloghi storici).
+  ///  3. `c.value`, che è solo un'istantanea del momento in cui la carta è
+  ///     stata aggiunta (card_dialogs.dart la precompila col prezzo di catalogo
+  ///     e non la aggiorna più): per una collezione tenuta a lungo si allontana
+  ///     dal prezzo vero, quindi resta l'ultima spiaggia.
   static String _cardEffectiveValueCTE() => '''
     WITH card_values AS (
       SELECT c.collection, c.rarity, c.quantity,
         COALESCE(
-          (SELECT CASE
-             WHEN yp.set_code_it = c.serialNumber THEN yp.set_price_it
-             WHEN yp.set_code_fr = c.serialNumber THEN yp.set_price_fr
-             WHEN yp.set_code_de = c.serialNumber THEN yp.set_price_de
-             WHEN yp.set_code_pt = c.serialNumber THEN yp.set_price_pt
-             WHEN yp.set_code_sp = c.serialNumber THEN yp.set_price_sp
-             ELSE yp.set_price
-           END
-           FROM yugioh_prints yp
-           WHERE yp.card_id = CAST(c.catalogId AS INTEGER)
-             AND (yp.set_code = c.serialNumber OR yp.set_code_it = c.serialNumber
-               OR yp.set_code_fr = c.serialNumber OR yp.set_code_de = c.serialNumber
-               OR yp.set_code_pt = c.serialNumber OR yp.set_code_sp = c.serialNumber)
-           LIMIT 1),
+          NULLIF(c.cardtrader_value, 0),
+          CASE c.collection
+            WHEN 'yugioh' THEN
+              (SELECT CASE
+                 WHEN yp.set_code_it = c.serialNumber THEN yp.set_price_it
+                 WHEN yp.set_code_fr = c.serialNumber THEN yp.set_price_fr
+                 WHEN yp.set_code_de = c.serialNumber THEN yp.set_price_de
+                 WHEN yp.set_code_pt = c.serialNumber THEN yp.set_price_pt
+                 WHEN yp.set_code_sp = c.serialNumber THEN yp.set_price_sp
+                 ELSE yp.set_price
+               END
+               FROM yugioh_prints yp
+               WHERE yp.card_id = CAST(c.catalogId AS INTEGER)
+                 AND (yp.set_code = c.serialNumber OR yp.set_code_it = c.serialNumber
+                   OR yp.set_code_fr = c.serialNumber OR yp.set_code_de = c.serialNumber
+                   OR yp.set_code_pt = c.serialNumber OR yp.set_code_sp = c.serialNumber)
+               LIMIT 1)
+            WHEN 'onepiece' THEN
+              (SELECT NULLIF(op.market_price, 0)
+               FROM onepiece_prints op
+               WHERE op.card_set_id = c.serialNumber
+                  OR op.card_id = CAST(c.catalogId AS INTEGER)
+               LIMIT 1)
+            WHEN 'pokemon' THEN
+              (SELECT CASE
+                 WHEN pp.set_code_it = c.serialNumber THEN pp.set_price_it
+                 WHEN pp.set_code_fr = c.serialNumber THEN pp.set_price_fr
+                 WHEN pp.set_code_de = c.serialNumber THEN pp.set_price_de
+                 WHEN pp.set_code_es = c.serialNumber THEN pp.set_price_es
+                 WHEN pp.set_code_pt = c.serialNumber THEN pp.set_price_pt
+                 ELSE pp.set_price
+               END
+               FROM pokemon_prints pp
+               WHERE (pp.card_id = CAST(c.catalogId AS INTEGER)
+                   OR pp.card_id = (SELECT id FROM pokemon_cards WHERE api_id = c.catalogId LIMIT 1))
+                 AND (pp.set_code = c.serialNumber OR pp.set_code_it = c.serialNumber
+                   OR pp.set_code_fr = c.serialNumber OR pp.set_code_de = c.serialNumber
+                   OR pp.set_code_pt = c.serialNumber OR pp.set_code_es = c.serialNumber)
+               LIMIT 1)
+          END,
           NULLIF(c.value, 0),
           0
         ) AS effective_price
-      FROM cards c WHERE c.collection = 'yugioh'
-      UNION ALL
-      SELECT c.collection, c.rarity, c.quantity,
-        COALESCE(NULLIF(op.market_price, 0), NULLIF(c.value, 0), 0) AS effective_price
       FROM cards c
-      LEFT JOIN onepiece_prints op ON op.card_id = CAST(c.catalogId AS INTEGER)
-                                   AND op.card_set_id = c.serialNumber
-      WHERE c.collection = 'onepiece'
-      UNION ALL
-      SELECT c.collection, c.rarity, c.quantity,
-        COALESCE(
-          (SELECT CASE
-             WHEN pp.set_code_it = c.serialNumber THEN pp.set_price_it
-             WHEN pp.set_code_fr = c.serialNumber THEN pp.set_price_fr
-             WHEN pp.set_code_de = c.serialNumber THEN pp.set_price_de
-             WHEN pp.set_code_es = c.serialNumber THEN pp.set_price_es
-             WHEN pp.set_code_pt = c.serialNumber THEN pp.set_price_pt
-             ELSE pp.set_price
-           END
-           FROM pokemon_prints pp
-           WHERE (pp.card_id = CAST(c.catalogId AS INTEGER)
-               OR pp.card_id = (SELECT id FROM pokemon_cards WHERE api_id = c.catalogId LIMIT 1))
-             AND (pp.set_code = c.serialNumber OR pp.set_code_it = c.serialNumber
-               OR pp.set_code_fr = c.serialNumber OR pp.set_code_de = c.serialNumber
-               OR pp.set_code_pt = c.serialNumber OR pp.set_code_es = c.serialNumber)
-           LIMIT 1),
-          NULLIF(c.value, 0),
-          0
-        ) AS effective_price
-      FROM cards c WHERE c.collection = 'pokemon'
     )
   ''';
 
@@ -5047,13 +5153,14 @@ class DatabaseHelper {
             // valore non è hosted, preserva quello già in SQLite.
             await txn.rawInsert('''
               INSERT INTO onepiece_prints
-                (card_id, card_set_id, set_id, set_name, rarity,
+                (card_id, card_set_id, blueprint_id, set_id, set_name, rarity,
                  inventory_price, market_price, market_price_en, market_price_fr,
                  market_price_ko, market_price_zh, artwork,
                  created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(card_set_id) DO UPDATE SET
                 card_id          = excluded.card_id,
+                blueprint_id     = COALESCE(excluded.blueprint_id, blueprint_id),
                 set_id           = excluded.set_id,
                 set_name         = excluded.set_name,
                 rarity           = excluded.rarity,
@@ -5073,6 +5180,7 @@ class DatabaseHelper {
             ''', [
               cardId,
               print['card_set_id'],
+              print['blueprint_id']?.toString(),
               print['set_id'],
               print['set_name'],
               print['rarity'],

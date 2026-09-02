@@ -58,18 +58,30 @@ class PriceSyncService {
 
       final localKey = '$_versionKeyPrefix$catalog';
       final local = prefs.getInt(localKey);
-      if (local != null && local >= remote) continue;
 
       try {
-        final sets = await _syncCatalog(catalog);
-        updatedSets += sets;
-        if (sets > 0) await updateCollectionValues(catalog);
-        // Il timestamp si scrive SOLO a sincronizzazione riuscita: se il
-        // download muore a metà, il prossimo avvio riprende invece di dare per
-        // aggiornato ciò che non lo è.
-        await prefs.setInt(localKey, remote);
+        if (local == null || local < remote) {
+          updatedSets += await _syncCatalog(catalog);
+          // Il timestamp si scrive SOLO a sincronizzazione riuscita: se il
+          // download muore a metà, il prossimo avvio riprende invece di dare
+          // per aggiornato ciò che non lo è.
+          await prefs.setInt(localKey, remote);
+        }
       } catch (e) {
         AppLogger.error('sync prezzi $catalog fallito',
+            tag: 'PriceSyncService', error: e);
+      }
+
+      // Fuori dal gate di versione, e di proposito: il valore di una carta va
+      // scritto anche quando i prezzi non sono cambiati, perché a cambiare può
+      // essere la collezione. Legandolo al bump di versione, una carta aggiunta
+      // dopo l'ultimo sync restava a `cardtrader_value` nullo per sempre — il
+      // prezzo compariva nella riga (che lo cerca al volo) ma il totale della
+      // collezione lo ignorava. Costa una passata sulle carte possedute.
+      try {
+        await updateCollectionValues(catalog);
+      } catch (e) {
+        AppLogger.error('valori collezione $catalog falliti',
             tag: 'PriceSyncService', error: e);
       }
     }
@@ -86,8 +98,23 @@ class PriceSyncService {
     final index = await _repo.fetchIndex(catalog);
     if (index == null) return 0;
 
+    // Solo i set di cui l'utente possiede almeno una carta: su Yu-Gi-Oh sono
+    // una manciata invece di 490, e il costo del sync diventa proporzionale
+    // alla collezione, non al catalogo.
+    var wanted = await _db.getOwnedSetCodes(catalog);
+    // Se nessuno dei set posseduti compare nell'indice, il criterio è sbagliato
+    // (seriali di un catalogo vecchio, codici che non combaciano): meglio
+    // scaricare tutto che lasciare la collezione senza prezzi.
+    if (wanted.isNotEmpty && !wanted.any(index.setVersions.containsKey)) {
+      AppLogger.info(
+        'prezzi $catalog: nessun set posseduto riconosciuto, scarico tutto',
+        tag: 'PriceSyncService',
+      );
+      wanted = const {};
+    }
+
     final localVersions = await _db.getPriceSetVersions(catalog);
-    final toFetch = index.setsToFetch(localVersions, const {});
+    final toFetch = index.setsToFetch(localVersions, wanted);
     if (toFetch.isEmpty) return 0;
 
     var done = 0;
