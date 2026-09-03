@@ -45,10 +45,18 @@ final _optcgCardSetIdRegex = RegExp(r'^[A-Z]{2,5}\d{1,2}-([A-Z]{2})?\d{3,4}[a-z]
 /// combaciava mai e la funzione era di fatto inerte; coi seriali veri
 /// ("OP01-064") combacia, e sovrascrivere un'immagine che c'è significherebbe
 /// scambiare un URL che carica con uno che quasi sempre non esiste.
+/// Vero se [url] è già mostrabile così com'è.
+///
+/// È la guardia da usare prima di ricostruire un URL Backblaze: la precedente
+/// accettava solo URL B2, quindi un'immagine CardTrader — che carica benissimo —
+/// veniva scartata in favore di un path ricostruito che quasi sempre non esiste.
+@visibleForTesting
+bool hasUsableImage(String? url) =>
+    url != null && (url.startsWith('https://') || url.startsWith('http://'));
+
 @visibleForTesting
 CardModel fixOnepieceCardImage(CardModel card) {
-  final current = card.imageUrl ?? '';
-  if (current.startsWith('http://') || current.startsWith('https://')) return card;
+  if (hasUsableImage(card.imageUrl)) return card;
   final cardId = int.tryParse(card.catalogId ?? '');
   final setCode = card.serialNumber;
   if (cardId == null || setCode.isEmpty || !_optcgCardSetIdRegex.hasMatch(setCode)) return card;
@@ -356,8 +364,11 @@ class DataRepository {
     // solo in un'altra lingua sparirebbe invece di comparire con la sua.
     var enSets = getSets('en');
     if (enSets.isEmpty) {
-      for (final key in rawSets.keys) {
-        enSets = getSets(key.toString());
+      // Ordine alfabetico, non quello arbitrario delle chiavi: la lingua che fa
+      // da base decide `set_name` e `rarity` della stampa, e deve essere sempre
+      // la stessa a parità di dati.
+      for (final key in rawSets.keys.map((k) => k.toString()).toList()..sort()) {
+        enSets = getSets(key);
         if (enSets.isNotEmpty) break;
       }
     }
@@ -1406,7 +1417,7 @@ class DataRepository {
     final rows = await _dbHelper.getOnepieceCardPrints(cardId);
     return rows.map((r) {
       final artwork = r['artwork'] as String?;
-      if (BackblazeService.isBackblazeUrl(artwork ?? '')) return r;
+      if (hasUsableImage(artwork)) return r;
       final setCode = r['setCode'] as String?;
       if (setCode == null || setCode.isEmpty) return r;
       if (!_optcgCardSetIdRegex.hasMatch(setCode)) return r;
@@ -1444,7 +1455,7 @@ class DataRepository {
     if (collection != 'onepiece') return rows;
     return rows.map((r) {
       final imageUrl = r['imageUrl'] as String?;
-      if (BackblazeService.isBackblazeUrl(imageUrl ?? '')) return r;
+      if (hasUsableImage(imageUrl)) return r;
       final cardId = r['id'];
       final setCode = r['serialNumber'] as String?;
       if (cardId == null || setCode == null || setCode.isEmpty) return r;
@@ -1894,7 +1905,7 @@ class DataRepository {
         query: query, language: language, limit: limit, offset: offset);
     return rows.map((r) {
       final artwork = r['artwork'] as String?;
-      if (BackblazeService.isBackblazeUrl(artwork ?? '')) return r;
+      if (hasUsableImage(artwork)) return r;
       final cardId = r['id'];
       final setCode = r['setCode'] as String?;
       if (cardId == null || setCode == null || setCode.isEmpty) return r;

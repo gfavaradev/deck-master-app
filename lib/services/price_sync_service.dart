@@ -59,9 +59,18 @@ class PriceSyncService {
       final localKey = '$_versionKeyPrefix$catalog';
       final local = prefs.getInt(localKey);
 
+      var pricesChanged = false;
       try {
-        if (local == null || local < remote) {
-          updatedSets += await _syncCatalog(catalog);
+        // Due motivi per entrare, non uno. Il primo è che il listino si è
+        // mosso. Il secondo è che si è mossa la COLLEZIONE: siccome si
+        // scaricano solo i set posseduti, una carta di un set nuovo resterebbe
+        // senza prezzo fino al prossimo bump di versione del catalogo, che può
+        // non arrivare per giorni. Il controllo è una query locale.
+        final missing = await _hasUnfetchedOwnedSets(catalog);
+        if (local == null || local < remote || missing) {
+          final sets = await _syncCatalog(catalog);
+          updatedSets += sets;
+          pricesChanged = sets > 0;
           // Il timestamp si scrive SOLO a sincronizzazione riuscita: se il
           // download muore a metà, il prossimo avvio riprende invece di dare
           // per aggiornato ciò che non lo è.
@@ -72,20 +81,31 @@ class PriceSyncService {
             tag: 'PriceSyncService', error: e);
       }
 
-      // Fuori dal gate di versione, e di proposito: il valore di una carta va
-      // scritto anche quando i prezzi non sono cambiati, perché a cambiare può
-      // essere la collezione. Legandolo al bump di versione, una carta aggiunta
-      // dopo l'ultimo sync restava a `cardtrader_value` nullo per sempre — il
-      // prezzo compariva nella riga (che lo cerca al volo) ma il totale della
-      // collezione lo ignorava. Costa una passata sulle carte possedute.
+      // Il ricalcolo esce dal gate di versione, ma non a costo pieno. Quando i
+      // prezzi non si sono mossi si guardano solo le carte ancora SENZA valore:
+      // sono quelle aggiunte dopo l'ultimo sync, che legandosi al solo bump di
+      // versione restavano a `cardtrader_value` nullo per sempre — prezzo nella
+      // riga, zero nel totale. Una passata completa su ogni catalogo a ogni
+      // avvio significherebbe invece due query per carta posseduta,
+      // serializzate sull'unica connessione sqflite.
       try {
-        await updateCollectionValues(catalog);
+        await updateCollectionValues(catalog, onlyMissing: !pricesChanged);
       } catch (e) {
         AppLogger.error('valori collezione $catalog falliti',
             tag: 'PriceSyncService', error: e);
       }
     }
     return updatedSets;
+  }
+
+  /// Vero se l'utente possiede carte di un set di cui non si è mai scaricato il
+  /// prezzo. È il segnale che a muoversi è stata la collezione, non il listino:
+  /// costa una query locale e non tocca la rete.
+  Future<bool> _hasUnfetchedOwnedSets(String catalog) async {
+    final owned = await _db.getOwnedSetCodes(catalog);
+    if (owned.isEmpty) return false;
+    final local = await _db.getPriceSetVersions(catalog);
+    return owned.any((s) => !local.containsKey(s));
   }
 
   /// Scarica i set cambiati di un catalogo, uno alla volta.
@@ -101,11 +121,16 @@ class PriceSyncService {
     // Solo i set di cui l'utente possiede almeno una carta: su Yu-Gi-Oh sono
     // una manciata invece di 490, e il costo del sync diventa proporzionale
     // alla collezione, non al catalogo.
-    var wanted = await _db.getOwnedSetCodes(catalog);
+    final owned = await _db.getOwnedSetCodes(catalog);
+    final localVersions = await _db.getPriceSetVersions(catalog);
+    // Ai set posseduti si aggiungono quelli già scaricati: un set che esce
+    // dalla collezione (ultima carta venduta) altrimenti resterebbe in cache
+    // con un prezzo fossile, mai più aggiornato.
+    var wanted = {...owned, ...localVersions.keys};
     // Se nessuno dei set posseduti compare nell'indice, il criterio è sbagliato
     // (seriali di un catalogo vecchio, codici che non combaciano): meglio
     // scaricare tutto che lasciare la collezione senza prezzi.
-    if (wanted.isNotEmpty && !wanted.any(index.setVersions.containsKey)) {
+    if (owned.isNotEmpty && !owned.any(index.setVersions.containsKey)) {
       AppLogger.info(
         'prezzi $catalog: nessun set posseduto riconosciuto, scarico tutto',
         tag: 'PriceSyncService',
@@ -113,7 +138,6 @@ class PriceSyncService {
       wanted = const {};
     }
 
-    final localVersions = await _db.getPriceSetVersions(catalog);
     final toFetch = index.setsToFetch(localVersions, wanted);
     if (toFetch.isEmpty) return 0;
 
@@ -149,8 +173,17 @@ class PriceSyncService {
   /// matching. Con il printId il costo diventa proporzionale a quanto uno
   /// possiede, che e' la proprieta' che rende il sistema estendibile a 13
   /// cataloghi.
-  Future<int> updateCollectionValues(String catalog) async {
-    final cards = await _db.getCollectionCardsForPricing(catalog);
+  /// Con [onlyMissing] si guardano solo le carte ancora senza valore: è il caso
+  /// in cui a essere cambiata è la collezione e non il listino, e ripassare
+  /// tutta la collezione sarebbe lavoro buttato.
+  Future<int> updateCollectionValues(
+    String catalog, {
+    bool onlyMissing = false,
+  }) async {
+    final all = await _db.getCollectionCardsForPricing(catalog);
+    final cards = onlyMissing
+        ? all.where((c) => (c['cardtrader_value'] as num?) == null).toList()
+        : all;
     if (cards.isEmpty) return 0;
 
     final values = <int, double?>{};
@@ -164,12 +197,11 @@ class PriceSyncService {
       );
       if (printId.isEmpty) continue;
 
-      final row = await _db.getUnifiedPrice(
-        catalog: catalog,
-        printId: printId,
-        lang: CardtraderService.languageFromSerial(serial, catalog),
-      );
-      final cents = (row?['nm_cents'] as int?) ?? (row?['any_cents'] as int?);
+      // Stessa scelta di lingua della UI, ripiego incluso: se qui si cercasse
+      // solo la lingua esatta, una carta con prezzo pubblicato in un'altra
+      // lingua mostrerebbe il prezzo nella riga e resterebbe fuori dal totale
+      // della collezione — cioe' la discrepanza che questo lavoro elimina.
+      final cents = await _priceCentsForPrint(catalog, printId, serial);
       if (cents == null) continue;
 
       final id = card['id'] as int?;
@@ -189,4 +221,35 @@ class PriceSyncService {
     );
     return updated;
   }
+
+  /// Prezzo in centesimi di una stampa: la lingua della carta se c'e',
+  /// altrimenti l'inglese, altrimenti una qualsiasi.
+  ///
+  /// È la stessa scala di ripieghi di `CardtraderService._preferLanguage`, e
+  /// deve restarlo: se le due divergono, il prezzo mostrato sulla riga e quello
+  /// sommato nel totale non sono più lo stesso numero.
+  Future<int?> _priceCentsForPrint(
+    String catalog,
+    String printId,
+    String serial,
+  ) async {
+    final lang = CardtraderService.languageFromSerial(serial, catalog);
+    final exact = await _db.getUnifiedPrice(
+      catalog: catalog,
+      printId: printId,
+      lang: lang,
+    );
+    if (exact != null) return _bestCents(exact);
+
+    final all = await _db.getUnifiedPricesForPrint(
+      catalog: catalog,
+      printId: printId,
+    );
+    if (all.isEmpty) return null;
+    final en = all.where((r) => (r['lang'] as String? ?? '') == 'en');
+    return _bestCents(en.isNotEmpty ? en.first : all.first);
+  }
+
+  static int? _bestCents(Map<String, dynamic> row) =>
+      (row['nm_cents'] as int?) ?? (row['any_cents'] as int?);
 }

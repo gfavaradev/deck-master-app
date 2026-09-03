@@ -775,21 +775,24 @@ class DatabaseHelper {
     if (catalogId.isEmpty && serial.isEmpty) return '';
     try {
       final db = await database;
+      // Col seriale si cerca ESATTAMENTE quella stampa, e basta: le altre
+      // stampe della stessa carta sono alternate art e reprint con prezzi
+      // lontanissimi, e il valore che ne uscirebbe verrebbe pure scritto in
+      // `cards.cardtrader_value`. Meglio nessun prezzo che quello di un'altra
+      // stampa. Senza seriale — una carta di catalogo, non posseduta — si
+      // prende la prima stampa, che e' l'unico criterio disponibile.
       final rows = serial.isNotEmpty
           ? await db.rawQuery(
               'SELECT card_set_id, blueprint_id FROM onepiece_prints '
-              'WHERE card_set_id = ? OR card_id = ? LIMIT 20',
-              [serial, catalogId],
+              'WHERE card_set_id = ? LIMIT 1',
+              [serial],
             )
           : await db.rawQuery(
               'SELECT card_set_id, blueprint_id FROM onepiece_prints '
-              'WHERE card_id = ? LIMIT 20',
+              'WHERE card_id = ? ORDER BY id LIMIT 1',
               [catalogId],
             );
-      // Se il seriale c'e', vince la riga che gli corrisponde: le altre sono
-      // stampe diverse della stessa carta, con un prezzo diverso.
-      final exact = rows.where((r) => r['card_set_id'] == serial);
-      for (final r in [...exact, ...rows]) {
+      for (final r in rows) {
         final explicit = (r['blueprint_id'] as String? ?? '').trim();
         if (RegExp(r'^\d+$').hasMatch(explicit)) return explicit;
         final bp = blueprintFromCompositeId(r['card_set_id']);
@@ -878,17 +881,25 @@ class DatabaseHelper {
     final db = await database;
     // Yu-Gi-Oh e Magic non sono mai passati da CardTrader per il seriale:
     // niente da riparare.
-    final String sql;
+    //
+    // Espressione del nuovo seriale e condizione di riga restano SEPARATE: la
+    // condizione serve due volte, una per raccogliere gli id da accodare al
+    // sync e una per l'UPDATE, e ricavarla dal testo dell'istruzione
+    // significherebbe inciampare nel WHERE della sottoquery.
+    final String newSerial;
+    final String where;
+    final args = <Object?>[];
     switch (catalog) {
       case 'onepiece':
-        sql = '''
-          UPDATE cards SET serialNumber = (
-            SELECT op.card_set_id FROM onepiece_prints op
-            WHERE op.blueprint_id IS NOT NULL
-              AND op.set_id || '-' || op.blueprint_id = cards.serialNumber
-              AND op.card_set_id != cards.serialNumber
-            LIMIT 1)
-          WHERE collection = 'onepiece' AND EXISTS (
+        newSerial = '''
+          SELECT op.card_set_id FROM onepiece_prints op
+          WHERE op.blueprint_id IS NOT NULL
+            AND op.set_id || '-' || op.blueprint_id = cards.serialNumber
+            AND op.card_set_id != cards.serialNumber
+          LIMIT 1
+        ''';
+        where = '''
+          collection = 'onepiece' AND EXISTS (
             SELECT 1 FROM onepiece_prints op
             WHERE op.blueprint_id IS NOT NULL
               AND op.set_id || '-' || op.blueprint_id = cards.serialNumber
@@ -897,16 +908,17 @@ class DatabaseHelper {
       case 'pokemon':
         // Il vecchio seriale era il blueprint nudo, che è anche il suffisso di
         // `api_id`: si accetta la riga solo se i due coincidono.
-        sql = '''
-          UPDATE cards SET serialNumber = (
-            SELECT pp.set_code FROM pokemon_cards pc
-            JOIN pokemon_prints pp ON pp.card_id = pc.id
-            WHERE (pc.api_id = cards.catalogId OR CAST(pc.id AS TEXT) = cards.catalogId)
-              AND SUBSTR(pc.api_id, LENGTH(pc.api_id) - LENGTH(cards.serialNumber))
-                  = '-' || cards.serialNumber
-              AND pp.set_code != cards.serialNumber
-            LIMIT 1)
-          WHERE collection = 'pokemon' AND EXISTS (
+        newSerial = '''
+          SELECT pp.set_code FROM pokemon_cards pc
+          JOIN pokemon_prints pp ON pp.card_id = pc.id
+          WHERE (pc.api_id = cards.catalogId OR CAST(pc.id AS TEXT) = cards.catalogId)
+            AND SUBSTR(pc.api_id, LENGTH(pc.api_id) - LENGTH(cards.serialNumber))
+                = '-' || cards.serialNumber
+            AND pp.set_code != cards.serialNumber
+          LIMIT 1
+        ''';
+        where = '''
+          collection = 'pokemon' AND EXISTS (
             SELECT 1 FROM pokemon_cards pc
             JOIN pokemon_prints pp ON pp.card_id = pc.id
             WHERE (pc.api_id = cards.catalogId OR CAST(pc.id AS TEXT) = cards.catalogId)
@@ -919,23 +931,37 @@ class DatabaseHelper {
         if (prefix == null) return 0;
         // Nei cataloghi flat il seriale mostrato era `api_id` per mancanza di
         // `card_number`: si sostituisce solo dove il numero vero ora esiste.
-        sql = '''
-          UPDATE cards SET serialNumber = (
-            SELECT gc.card_number FROM ${prefix}_cards gc
-            WHERE gc.api_id = cards.serialNumber
-              AND gc.card_number IS NOT NULL AND gc.card_number != ''
-            LIMIT 1)
-          WHERE collection = ? AND EXISTS (
+        newSerial = '''
+          SELECT gc.card_number FROM ${prefix}_cards gc
+          WHERE gc.api_id = cards.serialNumber
+            AND gc.card_number IS NOT NULL AND gc.card_number != ''
+          LIMIT 1
+        ''';
+        where = '''
+          collection = ? AND EXISTS (
             SELECT 1 FROM ${prefix}_cards gc
             WHERE gc.api_id = cards.serialNumber
               AND gc.card_number IS NOT NULL AND gc.card_number != '')
         ''';
+        args.add(catalog);
     }
     try {
-      final args = catalog == 'onepiece' || catalog == 'pokemon'
-          ? <Object?>[]
-          : <Object?>[catalog];
-      return await db.rawUpdate(sql, args);
+      // Gli id si raccolgono PRIMA dell'UPDATE: dopo, la condizione non
+      // seleziona più nulla — ed è proprio questo a dire che la riga è cambiata.
+      final changed = await db.rawQuery('SELECT id FROM cards WHERE $where', args);
+      final n = await db.rawUpdate(
+        'UPDATE cards SET serialNumber = ($newSerial) WHERE $where',
+        args,
+      );
+      // Senza accodare la modifica, la riparazione dura fino al primo
+      // `pullFromCloud`: quello riscrive la carta con la versione remota
+      // preservando solo `value` e `cardtrader_value`, quindi il seriale vecchio
+      // tornerebbe — e sugli altri dispositivi non arriverebbe mai.
+      for (final row in changed) {
+        final id = row['id'] as int?;
+        if (id != null) await addPendingSync('cards', id, 'update');
+      }
+      return n;
     } catch (_) {
       // Tabelle di catalogo assenti: catalogo mai scaricato, niente da fare.
       return 0;
@@ -3144,10 +3170,12 @@ class DatabaseHelper {
                    OR yp.set_code_pt = c.serialNumber OR yp.set_code_sp = c.serialNumber)
                LIMIT 1)
             WHEN 'onepiece' THEN
+              -- Solo la stampa POSSEDUTA: le altre della stessa carta sono
+              -- alternate art e reprint, e prendere "una qualsiasi" metterebbe
+              -- nel totale il prezzo di una carta che l'utente non ha.
               (SELECT NULLIF(op.market_price, 0)
                FROM onepiece_prints op
                WHERE op.card_set_id = c.serialNumber
-                  OR op.card_id = CAST(c.catalogId AS INTEGER)
                LIMIT 1)
             WHEN 'pokemon' THEN
               (SELECT CASE
@@ -3170,6 +3198,10 @@ class DatabaseHelper {
           0
         ) AS effective_price
       FROM cards c
+      -- Una carta senza collezione non appartiene a nessun raggruppamento:
+      -- formerebbe un gruppo con chiave NULL, che `saveCollectionValueSnapshot`
+      -- proverebbe a inserire in una colonna NOT NULL.
+      WHERE c.collection IS NOT NULL
     )
   ''';
 
@@ -5308,9 +5340,14 @@ class DatabaseHelper {
   Future<void> _dropStaleOnepiecePrints() async {
     try {
       final db = await database;
+      // Due condizioni, non una. `blueprint_id IS NULL` da solo colpirebbe
+      // anche una stampa legittima appena inserita che quel campo non ce l'ha:
+      // si richiede anche che il seriale ABBIA la forma surrogata
+      // ("{set}-{5+ cifre}"), che è esattamente ciò che si vuole togliere.
       await db.rawDelete('''
         DELETE FROM onepiece_prints
         WHERE blueprint_id IS NULL
+          AND card_set_id GLOB '*-[0-9][0-9][0-9][0-9][0-9]*'
           AND card_id IN (
             SELECT card_id FROM onepiece_prints WHERE blueprint_id IS NOT NULL
           )
@@ -5798,6 +5835,10 @@ class DatabaseHelper {
     String? serialNumber,
   }) async {
     final db = await database;
+    // Il seriale identifica la stampa posseduta: senza, ogni ramo prendeva "una
+    // stampa qualsiasi con prezzo > 0" della stessa carta, che fra alternate
+    // art e reprint puo' valere cento volte tanto.
+    final sn = serialNumber?.trim() ?? '';
 
     Map<String, dynamic> makeRow(String lang, dynamic price, String expCode,
         String nameEn, String rarity, String? ctSyncedAt) {
@@ -5834,9 +5875,16 @@ class DatabaseHelper {
         FROM pokemon_prints pp
         JOIN pokemon_cards pc ON pc.id = pp.card_id
         WHERE pp.card_id = ?
-        ORDER BY (CASE WHEN pp.set_price > 0 THEN 1 ELSE 0 END) DESC
+        -- La stampa POSSEDUTA per prima: `serialNumber` arrivava fin qui e non
+        -- veniva letto, quindi una comune poteva mostrare il prezzo della
+        -- stampa piu' cara della stessa carta.
+        ORDER BY (CASE WHEN ? != '' AND (pp.set_code = ? OR pp.set_code_it = ?
+                       OR pp.set_code_fr = ? OR pp.set_code_de = ?
+                       OR pp.set_code_es = ? OR pp.set_code_pt = ?)
+                  THEN 1 ELSE 0 END) DESC,
+                 (CASE WHEN pp.set_price > 0 THEN 1 ELSE 0 END) DESC
         LIMIT 1
-      ''', [cardDbId]);
+      ''', [cardDbId, sn, sn, sn, sn, sn, sn, sn]);
       if (rows.isEmpty) return [];
       final row = rows.first;
       final n = row['name'] as String? ?? cardName;
@@ -5863,9 +5911,13 @@ class DatabaseHelper {
         FROM yugioh_prints yp
         JOIN yugioh_cards yc ON yc.id = yp.card_id
         WHERE yp.card_id = ?
-        ORDER BY (CASE WHEN yp.set_price > 0 THEN 1 ELSE 0 END) DESC
+        ORDER BY (CASE WHEN ? != '' AND (yp.set_code = ? OR yp.set_code_it = ?
+                       OR yp.set_code_fr = ? OR yp.set_code_de = ?
+                       OR yp.set_code_pt = ? OR yp.set_code_sp = ?)
+                  THEN 1 ELSE 0 END) DESC,
+                 (CASE WHEN yp.set_price > 0 THEN 1 ELSE 0 END) DESC
         LIMIT 1
-      ''', [cardDbId]);
+      ''', [cardDbId, sn, sn, sn, sn, sn, sn, sn]);
       if (rows.isEmpty) return [];
       final row = rows.first;
       final n = row['name'] as String? ?? cardName;
@@ -5893,9 +5945,10 @@ class DatabaseHelper {
         FROM onepiece_prints op
         JOIN onepiece_cards oc ON oc.id = op.card_id
         WHERE op.card_id = ?
-        ORDER BY (CASE WHEN op.market_price > 0 THEN 1 ELSE 0 END) DESC
+        ORDER BY (CASE WHEN ? != '' AND op.card_set_id = ? THEN 1 ELSE 0 END) DESC,
+                 (CASE WHEN op.market_price > 0 THEN 1 ELSE 0 END) DESC
         LIMIT 1
-      ''', [cardDbId]);
+      ''', [cardDbId, sn, sn]);
       if (rows.isEmpty) return [];
       final row = rows.first;
       final n = row['name'] as String? ?? cardName;

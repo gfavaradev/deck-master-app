@@ -162,6 +162,47 @@ void main() {
     });
   });
 
+  test('la riparazione si accoda al sync, o il cloud la annulla', () async {
+    // `pullFromCloud` riscrive la carta con la versione remota preservando solo
+    // `value` e `cardtrader_value`: senza accodare la modifica, il seriale
+    // vecchio tornerebbe al primo pull e sugli altri dispositivi non
+    // arriverebbe mai.
+    await db.delete('pending_sync');
+    await db.insert('lorcana_cards', {
+      'id': 5,
+      'api_id': '258453',
+      'name': 'Mickey Mouse',
+      'set_code': 'ch1',
+      'card_number': '208/204',
+      'created_at': '2026-09-03',
+      'updated_at': '2026-09-03',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    final id = await addCard('lorcana', '258453', '258453');
+
+    expect(await helper.repairOwnedSerials('lorcana'), 1);
+    final pending = await db.query('pending_sync',
+        where: 'table_name = ? AND local_id = ?', whereArgs: ['cards', id]);
+    expect(pending, hasLength(1));
+    expect(pending.single['change_type'], 'update');
+  });
+
+  test('niente da riparare, niente in coda', () async {
+    await db.delete('pending_sync');
+    await db.insert('lorcana_cards', {
+      'id': 5,
+      'api_id': '258453',
+      'name': 'Mickey Mouse',
+      'set_code': 'ch1',
+      'card_number': '208/204',
+      'created_at': '2026-09-03',
+      'updated_at': '2026-09-03',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await addCard('lorcana', '258453', '208/204');
+
+    expect(await helper.repairOwnedSerials('lorcana'), 0);
+    expect(await db.query('pending_sync'), isEmpty);
+  });
+
   test('cataloghi senza riparazione: nessuna modifica e nessun errore', () async {
     final id = await addCard('magic', 'uuid-1', '13');
     expect(await helper.repairOwnedSerials('magic'), 0);
