@@ -36,11 +36,19 @@ List<Map<String, dynamic>> _normalizeMagicBatch(List<Map<String, dynamic>> cards
 // ID surrogate CardTrader (BANDAI-245405, numeri puri) non hanno file in Backblaze.
 final _optcgCardSetIdRegex = RegExp(r'^[A-Z]{2,5}\d{1,2}-([A-Z]{2})?\d{3,4}[a-z]?$');
 
-/// Genera l'URL Backblaze per carte One Piece il cui imageUrl non è ancora hosted.
+/// Genera l'URL Backblaze per carte One Piece **senza alcuna immagine**.
 /// Usa catalogId (int ID in onepiece_cards) + serialNumber (card_set_id OPTCG).
 /// Surrogati (BANDAI-*, UP-*) vengono lasciati invariati — non hanno file in Backblaze.
-CardModel _fixOnepieceCardImage(CardModel card) {
-  if (BackblazeService.isBackblazeUrl(card.imageUrl ?? '')) return card;
+///
+/// L'URL è ricostruito, non verificato: va usato solo dove non c'è niente da
+/// mostrare. Finché i seriali erano surrogati a sei cifre il regex non
+/// combaciava mai e la funzione era di fatto inerte; coi seriali veri
+/// ("OP01-064") combacia, e sovrascrivere un'immagine che c'è significherebbe
+/// scambiare un URL che carica con uno che quasi sempre non esiste.
+@visibleForTesting
+CardModel fixOnepieceCardImage(CardModel card) {
+  final current = card.imageUrl ?? '';
+  if (current.startsWith('http://') || current.startsWith('https://')) return card;
   final cardId = int.tryParse(card.catalogId ?? '');
   final setCode = card.serialNumber;
   if (cardId == null || setCode.isEmpty || !_optcgCardSetIdRegex.hasMatch(setCode)) return card;
@@ -804,7 +812,7 @@ class DataRepository {
     final lang = validLangs.contains(mapped) ? mapped : 'en';
     final cards = await _dbHelper.getCardsByCollection(collection, language: lang);
     if (collection != 'onepiece') return cards;
-    return cards.map(_fixOnepieceCardImage).toList();
+    return cards.map(fixOnepieceCardImage).toList();
   }
 
   Future<Map<String, double>> getCollectionCompletions() async {
@@ -819,7 +827,7 @@ class DataRepository {
     }
     final cards = await _dbHelper.getCardsWithCatalog(collection);
     if (collection != 'onepiece') return cards;
-    return cards.map(_fixOnepieceCardImage).toList();
+    return cards.map(fixOnepieceCardImage).toList();
   }
 
   Future<Map<String, int>> getOwnedQuantityMap(String collection) async {
@@ -837,7 +845,7 @@ class DataRepository {
     }
     final cards = await _dbHelper.findOwnedInstances(collection, name, serialNumber, rarity);
     if (collection != 'onepiece') return cards;
-    return cards.map(_fixOnepieceCardImage).toList();
+    return cards.map(fixOnepieceCardImage).toList();
   }
 
   Future<int> getCardCountByAlbum(int albumId) async {
