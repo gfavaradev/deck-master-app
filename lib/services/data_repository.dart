@@ -20,7 +20,7 @@ import 'backblaze_service.dart';
 
 // Top-level functions so compute() can spawn them in a background isolate.
 List<Map<String, dynamic>> _normalizeYugiohBatch(List<Map<String, dynamic>> cards) =>
-    cards.map(DataRepository._normalizeCardForSQLite).toList();
+    cards.map(DataRepository.normalizeYugiohCardForSQLite).toList();
 
 List<Map<String, dynamic>> _normalizePokemonBatch(List<Map<String, dynamic>> cards) =>
     cards.map(DataRepository.normalizePokemonCardForSQLite).toList();
@@ -206,7 +206,8 @@ class DataRepository {
   ///
   /// Localized sets are matched by derived set code (e.g. LOB-EN001 → LOB-IT001),
   /// not by array index, to avoid mismatches when arrays have different orderings.
-  static Map<String, dynamic> _normalizeCardForSQLite(Map<String, dynamic> card) {
+  @visibleForTesting
+  static Map<String, dynamic> normalizeYugiohCardForSQLite(Map<String, dynamic> card) {
     if (card.containsKey('prints') || !card.containsKey('sets')) return card;
     final rawSets = card['sets'];
     if (rawSets is! Map) return card;
@@ -489,7 +490,7 @@ class DataRepository {
 
     // Upsert modified cards (INSERT OR REPLACE handles both add and edit)
     if (cards.isNotEmpty) {
-      final normalizedCards = cards.map(_normalizeCardForSQLite).toList();
+      final normalizedCards = cards.map(normalizeYugiohCardForSQLite).toList();
       await _dbHelper.insertYugiohCards(normalizedCards, onProgress: onSaveProgress);
     }
 
