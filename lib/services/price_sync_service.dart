@@ -17,11 +17,16 @@ import 'price_repository.dart';
 class PriceSyncService {
   static const _versionKeyPrefix = 'rtdb_price_version_';
 
-  final PriceRepository _repo;
+  final PriceRepository? _injectedRepo;
+  // Costruito solo al primo uso: PriceRepository tocca Firebase.app() nel suo
+  // costruttore di default, ma updateCollectionValues (usato anche a freddo,
+  // senza rete) non passa mai da _repo. Istanziarlo comunque impedirebbe di
+  // testare quel percorso senza inizializzare Firebase.
+  late final PriceRepository _repo = _injectedRepo ?? PriceRepository();
   final DatabaseHelper _db;
 
   PriceSyncService({PriceRepository? repository, DatabaseHelper? database})
-      : _repo = repository ?? PriceRepository(),
+      : _injectedRepo = repository,
         _db = database ?? DatabaseHelper();
 
   /// Cataloghi per cui ha senso scaricare prezzi: quelli di cui l'utente ha
@@ -189,19 +194,28 @@ class PriceSyncService {
     final values = <int, double?>{};
     for (final card in cards) {
       final serial = card['serialNumber'] as String? ?? '';
+      final catalogId = card['catalogId'] as String?;
       final printId = await _db.resolvePrintId(
         catalog: catalog,
-        catalogId: card['catalogId'] as String?,
+        catalogId: catalogId,
         serialNumber: serial,
         rarity: card['rarity'] as String?,
       );
-      if (printId.isEmpty) continue;
 
       // Stessa scelta di lingua della UI, ripiego incluso: se qui si cercasse
       // solo la lingua esatta, una carta con prezzo pubblicato in un'altra
       // lingua mostrerebbe il prezzo nella riga e resterebbe fuori dal totale
       // della collezione — cioe' la discrepanza che questo lavoro elimina.
-      final cents = await _priceCentsForPrint(catalog, printId, serial);
+      int? cents;
+      if (printId.isNotEmpty) {
+        cents = await _priceCentsForPrint(catalog, printId, serial);
+      }
+      // Stesso terzo ripiego di CardtraderService.getPriceForCard: i prezzi
+      // incorporati nelle tabelle di stampa del catalogo. Senza questo passo
+      // una carta con printId irrisolvibile (o senza riga in card_prices)
+      // mostrava comunque un prezzo in lista — letto proprio da qui — ma
+      // restava fuori dal totale, che si fermava al passo precedente.
+      cents ??= await _embeddedPriceCents(catalog, catalogId, serial);
       if (cents == null) continue;
 
       final id = card['id'] as int?;
@@ -225,7 +239,7 @@ class PriceSyncService {
   /// Prezzo in centesimi di una stampa: la lingua della carta se c'e',
   /// altrimenti l'inglese, altrimenti una qualsiasi.
   ///
-  /// È la stessa scala di ripieghi di `CardtraderService._preferLanguage`, e
+  /// È la stessa scala di ripieghi di `CardtraderService.preferLanguage`, e
   /// deve restarlo: se le due divergono, il prezzo mostrato sulla riga e quello
   /// sommato nel totale non sono più lo stesso numero.
   Future<int?> _priceCentsForPrint(
@@ -252,4 +266,25 @@ class PriceSyncService {
 
   static int? _bestCents(Map<String, dynamic> row) =>
       (row['nm_cents'] as int?) ?? (row['any_cents'] as int?);
+
+  /// Terzo ripiego: il prezzo incorporato nelle tabelle di stampa del
+  /// catalogo (yugioh/pokemon/onepiece), stesso percorso e stessa scelta di
+  /// lingua di `CardtraderService.getPriceForCard`.
+  Future<int?> _embeddedPriceCents(
+    String catalog,
+    String? catalogId,
+    String serial,
+  ) async {
+    final rows = await _db.getCatalogPricesForCard(
+      catalog: catalog,
+      cardName: '',
+      catalogId: catalogId,
+      serialNumber: serial,
+    );
+    if (rows.isEmpty) return null;
+    final lang = CardtraderService.languageFromSerial(serial, catalog);
+    final row = CardtraderService.preferLanguage(rows, lang);
+    return (row['min_price_nm_cents'] as int?) ??
+        (row['min_price_any_cents'] as int?);
+  }
 }

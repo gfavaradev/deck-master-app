@@ -159,15 +159,16 @@ class CardtraderService {
       serialNumber: collectorNumber ?? serialNumber,
     );
     if (embedded.isEmpty) return null;
-    return CardtraderPrice.fromMap(_preferLanguage(embedded, language));
+    return CardtraderPrice.fromMap(preferLanguage(embedded, language));
   }
 
   /// La riga nella lingua richiesta; in mancanza l'inglese, poi la prima.
   ///
   /// Le righe di `card_prices` chiamano la colonna `lang`, quelle del percorso
   /// storico `language`: si accettano entrambe perche' questa scelta serve a
-  /// tutti e tre i percorsi prezzo.
-  static Map<String, dynamic> _preferLanguage(
+  /// tutti e tre i percorsi prezzo, piu' PriceSyncService che la riusa per
+  /// tenere `cardtrader_value` sullo stesso ripiego del prezzo mostrato in riga.
+  static Map<String, dynamic> preferLanguage(
     List<Map<String, dynamic>> rows,
     String language,
   ) {
@@ -272,7 +273,7 @@ class CardtraderService {
     );
     if (all.isEmpty) return null;
     return _fromUnifiedRow(
-      _preferLanguage(all, language),
+      preferLanguage(all, language),
       catalog: catalog,
       cardName: '',
     );

@@ -3165,9 +3165,15 @@ class DatabaseHelper {
   ///     stata aggiunta (card_dialogs.dart la precompila col prezzo di catalogo
   ///     e non la aggiorna più): per una collezione tenuta a lungo si allontana
   ///     dal prezzo vero, quindi resta l'ultima spiaggia.
+  ///
+  /// `quantity` è nullable in schema (ALTER TABLE senza DEFAULT su una colonna
+  /// preesistente): SUM ignora le righe NULL invece di sollevare un errore,
+  /// quindi contavano zero nel totale mentre CardModel.fromMap le mostra a
+  /// quantità 1 nella lista — da qui il totale che non torna con le righe
+  /// visibili. COALESCE le allinea allo stesso default.
   static String _cardEffectiveValueCTE() => '''
     WITH card_values AS (
-      SELECT c.collection, c.rarity, c.quantity,
+      SELECT c.collection, c.rarity, COALESCE(c.quantity, 1) AS quantity,
         COALESCE(
           NULLIF(c.cardtrader_value, 0),
           CASE c.collection
@@ -3227,9 +3233,9 @@ class DatabaseHelper {
     final colFilter = collection != null ? ' WHERE collection = ?' : '';
     final colArgs   = collection != null ? [collection] : <Object?>[];
 
-    final totalCards = await db.rawQuery('SELECT SUM(quantity) as total FROM cards$colFilter', colArgs);
+    final totalCards = await db.rawQuery('SELECT SUM(COALESCE(quantity, 1)) as total FROM cards$colFilter', colArgs);
     final duplicateCards = await db.rawQuery(
-      'SELECT SUM(c.quantity) as total FROM cards c '
+      'SELECT SUM(COALESCE(c.quantity, 1)) as total FROM cards c '
       "JOIN albums a ON a.id = c.albumId WHERE a.name = 'Doppioni'"
       '${collection != null ? " AND c.collection = ?" : ""}',
       colArgs,
@@ -3339,7 +3345,7 @@ class DatabaseHelper {
 
     // Invested cost (only cards with purchase_price set)
     final investedRows = await db.rawQuery('''
-      SELECT COALESCE(SUM(purchase_price * quantity), 0) AS total_invested
+      SELECT COALESCE(SUM(purchase_price * COALESCE(quantity, 1)), 0) AS total_invested
       FROM cards WHERE purchase_price > 0
     ''');
     final totalInvested = (investedRows.first['total_invested'] as num?)?.toDouble() ?? 0.0;
@@ -3347,7 +3353,7 @@ class DatabaseHelper {
     // Current CT value only for cards with purchase_price set (fair comparison for ROI)
     final ownedValueRows = await db.rawQuery('''
       SELECT
-        SUM(COALESCE(c.cardtrader_value, c.value, 0) * c.quantity) AS owned_value,
+        SUM(COALESCE(c.cardtrader_value, c.value, 0) * COALESCE(c.quantity, 1)) AS owned_value,
         COUNT(*) AS card_count
       FROM cards c WHERE c.purchase_price > 0
     ''');

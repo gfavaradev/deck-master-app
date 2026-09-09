@@ -110,4 +110,97 @@ void main() {
     expect(rows, isNotEmpty);
     expect((rows.first['totalValue'] as num).toDouble(), closeTo(2.0, 0.001));
   });
+
+  group('quantity NULL conta come 1, non come zero', () {
+    // La colonna e' nullable (ALTER TABLE senza DEFAULT su una colonna
+    // preesistente): SUM ignora le righe NULL invece di sollevare un errore,
+    // quindi contavano zero nel totale mentre CardModel.fromMap (letto dalla
+    // lista carte) le mostra a quantita' 1 — il totale non tornava con le
+    // righe visibili.
+    Future<void> addCardWithNullQuantity(String collection, {double? ctValue}) =>
+        db.insert('cards', {
+          'name': 'carta',
+          'serialNumber': '',
+          'collection': collection,
+          'catalogId': '1',
+          'quantity': null,
+          'value': 0.0,
+          'cardtrader_value': ctValue,
+          'rarity': 'Rare',
+          'added_at': '2026-09-03',
+        });
+
+    test('getGlobalStats: totale carte e totale valore', () async {
+      await addCardWithNullQuantity('digimon', ctValue: 3.0);
+
+      final stats = await helper.getGlobalStats(collection: 'digimon');
+
+      expect(stats['totalCards'], 1);
+      expect(stats['totalValue'], closeTo(3.0, 0.001));
+    });
+
+    test('getStatsPerCollection', () async {
+      await addCardWithNullQuantity('lorcana', ctValue: 5.0);
+
+      final rows = await helper.getStatsPerCollection();
+      final lorcana = rows.firstWhere((r) => r['collection'] == 'lorcana');
+
+      expect((lorcana['totalCards'] as num).toInt(), 1);
+      expect((lorcana['totalValue'] as num).toDouble(), closeTo(5.0, 0.001));
+    });
+
+    test('getStatsPerRarity', () async {
+      await addCardWithNullQuantity('digimon', ctValue: 2.0);
+
+      final rows = await helper.getStatsPerRarity(collection: 'digimon');
+
+      expect((rows.first['count'] as num).toInt(), 1);
+      expect((rows.first['totalValue'] as num).toDouble(), closeTo(2.0, 0.001));
+    });
+
+    test('getRoiSummary: valore corrente e valore posseduto', () async {
+      await db.insert('cards', {
+        'name': 'carta',
+        'serialNumber': '',
+        'collection': 'digimon',
+        'catalogId': '1',
+        'quantity': null,
+        'value': 0.0,
+        'cardtrader_value': 4.0,
+        'purchase_price': 1.0,
+        'rarity': 'Rare',
+        'added_at': '2026-09-03',
+      });
+
+      final roi = await helper.getRoiSummary();
+
+      expect(roi['currentValue'], closeTo(4.0, 0.001));
+      expect(roi['totalInvested'], closeTo(1.0, 0.001));
+      expect(roi['ownedValue'], closeTo(4.0, 0.001));
+    });
+
+    test('duplicateCards conta anche le carte senza quantity in un album Doppioni',
+        () async {
+      final albumId = await db.insert('albums', {
+        'name': 'Doppioni',
+        'collection': 'digimon',
+        'maxCapacity': 100,
+      });
+      await db.insert('cards', {
+        'name': 'carta',
+        'serialNumber': '',
+        'collection': 'digimon',
+        'catalogId': '1',
+        'albumId': albumId,
+        'quantity': null,
+        'value': 0.0,
+        'rarity': 'Rare',
+        'added_at': '2026-09-03',
+      });
+
+      final stats = await helper.getGlobalStats(collection: 'digimon');
+
+      expect(stats['duplicateCards'], 1);
+    });
+  });
 }
