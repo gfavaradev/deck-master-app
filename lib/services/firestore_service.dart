@@ -338,6 +338,37 @@ class FirestoreService {
         .delete();
   }
 
+  /// Deletes every card filed under [albumFirestoreId]. Used before deleting
+  /// the album itself (web path — no local SQLite index of "cards in this
+  /// album" to iterate, unlike the mobile/desktop path in DataRepository):
+  /// without this, cards outlived their album and reappeared unfiled in the
+  /// collection's general view. Returns the deleted cards' firestoreIds so
+  /// the caller can purge its own per-card caches (DataRepository's web
+  /// firestoreId↔localId maps).
+  ///
+  /// A single non-paginated `.get()` is safe here — unlike the unfiltered
+  /// collection reads flagged in CLAUDE.md's Android platform-channel OOM
+  /// history (a different failure mode: giant QuerySnapshots choking the
+  /// Android platform channel), this query is bounded by the album's own
+  /// card count (≤ its maxCapacity, ~100-1000) and only runs on web, which
+  /// doesn't go through that platform channel at all.
+  Future<List<String>> deleteCardsByAlbum(String userId, String albumFirestoreId) async {
+    final snapshot = await _firestore
+        .collection(FirestorePaths.userCards(userId))
+        .where('albumFirestoreId', isEqualTo: albumFirestoreId)
+        .get();
+    if (snapshot.docs.isEmpty) return [];
+    // Firestore caps a batch at 500 writes.
+    for (var i = 0; i < snapshot.docs.length; i += 450) {
+      final batch = _firestore.batch();
+      for (final doc in snapshot.docs.skip(i).take(450)) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+    return snapshot.docs.map((doc) => doc.id).toList();
+  }
+
   Map<String, dynamic> _albumDocToMap(
       DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? const {};

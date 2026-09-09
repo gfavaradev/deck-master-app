@@ -2537,11 +2537,41 @@ class DatabaseHelper {
   }
 
   /// Deletes multiple cards by ID in a single SQL statement.
+  ///
+  /// Also removes matching `deck_cards` rows — `PRAGMA foreign_keys` is never
+  /// enabled in this app (see [deleteCard]), so the schema's `ON DELETE
+  /// CASCADE` is inert and orphaned deck_cards rows would otherwise linger
+  /// forever, inflating deck counts for a card that no longer exists.
   Future<void> batchDeleteCardsByIds(List<int> ids) async {
     if (ids.isEmpty) return;
     final db = await database;
     final placeholders = List.filled(ids.length, '?').join(',');
-    await db.rawDelete('DELETE FROM cards WHERE id IN ($placeholders)', ids);
+    await db.transaction((txn) async {
+      await txn.delete('deck_cards', where: 'cardId IN ($placeholders)', whereArgs: ids);
+      await txn.rawDelete('DELETE FROM cards WHERE id IN ($placeholders)', ids);
+    });
+  }
+
+  /// All cards currently filed under [albumId].
+  Future<List<CardModel>> getCardsByAlbumId(int albumId) async {
+    final db = await database;
+    final rows = await db.query('cards', where: 'albumId = ?', whereArgs: [albumId]);
+    return rows.map(CardModel.fromMap).toList();
+  }
+
+  /// Cards whose `albumId` points at an album that no longer exists locally.
+  /// `-1` is the sentinel for "catalog card, no album yet" and is excluded.
+  ///
+  /// Self-heals the fallout of the pre-fix `deleteAlbum()`, which removed
+  /// only the album row and left its cards behind with a dangling albumId —
+  /// they then leaked into the collection's general view as unfiled cards.
+  Future<List<CardModel>> getCardsWithInvalidAlbum() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT c.* FROM cards c
+      WHERE c.albumId != -1 AND c.albumId NOT IN (SELECT id FROM albums)
+    ''');
+    return rows.map(CardModel.fromMap).toList();
   }
 
   Future<List<CardModel>> getCardsByCollection(String collection, {String language = 'en'}) async {
@@ -3173,7 +3203,7 @@ class DatabaseHelper {
   /// visibili. COALESCE le allinea allo stesso default.
   static String _cardEffectiveValueCTE() => '''
     WITH card_values AS (
-      SELECT c.collection, c.rarity, COALESCE(c.quantity, 1) AS quantity,
+      SELECT c.id AS card_id, c.collection, c.rarity, c.purchase_price, COALESCE(c.quantity, 1) AS quantity,
         COALESCE(
           NULLIF(c.cardtrader_value, 0),
           CASE c.collection
@@ -3228,21 +3258,46 @@ class DatabaseHelper {
     )
   ''';
 
+  /// Prezzo effettivo per carta in [collection] (stessa fonte di
+  /// [_cardEffectiveValueCTE] usata da tutte le statistiche), indicizzato per
+  /// `cards.id`. Le schermate di lista lo usano per il totale "Valore" così
+  /// che coincida sempre con "Valore Stimato" nelle statistiche, invece di
+  /// ricalcolarlo in Dart con una catena di fallback più corta (mancava il
+  /// prezzo di stampa da catalogo per yugioh/pokemon/onepiece).
+  Future<Map<int, double>> getEffectiveCardValuesByCollection(String collection) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      ${_cardEffectiveValueCTE()}
+      SELECT card_id, effective_price FROM card_values WHERE collection = ?
+    ''', [collection]);
+    return {
+      for (final row in rows)
+        row['card_id'] as int: (row['effective_price'] as num?)?.toDouble() ?? 0.0,
+    };
+  }
+
   Future<Map<String, dynamic>> getGlobalStats({String? collection}) async {
     Database db = await database;
-    final colFilter = collection != null ? ' WHERE collection = ?' : '';
+    // Il tab "_global" deve essere la somma dei tab per-collezione visibili
+    // (le sbloccate, uniche ad avere un tab): senza questo filtro, carte
+    // rimaste in una collezione ri-bloccata (es. race in pullFromCloud che
+    // resetta i lucchetti dal remoto prima di riapplicare gli sblocchi
+    // pendenti) gonfiavano il totale globale senza comparire in alcun tab
+    // con cui l'utente potesse sommare e verificare.
+    const unlockedOnly = 'collection IN (SELECT id FROM collections WHERE isUnlocked = 1)';
+    final colFilter = collection != null ? ' WHERE collection = ?' : ' WHERE $unlockedOnly';
     final colArgs   = collection != null ? [collection] : <Object?>[];
 
     final totalCards = await db.rawQuery('SELECT SUM(COALESCE(quantity, 1)) as total FROM cards$colFilter', colArgs);
     final duplicateCards = await db.rawQuery(
       'SELECT SUM(COALESCE(c.quantity, 1)) as total FROM cards c '
       "JOIN albums a ON a.id = c.albumId WHERE a.name = 'Doppioni'"
-      '${collection != null ? " AND c.collection = ?" : ""}',
+      '${collection != null ? " AND c.collection = ?" : " AND c.$unlockedOnly"}',
       colArgs,
     );
     final totalValue  = await db.rawQuery('''
       ${_cardEffectiveValueCTE()}
-      SELECT SUM(effective_price * quantity) as total FROM card_values${collection != null ? ' WHERE collection = ?' : ''}
+      SELECT SUM(effective_price * quantity) as total FROM card_values WHERE ${collection != null ? 'collection = ?' : unlockedOnly}
     ''', colArgs);
     final collections = await db.rawQuery('SELECT COUNT(*) as total FROM collections WHERE isUnlocked = 1');
 
@@ -3343,19 +3398,29 @@ class DatabaseHelper {
     ''');
     final currentValue = (valueRows.first['total_value'] as num?)?.toDouble() ?? 0.0;
 
-    // Invested cost (only cards with purchase_price set)
+    // Invested cost (only cards with purchase_price set). Excludes
+    // collection IS NULL the same way card_values below does (the CTE's own
+    // WHERE clause) — otherwise a card with no collection would fund
+    // totalInvested but never appear in ownedValue/cardCount, understating
+    // gain and roiPct for no reason tied to the card itself.
     final investedRows = await db.rawQuery('''
       SELECT COALESCE(SUM(purchase_price * COALESCE(quantity, 1)), 0) AS total_invested
-      FROM cards WHERE purchase_price > 0
+      FROM cards WHERE purchase_price > 0 AND collection IS NOT NULL
     ''');
     final totalInvested = (investedRows.first['total_invested'] as num?)?.toDouble() ?? 0.0;
 
-    // Current CT value only for cards with purchase_price set (fair comparison for ROI)
+    // Current value only for cards with purchase_price set (fair comparison
+    // for ROI). Must reuse the same effective-price chain as the rest of the
+    // app's stats (_cardEffectiveValueCTE): the shorter cardtrader_value →
+    // value fallback used here before showed 0/stale gain for yugioh/pokemon/
+    // onepiece cards priced only via their catalog print, the same
+    // divergence already fixed for the collection totals.
     final ownedValueRows = await db.rawQuery('''
+      ${_cardEffectiveValueCTE()}
       SELECT
-        SUM(COALESCE(c.cardtrader_value, c.value, 0) * COALESCE(c.quantity, 1)) AS owned_value,
+        SUM(effective_price * quantity) AS owned_value,
         COUNT(*) AS card_count
-      FROM cards c WHERE c.purchase_price > 0
+      FROM card_values WHERE purchase_price > 0
     ''');
 
     final ownedValue = (ownedValueRows.first['owned_value'] as num?)?.toDouble() ?? 0.0;
@@ -3375,27 +3440,32 @@ class DatabaseHelper {
   }
 
   /// Returns top cards by ROI% (only where purchase_price > 0).
+  /// `current_price`/`gain_euros`/`roi_pct` reuse [_cardEffectiveValueCTE] —
+  /// same fix as [getRoiSummary] above.
   Future<List<Map<String, dynamic>>> getRoiCardList({
     String? collection,
     int limit = 50,
   }) async {
     final db = await database;
-    final collectionFilter = collection != null ? "AND c.collection = '$collection'" : '';
+    final collectionFilter = collection != null ? 'AND c.collection = ?' : '';
+    final args = <Object?>[if (collection != null) collection, limit];
     return db.rawQuery('''
+      ${_cardEffectiveValueCTE()}
       SELECT
         c.id, c.name, c.serialNumber, c.rarity, c.collection, c.imageUrl,
-        c.quantity, c.purchase_price,
-        COALESCE(c.cardtrader_value, c.value, 0) AS current_price,
-        (COALESCE(c.cardtrader_value, c.value, 0) - c.purchase_price) * c.quantity AS gain_euros,
+        cv.quantity, c.purchase_price,
+        cv.effective_price AS current_price,
+        (cv.effective_price - c.purchase_price) * cv.quantity AS gain_euros,
         CASE WHEN c.purchase_price > 0
-          THEN ((COALESCE(c.cardtrader_value, c.value, 0) - c.purchase_price) / c.purchase_price) * 100
+          THEN ((cv.effective_price - c.purchase_price) / c.purchase_price) * 100
           ELSE 0
         END AS roi_pct
       FROM cards c
+      JOIN card_values cv ON cv.card_id = c.id
       WHERE c.purchase_price > 0 $collectionFilter
       ORDER BY gain_euros DESC
       LIMIT ?
-    ''', [limit]);
+    ''', args);
   }
 
   Future<int> updateCardPurchasePrice(int cardId, double? price) async {

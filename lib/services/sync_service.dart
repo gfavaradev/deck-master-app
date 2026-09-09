@@ -152,6 +152,12 @@ class SyncService {
     if (userId == null) return;
 
     try {
+      // Push pending local changes (deletes above all) before pulling. Without
+      // this, a card deleted locally but not yet pushed was still present in
+      // the remote snapshot fetched below, and the upsert-by-firestoreId loop
+      // re-inserted it — the delete resurrected on every login/resync.
+      await flushPendingQueue();
+
       // ── Fetch remote data in parallel ──────────────────────────────────────
       // NOTE: deleteOrphanedItems() is called AFTER this fetch succeeds.
       // Calling it before would delete local-only items if the fetch fails (offline).
@@ -302,6 +308,13 @@ class SyncService {
       // Delete local cards removed on another device
       await _dbHelper.deleteCardsNotInFirestoreIds(remoteCardFsIds);
 
+      // Self-heal cards orphaned by an album deletion that didn't cascade
+      // (fixed going forward in DataRepository.deleteAlbum, but pre-existing
+      // orphans — local or synced from another device with the old code —
+      // need cleaning up here too). Albums and cards are both fully
+      // reconciled with the remote at this point.
+      await _repairOrphanedAlbumCards();
+
       // ── Decks: upsert by firestoreId ──────────────────────────────────────
       for (final deckData in remoteDecks) {
         final firestoreId = deckData['firestoreId'] as String?;
@@ -323,8 +336,12 @@ class SyncService {
         }
       }
 
-      await _dbHelper.clearPendingSync();
-
+      // No blanket clearPendingSync() here: flushPendingQueue() above already
+      // clears each item it successfully pushes. Wiping the whole table
+      // unconditionally would also discard items that failed to push (still
+      // legitimately pending), losing e.g. a delete that hadn't reached
+      // Firestore yet — the card would then resurrect on the next pull with
+      // no way to ever retry.
 
       // Sync CardTrader prices from shared Firestore collection
       await _syncCardtraderPrices();
@@ -333,6 +350,44 @@ class SyncService {
     } catch (e) {
       AppLogger.error('pullFromCloud failed', tag: 'SyncService', error: e);
       rethrow;
+    }
+  }
+
+  /// See [DatabaseHelper.getCardsWithInvalidAlbum]. Deletes each orphan
+  /// locally and pushes its Firestore delete individually — a bare local
+  /// delete would leave it alive on Firestore, to be resurrected on the very
+  /// next pull (same failure mode as the allRelated card-delete bug).
+  Future<void> _repairOrphanedAlbumCards() async {
+    final orphans = await _dbHelper.getCardsWithInvalidAlbum();
+    await deleteCardsAndPushSync(orphans);
+  }
+
+  /// Deletes [cards] locally and pushes each Firestore delete individually.
+  ///
+  /// Shared by every "delete cards as part of a bigger local action" path
+  /// (delete all copies of a card, delete an album's cards, the orphaned-
+  /// album-card repair above) so the capture-firestoreId → local delete →
+  /// push-per-card sequence lives in one place. It used to be copy-pasted
+  /// into each call site, and the copies drifted: one queried firestoreId
+  /// redundantly (it's already on the CardModel from the caller's own
+  /// SELECT), and a fix applied to one copy was missed in another.
+  Future<void> deleteCardsAndPushSync(List<CardModel> cards) async {
+    if (cards.isEmpty) return;
+    await _dbHelper.batchDeleteCardsByIds(cards.map((c) => c.id!).toList());
+    for (final c in cards) {
+      if (c.firestoreId == null) continue;
+      final placeholder = CardModel(
+        id: c.id,
+        firestoreId: c.firestoreId,
+        name: '',
+        serialNumber: '',
+        collection: '',
+        albumId: -1,
+        type: '',
+        rarity: '',
+        description: '',
+      );
+      await pushCardChange(placeholder, 'delete');
     }
   }
 
@@ -551,7 +606,16 @@ class SyncService {
     } catch (e) {
       AppLogger.error('pushAlbumChange failed ($changeType)', tag: 'SyncService', error: e);
       if (album.id != null) {
-        await _dbHelper.addPendingSync('albums', album.id!, changeType);
+        // Same as pushCardChange: without the firestoreId here, a failed
+        // online delete requeues with no way to retry (the local row is
+        // already gone, so flushPendingQueue can't look it up by id) and the
+        // album stays on Firestore forever, resurrected on the next pull.
+        await _dbHelper.addPendingSync(
+          'albums',
+          album.id!,
+          changeType,
+          data: changeType == 'delete' ? album.firestoreId : null,
+        );
       }
     }
   }
@@ -625,7 +689,16 @@ class SyncService {
     } catch (e) {
       AppLogger.error('pushCardChange failed ($changeType)', tag: 'SyncService', error: e);
       if (card.id != null) {
-        await _dbHelper.addPendingSync('cards', card.id!, changeType);
+        // Same as the offline branch above: without the firestoreId here,
+        // a failed online delete requeues with no way to retry (the local
+        // row is already gone, so flushPendingQueue can't look it up by id)
+        // and the card stays on Firestore forever, resurrected on the next pull.
+        await _dbHelper.addPendingSync(
+          'cards',
+          card.id!,
+          changeType,
+          data: changeType == 'delete' ? card.firestoreId : null,
+        );
       }
     }
   }

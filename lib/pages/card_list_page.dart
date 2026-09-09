@@ -51,6 +51,10 @@ class _CardListPageState extends State<CardListPage> {
   List<CardModel> _filteredDoppioniCards = [];
   /// Precomputed map: "serialNumber|rarity|catalogId" → total doppioni quantity
   Map<String, int> _doppioniQtyMap = {};
+  /// Card id → effective price, same source as the stats page ("Valore Stimato")
+  /// so this page's "Valore" total always reconciles with it. See
+  /// [DatabaseHelper.getEffectiveCardValuesByCollection].
+  Map<int, double> _effectivePriceByCardId = {};
   List<AlbumModel> _availableAlbums = [];
   bool _isGridView = false;
   bool _isLoading = true;
@@ -101,10 +105,12 @@ class _CardListPageState extends State<CardListPage> {
     final results = await Future.wait([
       _repo.getCardsByCollection(widget.collectionKey),
       _repo.getAlbumsByCollection(widget.collectionKey),
+      _repo.getEffectiveCardValuesByCollection(widget.collectionKey),
     ]);
     if (!mounted) return;
     final data = results[0] as List<CardModel>;
     final albums = results[1] as List<AlbumModel>;
+    final effectivePrices = results[2] as Map<int, double>;
 
     List<CardModel> processedCards = data;
 
@@ -133,6 +139,7 @@ class _CardListPageState extends State<CardListPage> {
       _allCards = processedCards;
       _doppioniCards = doppioniCards;
       _doppioniQtyMap = doppioniMap;
+      _effectivePriceByCardId = effectivePrices;
       _availableAlbums = albums;
       _isLoading = false;
       _applyFilter(_searchController.text);
@@ -868,6 +875,15 @@ class _CardListPageState extends State<CardListPage> {
   }
 
   double _getEffectiveValue(CardModel card) {
+    // Prefer the DB-computed price (DatabaseHelper._cardEffectiveValueCTE):
+    // cardtrader_value → catalog print price → card.value → 0. It's the same
+    // source the stats page's "Valore Stimato" reads, so this page's "Valore"
+    // total reconciles with it. Falls back to the shorter 2-tier chain below
+    // on web (no local SQLite/print tables) or if a card is missing from the
+    // map (e.g. not yet refreshed after an edit).
+    final dbValue = card.id != null ? _effectivePriceByCardId[card.id] : null;
+    if (dbValue != null) return dbValue;
+
     // CardTrader's live-synced price is the source of truth when available.
     // `value` is only a snapshot frozen at add-time (card_dialogs.dart
     // pre-fills it with the catalog price at that moment and it's never

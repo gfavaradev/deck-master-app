@@ -33,7 +33,7 @@ void main() {
     await db.delete('cards');
   });
 
-  Future<void> addCard(
+  Future<int> addCard(
     String collection, {
     double? ctValue,
     double value = 0.0,
@@ -53,7 +53,16 @@ void main() {
         'added_at': '2026-09-03',
       });
 
+  // getGlobalStats(collection: null) somma solo le collezioni sbloccate (vedi
+  // sotto): nella realtà una carta esiste solo in una collezione sbloccata,
+  // ma lo schema di test parte con tutte le collezioni bloccate di default.
+  Future<void> unlock(String id) =>
+      db.update('collections', {'isUnlocked': 1}, where: 'id = ?', whereArgs: [id]);
+
   test('i cataloghi senza tabelle di stampa contano nel totale', () async {
+    await unlock('digimon');
+    await unlock('lorcana');
+    await unlock('flesh-and-blood');
     await addCard('digimon', ctValue: 3.50);
     await addCard('lorcana', ctValue: 1.25, quantity: 4);
     await addCard('flesh-and-blood', ctValue: 10.0);
@@ -81,6 +90,7 @@ void main() {
     // `value` è il prezzo di catalogo copiato quando la carta è stata aggiunta e
     // non si aggiorna più: se prevalesse, una collezione tenuta a lungo
     // mostrerebbe prezzi di due anni fa.
+    await unlock('lorcana');
     await addCard('lorcana', ctValue: 12.0, value: 3.0);
 
     final stats = await helper.getGlobalStats();
@@ -88,6 +98,8 @@ void main() {
   });
 
   test('senza prezzo di mercato si ripiega su value, poi su zero', () async {
+    await unlock('vanguard');
+    await unlock('gundam');
     await addCard('vanguard', value: 4.5);
     await addCard('gundam');
 
@@ -201,6 +213,175 @@ void main() {
       final stats = await helper.getGlobalStats(collection: 'digimon');
 
       expect(stats['duplicateCards'], 1);
+    });
+  });
+
+  group('il totale globale coincide con la somma dei tab per-collezione', () {
+    // Bug segnalato: il tab "_global" delle statistiche non tornava con la
+    // somma manuale dei tab per-collezione. Causa: getGlobalStats(collection:
+    // null) sommava TUTTE le carte, incluse quelle di una collezione ancora
+    // presente in `cards` ma ri-bloccata (es. race in pullFromCloud che
+    // resetta i lucchetti dal remoto) — quella collezione non ha un tab
+    // visibile da sommare, quindi il globale la contava in più.
+    test('una collezione bloccata non entra nel totale globale', () async {
+      await unlock('digimon');
+      // 'magic' resta bloccata (default di schema): le sue carte non devono
+      // comparire nel totale globale né nel conteggio carte/doppioni.
+      await addCard('digimon', ctValue: 2.0);
+      await addCard('magic', value: 100.0);
+
+      final global = await helper.getGlobalStats();
+      expect(global['totalValue'], closeTo(2.0, 0.001));
+      expect(global['totalCards'], 1);
+    });
+
+    test('sbloccata: il globale è esattamente la somma dei per-collezione', () async {
+      await unlock('digimon');
+      await unlock('lorcana');
+      await unlock('onepiece');
+      await addCard('digimon', ctValue: 2.0);
+      await addCard('lorcana', ctValue: 1.25, quantity: 4);
+      await addCard('onepiece', value: 7.5, serial: 'OP01-001');
+
+      final global = await helper.getGlobalStats();
+      final digimon = await helper.getGlobalStats(collection: 'digimon');
+      final lorcana = await helper.getGlobalStats(collection: 'lorcana');
+      final onepiece = await helper.getGlobalStats(collection: 'onepiece');
+
+      final sumOfCollections =
+          (digimon['totalValue'] as double) + (lorcana['totalValue'] as double) + (onepiece['totalValue'] as double);
+      expect(global['totalValue'], closeTo(sumOfCollections, 0.001));
+      expect(global['totalValue'], closeTo(2.0 + 5.0 + 7.5, 0.001));
+    });
+  });
+
+  group('getEffectiveCardValuesByCollection — stessa fonte del totale in lista', () {
+    // Bug segnalato: il "Valore" mostrato nella lista carte di una collezione
+    // non coincideva col "Valore Stimato" nelle sue statistiche. Causa:
+    // card_list_page._getEffectiveValue usava solo cardtrader_value → value,
+    // senza il ripiego sul prezzo di stampa da catalogo che la CTE delle
+    // statistiche applica per yugioh/pokemon/onepiece. Questo metodo espone
+    // la stessa CTE per-carta così la lista può usare la stessa fonte.
+    test('somma dei prezzi per-carta combacia col totale delle statistiche', () async {
+      final id1 = await addCard('digimon', ctValue: 3.0);
+      final id2 = await addCard('digimon', value: 1.5, quantity: 2);
+
+      final byCard = await helper.getEffectiveCardValuesByCollection('digimon');
+      final stats = await helper.getGlobalStats(collection: 'digimon');
+
+      expect(byCard[id1], closeTo(3.0, 0.001));
+      expect(byCard[id2], closeTo(1.5, 0.001));
+      final rebuiltTotal = byCard.entries.fold<double>(0.0, (sum, e) => sum + e.value * (e.key == id2 ? 2 : 1));
+      expect(rebuiltTotal, closeTo(stats['totalValue'] as double, 0.001));
+    });
+
+    test('è indicizzato per card id e ignora le altre collezioni', () async {
+      await addCard('digimon', ctValue: 3.0);
+      await addCard('lorcana', ctValue: 9.0);
+
+      final byCard = await helper.getEffectiveCardValuesByCollection('digimon');
+
+      expect(byCard.values, [3.0]);
+    });
+  });
+
+  group('ROI: stessa fonte di prezzo delle statistiche', () {
+    // Stesso bug del gruppo precedente, trovato nella pagina ROI:
+    // getRoiSummary/getRoiCardList calcolavano il prezzo con
+    // COALESCE(cardtrader_value, value, 0), senza il ripiego sul prezzo di
+    // stampa da catalogo. Una carta yugioh/pokemon/onepiece con solo quel
+    // prezzo mostrava guadagno/ROI% a zero mentre il totale collezione era
+    // corretto.
+    setUp(() async {
+      await db.delete('yugioh_prints');
+    });
+
+    test('totalInvested e ownedValue contano esattamente le stesse carte', () async {
+      // card_values (da cui viene ownedValue/cardCount) esclude le carte con
+      // collection NULL (la CTE ha WHERE c.collection IS NOT NULL); prima del
+      // fix totalInvested non aveva lo stesso filtro, quindi una carta simile
+      // finanziava l'invested ma spariva dal valore posseduto — gain e ROI%
+      // sballati per un motivo che non ha niente a che fare con la carta.
+      await db.insert('cards', {
+        'name': 'carta senza collezione',
+        'serialNumber': '',
+        'collection': null,
+        'quantity': 1,
+        'value': 0.0,
+        'cardtrader_value': 50.0,
+        'purchase_price': 10.0,
+        'rarity': '',
+        'added_at': '2026-09-10',
+      });
+
+      final roi = await helper.getRoiSummary();
+
+      expect(roi['totalInvested'], 0.0);
+      expect(roi['ownedValue'], 0.0);
+      expect(roi['cardCount'], 0);
+      expect(roi['gain'], 0.0);
+    });
+
+    test('getRoiSummary usa il prezzo di stampa quando manca cardtrader_value', () async {
+      await db.insert('yugioh_prints', {
+        'card_id': 42,
+        'set_code': 'LOB-EN001',
+        'set_price': 8.0,
+      });
+      await db.insert('cards', {
+        'name': 'carta',
+        'serialNumber': 'LOB-EN001',
+        'collection': 'yugioh',
+        'catalogId': '42',
+        'quantity': 1,
+        'value': 0.0,
+        'purchase_price': 2.0,
+        'rarity': 'Rare',
+        'added_at': '2026-09-10',
+      });
+
+      final roi = await helper.getRoiSummary();
+
+      expect(roi['ownedValue'], closeTo(8.0, 0.001));
+      expect(roi['gain'], closeTo(6.0, 0.001));
+    });
+
+    test('getRoiCardList usa il prezzo di stampa nel current_price/gain/roi', () async {
+      await db.insert('yugioh_prints', {
+        'card_id': 42,
+        'set_code': 'LOB-EN001',
+        'set_price': 8.0,
+      });
+      await db.insert('cards', {
+        'name': 'carta',
+        'serialNumber': 'LOB-EN001',
+        'collection': 'yugioh',
+        'catalogId': '42',
+        'quantity': 1,
+        'value': 0.0,
+        'purchase_price': 2.0,
+        'rarity': 'Rare',
+        'added_at': '2026-09-10',
+      });
+
+      final rows = await helper.getRoiCardList();
+
+      expect(rows, hasLength(1));
+      expect((rows.first['current_price'] as num).toDouble(), closeTo(8.0, 0.001));
+      expect((rows.first['gain_euros'] as num).toDouble(), closeTo(6.0, 0.001));
+      expect((rows.first['roi_pct'] as num).toDouble(), closeTo(300.0, 0.001));
+    });
+
+    test('getRoiCardList filtra per collezione', () async {
+      await addCard('digimon', ctValue: 5.0);
+      await db.update('cards', {'purchase_price': 1.0}, where: "collection = 'digimon'");
+      await addCard('lorcana', ctValue: 9.0);
+      await db.update('cards', {'purchase_price': 1.0}, where: "collection = 'lorcana'");
+
+      final rows = await helper.getRoiCardList(collection: 'digimon');
+
+      expect(rows, hasLength(1));
+      expect(rows.first['collection'], 'digimon');
     });
   });
 }

@@ -676,18 +676,42 @@ class DataRepository {
     return result;
   }
 
+  /// Deletes an album and every card filed under it.
+  ///
+  /// The confirmation dialog before this call (dlgDeleteAlbumWithCardsMsg)
+  /// tells the user their N cards will be deleted too — deleting only the
+  /// album row left those cards orphaned (`albumId` pointing at nothing),
+  /// and they resurfaced unfiled in the collection's general view.
   Future<int> deleteAlbum(int id) async {
     if (kIsWeb) {
       final userId = _authService.currentUserId;
       if (userId == null) return 0;
       final firestoreId = _webAlbumFirestoreIdById[id];
       if (firestoreId != null) {
+        final deletedCardFsIds = await _firestoreService.deleteCardsByAlbum(userId, firestoreId);
+        // Mirror deleteCard()'s cleanup for each cascaded card — otherwise
+        // these process-lifetime maps accumulate stale entries for cards
+        // that no longer exist, for the rest of the web session.
+        for (final cardFsId in deletedCardFsIds) {
+          final localId = _webCardIdByFirestoreId.remove(cardFsId);
+          if (localId != null) _webCardFirestoreIdById.remove(localId);
+        }
         await _firestoreService.deleteAlbum(userId, firestoreId);
         _webAlbumFirestoreIdById.remove(id);
         _webAlbumIdByFirestoreId.remove(firestoreId);
       }
       return 0;
     }
+
+    // Cascade the cards first. A bare local delete isn't enough — each
+    // card's Firestore delete must be pushed individually too, or it
+    // survives on the cloud and resurrects on the next pull.
+    final cardsInAlbum = await _dbHelper.getCardsByAlbumId(id);
+    if (cardsInAlbum.isNotEmpty) {
+      await _syncService.deleteCardsAndPushSync(cardsInAlbum);
+      _syncService.notifyLocalChange('cards');
+    }
+
     // Get firestoreId before deleting
     final firestoreId = await _dbHelper.getFirestoreId('albums', id);
     final result = await _dbHelper.deleteAlbum(id);
@@ -918,7 +942,13 @@ class DataRepository {
       final toDelete = await _dbHelper.findRelatedCardsBySerial(
         collectionKey, card.serialNumber, card.rarity, card.catalogId,
       );
-      await _dbHelper.batchDeleteCardsByIds(toDelete.map((c) => c.id!).toList());
+      // Each row already carries its firestoreId (findRelatedCardsBySerial
+      // selects c.*) — batchDeleteCardsByIds alone is a pure local DELETE
+      // with no Firestore/pending_sync side effect, so without pushing each
+      // delete too the cards stayed alive on Firestore forever and
+      // resurrected on the next pullFromCloud (login, resetAndResync, ...).
+      await _syncService.deleteCardsAndPushSync(toDelete);
+      _syncService.notifyLocalChange('cards');
       return toDelete;
     } else {
       await deleteCard(card.id!);
@@ -1525,6 +1555,13 @@ class DataRepository {
       return {'totalCards': 0, 'totalValue': 0.0, 'unlockedCollections': 0};
     }
     return await _dbHelper.getGlobalStats(collection: collection);
+  }
+
+  /// See [DatabaseHelper.getEffectiveCardValuesByCollection]. Empty on web
+  /// (no local SQLite cache, no catalog print-price tables to join against).
+  Future<Map<int, double>> getEffectiveCardValuesByCollection(String collection) async {
+    if (kIsWeb) return {};
+    return await _dbHelper.getEffectiveCardValuesByCollection(collection);
   }
 
   Future<void> saveCollectionValueSnapshot() async {
