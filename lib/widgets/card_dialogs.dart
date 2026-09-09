@@ -272,6 +272,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
   List<Map<String, dynamic>> availableSets = [];
   String? selectedSetCode; // composite key: setCode\x00rarity
   String? _selectedArtwork; // artwork URL of the currently selected set/print
+  bool _isSaving = false;
 
   /// Composite key that uniquely identifies a print (set + rarity).
   String _setKey(Map<String, dynamic> set) {
@@ -447,7 +448,7 @@ class _AddCardDialogState extends State<_AddCardDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.btnCancel)),
         ElevatedButton(
-          onPressed: _saveCard,
+          onPressed: _isSaving ? null : _saveCard,
           child: Text(l10n.cardDialogSaveBtn),
         ),
       ],
@@ -455,6 +456,16 @@ class _AddCardDialogState extends State<_AddCardDialog> {
   }
 
   Future<void> _saveCard() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      await _doSaveCard();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _doSaveCard() async {
     final l10n = AppLocalizations.of(context)!;
     if (selectedCatalogCard == null) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -32,6 +32,17 @@ void main() {
         });
         expect(album.currentCount, 0);
       });
+
+      test('maxCapacity default 100 se NULL (colonna aggiunta senza DEFAULT, '
+          'righe pre-migrazione)', () {
+        final album = AlbumModel.fromMap({
+          'name': 'Album vecchio',
+          'collection': 'yugioh',
+          'maxCapacity': null,
+          'currentCount': 3,
+        });
+        expect(album.maxCapacity, 100);
+      });
     });
 
     // ── toMap ────────────────────────────────────────────────────────────────

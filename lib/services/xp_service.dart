@@ -1041,15 +1041,30 @@ class XpService {
     if (newLevel > oldLevel) _levelUpController.add(newLevel);
   }
 
-  Future<void> awardXp(int amount) async {
-    final prefs = await SharedPreferences.getInstance();
-    final oldXp = prefs.getInt(_xpKey) ?? 0;
-    final oldLevel = levelFromXp(oldXp);
-    final newXp = oldXp + amount;
-    final newLevel = levelFromXp(newXp);
-    await prefs.setInt(_xpKey, newXp);
-    _syncXpToFirestore(newXp);
-    if (newLevel > oldLevel) _levelUpController.add(newLevel);
+  // I chiamanti invocano awardXp senza await (fire-and-forget), anche in
+  // sequenza stretta durante un import massivo: senza serializzazione due
+  // chiamate concorrenti leggono lo stesso oldXp e la seconda setInt()
+  // sovrascrive la prima, perdendo XP silenziosamente.
+  Future<void> _xpLock = Future.value();
+
+  Future<void> awardXp(int amount) {
+    final previous = _xpLock;
+    final completer = Completer<void>();
+    _xpLock = completer.future;
+    return previous.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final oldXp = prefs.getInt(_xpKey) ?? 0;
+        final oldLevel = levelFromXp(oldXp);
+        final newXp = oldXp + amount;
+        final newLevel = levelFromXp(newXp);
+        await prefs.setInt(_xpKey, newXp);
+        _syncXpToFirestore(newXp);
+        if (newLevel > oldLevel) _levelUpController.add(newLevel);
+      } finally {
+        completer.complete();
+      }
+    });
   }
 
   void _syncXpToFirestore(int xp) {

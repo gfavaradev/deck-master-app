@@ -31,7 +31,7 @@ class AlbumModel {
       firestoreId: map['firestoreId'],
       name: map['name'],
       collection: map['collection'],
-      maxCapacity: map['maxCapacity'],
+      maxCapacity: map['maxCapacity'] ?? 100,
       currentCount: map['currentCount'] ?? 0,
     );
   }

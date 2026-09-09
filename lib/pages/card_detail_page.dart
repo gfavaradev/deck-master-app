@@ -226,6 +226,13 @@ class _CardDetailPageState extends State<CardDetailPage> {
                 // Album — solo per carte possedute, non nel catalogo
                 if (!widget.catalogMode)
                   _AlbumPanel(
+                    // DropdownButtonFormField legge `initialValue` una sola
+                    // volta, in initState: senza una key legata alla carta,
+                    // uno swipe che cambia _selectedAlbumId lascia il
+                    // dropdown a mostrare visivamente l'album della carta
+                    // precedente (vedi CLAUDE.md sul gotcha di
+                    // DropdownButtonFormField).
+                    key: ValueKey(_card.id),
                     availableAlbums: widget.availableAlbums,
                     selectedId: _selectedAlbumId,
                     currentName: _currentAlbumName(),
@@ -869,6 +876,7 @@ class _AlbumPanel extends StatelessWidget {
   final ValueChanged<int?> onChanged;
 
   const _AlbumPanel({
+    super.key,
     required this.availableAlbums,
     required this.selectedId,
     required this.currentName,

@@ -52,6 +52,38 @@ void main() {
         final user = UserModel.fromFirestore(data);
         expect(user.isPro, isFalse);
       });
+
+      // Un documento utente modificato a mano in console (o scritto da una
+      // versione più vecchia dello schema) può avere uid/email mancanti o un
+      // createdAt malformato: prima fromFirestore andava in TypeError non
+      // catturato su ogni caricamento (subscription_service, user_service).
+      test('uid mancante non lancia, diventa stringa vuota', () {
+        final data = Map<String, dynamic>.from(baseData())..remove('uid');
+        final user = UserModel.fromFirestore(data);
+        expect(user.uid, '');
+      });
+
+      test('email mancante non lancia, diventa stringa vuota', () {
+        final data = Map<String, dynamic>.from(baseData())..remove('email');
+        final user = UserModel.fromFirestore(data);
+        expect(user.email, '');
+      });
+
+      test('createdAt mancante non lancia, ripiega su un default', () {
+        final data = Map<String, dynamic>.from(baseData())..remove('createdAt');
+        expect(() => UserModel.fromFirestore(data), returnsNormally);
+      });
+
+      test('createdAt malformato non lancia, ripiega su un default', () {
+        final data = Map<String, dynamic>.from(baseData())..['createdAt'] = 'non-una-data';
+        expect(() => UserModel.fromFirestore(data), returnsNormally);
+      });
+
+      test('lastLoginAt malformato non lancia, resta null', () {
+        final data = Map<String, dynamic>.from(baseData())..['lastLoginAt'] = 'non-una-data';
+        final user = UserModel.fromFirestore(data);
+        expect(user.lastLoginAt, isNull);
+      });
     });
 
     // ── isAdmin / isUser ─────────────────────────────────────────────────

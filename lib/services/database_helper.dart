@@ -946,22 +946,38 @@ class DatabaseHelper {
         args.add(catalog);
     }
     try {
-      // Gli id si raccolgono PRIMA dell'UPDATE: dopo, la condizione non
-      // seleziona più nulla — ed è proprio questo a dire che la riga è cambiata.
-      final changed = await db.rawQuery('SELECT id FROM cards WHERE $where', args);
-      final n = await db.rawUpdate(
-        'UPDATE cards SET serialNumber = ($newSerial) WHERE $where',
-        args,
-      );
-      // Senza accodare la modifica, la riparazione dura fino al primo
-      // `pullFromCloud`: quello riscrive la carta con la versione remota
-      // preservando solo `value` e `cardtrader_value`, quindi il seriale vecchio
-      // tornerebbe — e sugli altri dispositivi non arriverebbe mai.
-      for (final row in changed) {
-        final id = row['id'] as int?;
-        if (id != null) await addPendingSync('cards', id, 'update');
-      }
-      return n;
+      // UPDATE e accodamento al pending_sync stanno nella stessa transazione:
+      // se l'app viene uccisa a metà, o l'UPDATE e l'enqueue avvengono
+      // entrambi o nessuno dei due. Prima, un crash fra i due passi lasciava
+      // la riga corretta in locale ma mai messa in coda — e la stessa
+      // condizione `where` non la selezionava più al riavvio, perché non era
+      // più "da riparare".
+      return await db.transaction((txn) async {
+        // Gli id si raccolgono PRIMA dell'UPDATE: dopo, la condizione non
+        // seleziona più nulla — ed è proprio questo a dire che la riga è cambiata.
+        final changed = await txn.rawQuery('SELECT id FROM cards WHERE $where', args);
+        final n = await txn.rawUpdate(
+          'UPDATE cards SET serialNumber = ($newSerial) WHERE $where',
+          args,
+        );
+        // Senza accodare la modifica, la riparazione dura fino al primo
+        // `pullFromCloud`: quello riscrive la carta con la versione remota
+        // preservando solo `value` e `cardtrader_value`, quindi il seriale vecchio
+        // tornerebbe — e sugli altri dispositivi non arriverebbe mai.
+        for (final row in changed) {
+          final id = row['id'] as int?;
+          if (id != null) {
+            await txn.insert('pending_sync', {
+              'table_name': 'cards',
+              'local_id': id,
+              'change_type': 'update',
+              'data': null,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          }
+        }
+        return n;
+      });
     } catch (_) {
       // Tabelle di catalogo assenti: catalogo mai scaricato, niente da fare.
       return 0;
@@ -2857,7 +2873,7 @@ class DatabaseHelper {
         final String? catalogId = card['catalogId'] as String?;
         final String collection = card['collection'] as String? ?? '';
         final String serialNumber = card['serialNumber'] as String? ?? '';
-        final int quantity = card['quantity'] as int;
+        final int quantity = (card['quantity'] as num?)?.toInt() ?? 0;
 
         if (catalogId != null && collection != 'yugioh') {
           // Legacy catalog tracking for non-yugioh
@@ -2877,6 +2893,7 @@ class DatabaseHelper {
           }
         }
       }
+      await txn.delete('deck_cards', where: 'cardId = ?', whereArgs: [id]);
       return await txn.delete('cards', where: 'id = ?', whereArgs: [id]);
     });
   }
@@ -2888,7 +2905,7 @@ class DatabaseHelper {
       final List<Map<String, dynamic>> oldCards = await txn.query('cards', where: 'id = ?', whereArgs: [card.id]);
       if (oldCards.isNotEmpty && card.catalogId != null && card.collection != 'yugioh') {
         // Legacy catalog tracking for non-yugioh
-        final int oldQty = oldCards.first['quantity'] as int;
+        final int oldQty = (oldCards.first['quantity'] as num?)?.toInt() ?? 0;
         final int delta = card.quantity - oldQty;
 
         await txn.execute('''
@@ -4354,7 +4371,10 @@ class DatabaseHelper {
 
   Future<int> deleteDeck(int id) async {
     Database db = await database;
-    return await db.delete('decks', where: 'id = ?', whereArgs: [id]);
+    return await db.transaction((txn) async {
+      await txn.delete('deck_cards', where: 'deckId = ?', whereArgs: [id]);
+      return await txn.delete('decks', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   Future<void> addCardToDeck(int deckId, int cardId, int quantity) async {

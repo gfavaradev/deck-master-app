@@ -62,14 +62,15 @@ class UserModel {
   /// Create from Firestore document
   factory UserModel.fromFirestore(Map<String, dynamic> data) {
     return UserModel(
-      uid: data['uid'] as String,
-      email: data['email'] as String,
+      uid: data['uid'] as String? ?? '',
+      email: data['email'] as String? ?? '',
       displayName: data['displayName'] as String?,
       photoUrl: data['photoUrl'] as String?,
       role: UserRole.fromFirestoreValue(data['role'] as String?),
-      createdAt: DateTime.parse(data['createdAt'] as String),
+      createdAt: DateTime.tryParse(data['createdAt'] as String? ?? '') ??
+          DateTime.now(),
       lastLoginAt: data['lastLoginAt'] != null
-          ? DateTime.parse(data['lastLoginAt'] as String)
+          ? DateTime.tryParse(data['lastLoginAt'] as String)
           : null,
       isActive: data['isActive'] as bool? ?? true,
       isPro: data['isPro'] as bool? ?? false,

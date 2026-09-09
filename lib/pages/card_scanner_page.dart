@@ -39,6 +39,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
 
   _ScanState _state = _ScanState.preview;
   CardScanResult? _result;
+  bool _isAddingToCollection = false;
   String? _errorMessage;
 
   // ── Camera ────────────────────────────────────────────────────────────────
@@ -337,44 +338,50 @@ class _CardScannerPageState extends State<CardScannerPage> {
   }
 
   Future<void> _addToCollection() async {
+    if (_isAddingToCollection) return;
     final result = _result;
     if (result == null) return;
 
-    final collection = result.collection;
-    final collectionName = _collectionLabels[collection] ?? collection;
+    setState(() => _isAddingToCollection = true);
+    try {
+      final collection = result.collection;
+      final collectionName = _collectionLabels[collection] ?? collection;
 
-    final albums = await _repo.getAlbumsByCollection(collection);
+      final albums = await _repo.getAlbumsByCollection(collection);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (albums.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context)!.cardScannerNoAlbum(collectionName)),
-          backgroundColor: Colors.red.shade700,
-        ),
+      if (albums.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.cardScannerNoAlbum(collectionName)),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+        return;
+      }
+
+      CardDialogs.showAddCard(
+        context: context,
+        collectionName: collectionName,
+        collectionKey: collection,
+        availableAlbums: albums,
+        initialCatalogCard: result.catalogCard,
+        onCardAdded: (albumId, serial) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(AppLocalizations.of(context)!.cardScannerCardAdded(result.cardName)),
+                backgroundColor: Colors.green.shade700,
+              ),
+            );
+          }
+        },
+        getOrCreateDuplicatesAlbum: () => _repo.getOrCreateDoppioniAlbum(collection),
       );
-      return;
+    } finally {
+      if (mounted) setState(() => _isAddingToCollection = false);
     }
-
-    CardDialogs.showAddCard(
-      context: context,
-      collectionName: collectionName,
-      collectionKey: collection,
-      availableAlbums: albums,
-      initialCatalogCard: result.catalogCard,
-      onCardAdded: (albumId, serial) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.cardScannerCardAdded(result.cardName)),
-              backgroundColor: Colors.green.shade700,
-            ),
-          );
-        }
-      },
-      getOrCreateDuplicatesAlbum: () => _repo.getOrCreateDoppioniAlbum(collection),
-    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -694,7 +701,7 @@ class _CardScannerPageState extends State<CardScannerPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _addToCollection,
+                onPressed: _isAddingToCollection ? null : _addToCollection,
                 icon: const Icon(Icons.add),
                 label: Text(AppLocalizations.of(context)!.cardScannerAddToCollection),
                 style: ElevatedButton.styleFrom(

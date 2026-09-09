@@ -17,6 +17,7 @@ import '../models/wishlist_model.dart';
 import 'price_alert_service.dart';
 import 'scryfall_service.dart';
 import 'backblaze_service.dart';
+import '../utils/app_logger.dart';
 
 // Top-level functions so compute() can spawn them in a background isolate.
 List<Map<String, dynamic>> _normalizeYugiohBatch(List<Map<String, dynamic>> cards) =>
@@ -97,7 +98,13 @@ class DataRepository {
             ? null
             : (p) => onProgress(_downloadProgressShare + p * _pricingProgressShare),
       );
-    } catch (_) {}
+    } catch (e) {
+      // Il download del catalogo è comunque andato a buon fine: non si
+      // propaga l'errore al chiamante (la UI segnerebbe l'intero salvataggio
+      // come fallito), ma va comunque loggato — prima spariva silenziosamente
+      // e l'utente vedeva "100% completato" senza prezzi agganciati.
+      AppLogger.error('applyLocalPricesToCollection failed for $catalog', tag: 'DataRepository', error: e);
+    }
     onProgress?.call(1.0);
     PriceAlertService.checkAlerts();
   }
