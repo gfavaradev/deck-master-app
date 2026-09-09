@@ -57,10 +57,11 @@ CI (`.github/workflows/release.yml`) runs `flutter test test/` first, then resto
 > La CI **non** può eseguire `flutter test integration_test/...`: quel comando richiede un device connesso e ubuntu-latest non ne ha. La copertura delle sei classi di crash arriva comunque da `flutter test test/`, perché `test/regression_tests.dart` ri-esporta le stesse suite come widget test.
 
 ### Backend scripts (Node.js, under `scripts/`)
-- `scripts/price_sync/index.js` — CardTrader → Firestore price sync. Raw prices are written for every CT-backed catalog; prices are embedded into catalog chunks only for yugioh/pokemon/onepiece. Runs in production as the Cloud Run Job `price-sync` (`europe-west1`, Cloud Scheduler `0 3 * * *` Europe/Rome, JWT from Secret Manager) — see `scripts/price_sync/CLOUDRUN.md` and `deploy-cloudrun.sh`. Locally: `npm start` / `npm run yugioh`, reading `CARDTRADER_JWT` from the **repo-root** `.env` plus a local `serviceAccountKey.json`. Manual single-catalog runs also available from the `deck-master-web` dashboard (`POST /api/admin/jobs/price-sync`, ~300s cap).
-- `scripts/populate_firestore/index.js` — full rebuild of `yugioh_catalog` from YGOProDeck with multi-language translations, chunked to stay under Firestore's 1MB document limit. Run with `npm start`. `scripts/populate_catalog.dart` (`flutter run -t scripts/populate_catalog.dart -d chrome`) is the incremental alternative. Other TCG catalogs are managed from `deck-master-web`, not from here.
 - `scripts/update_app_version/index.js` — updates the `app_config/version` Firestore doc the app reads for update prompts: `node index.js --version 1.3.8 --android-url <url> --windows-url <url> --min-version <x> --notes "<text>"`. `--version` and `--android-url` are required; the write is a merge, so pass `--notes` on every bump.
 - `scripts/news_sync/index.js` — daily RSS pull (sources in `sources.js`) into `news_drafts` with `status: "pending"`; publishing to `news` is a manual approval in `deck-master-web`. Cron: `0 4 * * *`.
+- `scripts/populate_catalog.dart` (`flutter run -t scripts/populate_catalog.dart -d chrome`) — incremental top-up of `yugioh_catalog` (only new cards + backfill of missing sets) from YGOProDeck, run as a signed-in admin from a browser.
+
+> **CardTrader price sync and full catalog rebuilds are NOT in this repo.** They live in the separate `deck-master-worker` service (always-on Node/Fastify worker, triggered by the `deck-master-web` dashboard, jobs `rebuild` | `migrate-images` | `price-sync`, progress in Firestore `admin_jobs/*`). `scripts/price_sync/` and `scripts/populate_firestore/` (a Cloud Run Job `price-sync` that was documented here but never actually deployed — see project memory) were removed on 09/09/2026; if prices or the catalog need a fix, it happens in `deck-master-worker`, not here.
 
 ## Architecture
 
@@ -68,7 +69,7 @@ CI (`.github/workflows/release.yml`) runs `flutter test test/` first, then resto
 - **`lib/models/`** — domain types: `card_model`, `collection_model`, `album_model`, `user_model`, `wishlist_model`, `magic_models` (Scryfall-shaped).
 - **`lib/services/`** — all business logic and I/O; pages should call services, not Firestore/SQLite directly. Notable groupings:
   - *Local/cloud data*: `database_helper.dart` (sqflite; use FFI on Windows; use `rawQuery()` for PRAGMA statements — `db.execute()` doesn't work for those), `firestore_service.dart`, `sync_service.dart`, `background_download_service.dart`, `data_repository.dart`.
-  - *External card/price APIs*: `scryfall_service.dart` (Magic), `cardtrader_service.dart` (reads cached CardTrader prices for the card UI; price *syncing* runs server-side — Cloud Run Job `price-sync` on a schedule, plus a manual endpoint in `deck-master-web`), `price_alert_service.dart`. Scryfall and similar requests must always send a `User-Agent` header.
+  - *External card/price APIs*: `scryfall_service.dart` (Magic), `cardtrader_service.dart` (reads cached CardTrader prices for the card UI; price *syncing* runs entirely in `deck-master-worker`, triggered from the `deck-master-web` dashboard), `price_alert_service.dart`. Scryfall and similar requests must always send a `User-Agent` header.
   - *Auth*: `auth_service.dart` (Google/Facebook/Apple/Email, platform-aware via `PlatformHelper`), `user_service.dart`.
   - *Monetization*: `ad_service.dart` (Google Mobile Ads — init is deferred ~3s after splash to avoid frame stalls), `revenue_cat_service.dart` (IAP/subscriptions).
   - *AI*: `claude_service.dart` (Anthropic API, used by the AI Deck Builder page).
@@ -91,7 +92,7 @@ Catalog browsing loads in 100-card pages with an 80%-scroll prefetch threshold, 
 
 ### Firestore data model & security (`firestore.rules`, `storage.rules`)
 - Per-TCG catalog collections (`yugioh_catalog`, `pokemon_catalog`, `magic_catalog`, etc.) are readable by any authenticated user, writable only by admins (email-allowlisted in rules).
-- `cardtrader_prices/{catalog}` holds raw price data; price values are also embedded directly into catalog chunks for yugioh/pokemon/onepiece by `price_sync`.
+- `cardtrader_prices/{catalog}` holds raw price data; price values are also embedded directly into catalog chunks for yugioh/pokemon/onepiece by `deck-master-worker`'s `price-sync` job.
 - `app_config/*` holds feature flags, version/update info, changelog; `news/*` is the news feed.
 - User-owned data (collections, decks, wishlists) is scoped by `request.auth.uid`.
 - For SQL queries involving `set_id`, use a `COALESCE` fallback for surrogate-ID safety.
@@ -160,8 +161,7 @@ For bug fixes and new logic in `lib/services/`, `lib/models/`, and `lib/utils/`,
 These are invocable with `/<name>` and encode the recurring workflows for this repo — prefer them over re-deriving the commands by hand:
 - `/flutter-build` — build a release artifact (`android`/`ios`/`windows`/`web`), including the secrets preflight (`app_secrets.dart`, `.env`, `dart_defines.json` for Windows), the Inno Setup packaging step, and what pushing to `main` triggers in CI.
 - `/flutter-test` — run the two CI test commands, the on-device `flutter drive` variant, or a single test file; explains how `test/regression_tests.dart` and `integration_test/regression_suite.dart` mirror each other.
-- `/price-sync` — run, redeploy, or debug the CardTrader price sync (local script, Cloud Run Job, dashboard endpoint).
-- `/populate-catalog` — rebuild or incrementally top up `yugioh_catalog` from YGOProDeck.
+- `/populate-catalog` — incrementally top up `yugioh_catalog` from YGOProDeck (Dart, in-app admin). A full rebuild, other catalogs, and price sync are `deck-master-worker`'s job, not this repo's.
 - `/news-sync` — run or extend the daily news feed sync into `news_drafts`.
 - `/bump-app-version` — run `scripts/update_app_version` to publish a new version/update-prompt to `app_config/version`.
 

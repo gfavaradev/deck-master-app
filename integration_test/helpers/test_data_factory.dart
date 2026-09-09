@@ -44,9 +44,9 @@ class TestDataFactory {
 
   /// Seeds `cardtrader_prices/{catalog}` with [chunks] chunk documents of
   /// [rowsPerChunk] price rows each, mirroring the layout written by
-  /// `FirestoreService.saveCardtraderPrices()` and `scripts/price_sync`:
-  /// chunk doc ids are the numeric row offset (`'0'`, `'400'`, …) and the
-  /// parent doc carries `count` = total rows.
+  /// `FirestoreService.saveCardtraderPrices()` and `deck-master-worker`'s
+  /// `price-sync` job: chunk doc ids are the numeric row offset (`'0'`,
+  /// `'400'`, …) and the parent doc carries `count` = total rows.
   static Future<void> seedCardtraderPriceChunks(
     FakeFirebaseFirestore firestore, {
     String catalog = 'yugioh',

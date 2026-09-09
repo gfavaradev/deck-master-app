@@ -731,8 +731,8 @@ class FirestoreService {
   /// `integration_test/crashes/firestore_oom_test.dart`.
   ///
   /// Chunk ids are the numeric row offset and the parent doc carries `count`,
-  /// written identically by [saveCardtraderPrices] and `scripts/price_sync`, so
-  /// ids are derivable without listing the collection.
+  /// written identically by [saveCardtraderPrices] and `deck-master-worker`'s
+  /// `price-sync` job, so ids are derivable without listing the collection.
   Future<void> streamCardtraderPriceRows(
     String catalog, {
     required Future<void> Function(List<Map<String, dynamic>> rows) onBatch,
