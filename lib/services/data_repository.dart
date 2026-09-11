@@ -452,6 +452,7 @@ class DataRepository {
     }
 
     // Full download — stream one batch at a time to avoid OOM
+    final since = DateTime.now().toIso8601String();
     final remoteMetadata = await _firestoreService.getCatalogMetadata('yugioh');
     int totalDownloaded = 0;
 
@@ -469,6 +470,11 @@ class DataRepository {
     );
 
     if (totalDownloaded == 0) return;
+
+    // Le carte rimosse dalla fonte non compaiono in nessun batch appena
+    // scaricato: senza questa pota, un rebuild lato worker che elimina carte
+    // le lascia per sempre nel catalogo locale (solo insert/upsert sopra).
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince('yugioh', since);
 
     if (remoteMetadata != null) {
       try {
@@ -1863,6 +1869,7 @@ class DataRepository {
       return;
     }
 
+    final since = DateTime.now().toIso8601String();
     final remoteMetadata = await _firestoreService.getCatalogMetadata('onepiece');
     int totalDownloaded = 0;
 
@@ -1879,6 +1886,11 @@ class DataRepository {
     );
 
     if (totalDownloaded == 0) return;
+
+    // Le carte rimosse dalla fonte non compaiono in nessun batch appena
+    // scaricato: senza questa pota, un rebuild lato worker che elimina carte
+    // le lascia per sempre nel catalogo locale (solo insert/upsert sopra).
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince('onepiece', since);
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
@@ -2134,6 +2146,7 @@ class DataRepository {
       return;
     }
 
+    final since = DateTime.now().toIso8601String();
     final remoteMetadata = await _firestoreService.getCatalogMetadata('pokemon');
     int totalDownloaded = 0;
 
@@ -2151,6 +2164,11 @@ class DataRepository {
     );
 
     if (totalDownloaded == 0) return;
+
+    // Le carte rimosse dalla fonte non compaiono in nessun batch appena
+    // scaricato: senza questa pota, un rebuild lato worker che elimina carte
+    // le lascia per sempre nel catalogo locale (solo insert/upsert sopra).
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince('pokemon', since);
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
@@ -2260,6 +2278,7 @@ class DataRepository {
       return;
     }
 
+    final since = DateTime.now().toIso8601String();
     final remoteMetadata = await _firestoreService.getCatalogMetadata('magic');
     int totalDownloaded = 0;
 
@@ -2277,6 +2296,11 @@ class DataRepository {
     );
 
     if (totalDownloaded == 0) return;
+
+    // Le carte rimosse dalla fonte non compaiono in nessun batch appena
+    // scaricato: senza questa pota, un rebuild lato worker che elimina carte
+    // le lascia per sempre nel catalogo locale (solo insert/upsert sopra).
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince('magic', since);
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
@@ -2347,6 +2371,7 @@ class DataRepository {
       return;
     }
 
+    final since = DateTime.now().toIso8601String();
     final remoteMetadata =
         await _firestoreService.getCatalogMetadata(catalogKey);
     int totalDownloaded = 0;
@@ -2364,6 +2389,11 @@ class DataRepository {
     );
 
     if (totalDownloaded == 0) return;
+
+    // Le carte rimosse dalla fonte non compaiono in nessun batch appena
+    // scaricato: senza questa pota, un rebuild lato worker che elimina carte
+    // le lascia per sempre nel catalogo locale (solo insert/upsert sopra).
+    await _dbHelper.pruneCatalogCardsNotUpdatedSince(catalogKey, since);
 
     if (remoteMetadata != null) {
       await _dbHelper.saveCatalogMetadata(
